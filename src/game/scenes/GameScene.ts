@@ -1,35 +1,25 @@
 import Phaser from 'phaser';
-import { BOT, COLORS, GAME_HEIGHT, GAME_WIDTH, PLAYER } from '../constants';
-import { Soldier } from '../entities/Soldier';
+import { Client, Room } from 'colyseus.js';
+import {
+  COLORS,
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  PLATFORMS,
+  PLAYER,
+  type PlayerInput,
+} from '../../../shared/constants';
+import type { GameState, PlayerState } from '../../../shared/schema';
 
-type PlatformSpec = { x: number; y: number; w: number };
+type SoldierSprite = Phaser.GameObjects.Image & { jetting?: boolean };
 
-const PLATFORMS: PlatformSpec[] = [
-  { x: 640, y: 680, w: 1200 },
-  { x: 220, y: 540, w: 280 },
-  { x: 640, y: 480, w: 220 },
-  { x: 1060, y: 540, w: 280 },
-  { x: 140, y: 360, w: 180 },
-  { x: 640, y: 300, w: 300 },
-  { x: 1140, y: 360, w: 180 },
-  { x: 400, y: 200, w: 160 },
-  { x: 880, y: 200, w: 160 },
-];
-
-const SPAWNS = [
-  { x: 160, y: 500 },
-  { x: 1120, y: 500 },
-  { x: 640, y: 250 },
-  { x: 200, y: 320 },
-  { x: 1080, y: 320 },
-];
+const COLYSEUS_URL = import.meta.env.VITE_COLYSEUS_URL ?? 'http://localhost:2567';
 
 export class GameScene extends Phaser.Scene {
-  private player!: Soldier;
-  private bots: Soldier[] = [];
-  private platforms!: Phaser.Physics.Arcade.StaticGroup;
-  private bullets!: Phaser.Physics.Arcade.Group;
-  private grenades!: Phaser.Physics.Arcade.Group;
+  private room: Room<GameState> | null = null;
+  private sessionId = '';
+  private soldiers = new Map<string, SoldierSprite>();
+  private bullets = new Map<string, Phaser.GameObjects.Image>();
+  private grenades = new Map<string, Phaser.GameObjects.Image>();
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
@@ -37,7 +27,9 @@ export class GameScene extends Phaser.Scene {
   private keySpace!: Phaser.Input.Keyboard.Key;
   private keyG!: Phaser.Input.Keyboard.Key;
   private hud!: Phaser.GameObjects.Text;
-  private botThinkAt = 0;
+  private status!: Phaser.GameObjects.Text;
+  private fireHeld = false;
+  private grenadeQueued = false;
 
   constructor() {
     super('Game');
@@ -45,37 +37,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.drawBackground();
-    this.platforms = this.physics.add.staticGroup();
-    for (const p of PLATFORMS) {
-      const plat = this.platforms.create(p.x, p.y, 'platform') as Phaser.Physics.Arcade.Image;
-      plat.setDisplaySize(p.w, 22);
-      plat.refreshBody();
-    }
-
-    this.bullets = this.physics.add.group({
-      classType: Phaser.Physics.Arcade.Image,
-      maxSize: 64,
-      runChildUpdate: false,
-    });
-    this.grenades = this.physics.add.group({
-      classType: Phaser.Physics.Arcade.Image,
-      maxSize: 16,
-      runChildUpdate: false,
-    });
-
-    this.player = new Soldier(this, SPAWNS[0].x, SPAWNS[0].y, 'player');
-    this.bots = [
-      new Soldier(this, SPAWNS[1].x, SPAWNS[1].y, 'bot'),
-      new Soldier(this, SPAWNS[2].x, SPAWNS[2].y, 'bot'),
-    ];
-
-    const soldiers = [this.player, ...this.bots];
-    this.physics.add.collider(soldiers, this.platforms);
-    this.physics.add.collider(this.grenades, this.platforms);
-    this.physics.add.overlap(this.bullets, soldiers, this.onBulletHitSoldier, undefined, this);
-
-    this.events.on('soldier-died', this.onSoldierDied, this);
-    this.events.on('grenade-explode', this.onGrenadeExplode, this);
+    this.drawPlatforms();
 
     const keyboard = this.input.keyboard!;
     this.cursors = keyboard.createCursorKeys();
@@ -86,13 +48,11 @@ export class GameScene extends Phaser.Scene {
     this.keyG = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (!this.player.alive) return;
-      const dir = this.player.aimAt(pointer.worldX, pointer.worldY);
-      if (pointer.rightButtonDown() || pointer.button === 2) {
-        this.player.tryThrowGrenade(dir, this.grenades, this.time.now);
-      } else {
-        this.player.tryFire(dir, this.bullets, this.time.now);
-      }
+      if (pointer.rightButtonDown() || pointer.button === 2) this.grenadeQueued = true;
+      else this.fireHeld = true;
+    });
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.button === 0) this.fireHeld = false;
     });
     this.input.mouse?.disableContextMenu();
 
@@ -105,11 +65,20 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
+    this.status = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'Connecting…', {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: '18px',
+        color: COLORS.hud,
+      })
+      .setOrigin(0.5)
+      .setDepth(200);
+
     this.add
       .text(
         16,
         GAME_HEIGHT - 52,
-        'A/D move · W/Space jump/jet · mouse aim · LMB shoot · RMB/G grenade',
+        'A/D move · W/Space jump/jet · mouse aim · LMB shoot · RMB/G grenade · open 2 tabs to PvP',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '13px',
@@ -120,150 +89,205 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100);
 
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    void this.connect();
   }
 
-  update(_time: number, delta: number): void {
-    this.updatePlayer(delta);
-    this.updateBots(delta);
-    this.cullProjectiles();
+  update(): void {
+    if (!this.room) return;
+    this.sendInput();
+    this.syncEntities();
     this.updateHud();
+  }
 
-    for (const s of [this.player, ...this.bots]) {
-      if (s.alive && s.y > GAME_HEIGHT + 40) {
-        s.takeDamage(999);
+  private async connect(): Promise<void> {
+    this.status.setVisible(true);
+    this.status.setText('Connecting to server…');
+
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      try {
+        const client = new Client(COLYSEUS_URL);
+        const room = await Promise.race([
+          client.joinOrCreate<GameState>('dm', { name: 'Soldier' }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Join timed out after 5s')), 5000),
+          ),
+        ]);
+        this.room = room;
+        this.sessionId = room.sessionId;
+        this.status.setText('');
+        this.status.setVisible(false);
+        console.log('[blat] joined room', room.roomId, this.sessionId);
+        return;
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : 'WebSocket connection failed';
+        console.error('[blat] connect failed', attempt, message, err);
+        this.status.setText(
+          `Connecting… retry ${attempt}/10\n${message}\n${COLYSEUS_URL}`,
+        );
+        await new Promise((r) => setTimeout(r, 800));
       }
     }
+
+    this.status.setText(
+      `Could not connect to ${COLYSEUS_URL}\nStart the stack with: npm run dev`,
+    );
   }
 
-  private updatePlayer(delta: number): void {
-    if (!this.player.alive) return;
+  private sendInput(): void {
+    if (!this.room) return;
 
     let move = 0;
     if (this.cursors.left.isDown || this.keyA.isDown) move -= 1;
     if (this.cursors.right.isDown || this.keyD.isDown) move += 1;
-    this.player.moveHorizontal(move);
-
-    const thrust =
-      this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown;
-    this.player.jumpOrJet(thrust, delta);
 
     const pointer = this.input.activePointer;
-    this.player.aimAt(pointer.worldX, pointer.worldY);
+    const me = this.room.state.players.get(this.sessionId);
+    const originX = me?.x ?? GAME_WIDTH / 2;
+    const originY = me?.y ?? GAME_HEIGHT / 2;
+    const aimX = pointer.worldX - originX;
+    const aimY = pointer.worldY - originY;
 
-    if (Phaser.Input.Keyboard.JustDown(this.keyG)) {
-      const dir = this.player.aimAt(pointer.worldX, pointer.worldY);
-      this.player.tryThrowGrenade(dir, this.grenades, this.time.now);
+    const grenade =
+      this.grenadeQueued || Phaser.Input.Keyboard.JustDown(this.keyG);
+    this.grenadeQueued = false;
+
+    const input: PlayerInput = {
+      move,
+      jet: this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown,
+      aimX,
+      aimY,
+      fire: this.fireHeld || (pointer.isDown && pointer.leftButtonDown()),
+      grenade,
+    };
+    this.room.send('input', input);
+  }
+
+  private syncEntities(): void {
+    if (!this.room) return;
+    const seenSoldiers = new Set<string>();
+    const seenBullets = new Set<string>();
+    const seenGrenades = new Set<string>();
+
+    this.room.state.players.forEach((player, id) => {
+      seenSoldiers.add(id);
+      let sprite = this.soldiers.get(id);
+      if (!sprite) {
+        sprite = this.add.image(player.x, player.y, 'soldier') as SoldierSprite;
+        sprite.setDepth(10);
+        this.soldiers.set(id, sprite);
+      }
+      sprite.setPosition(player.x, player.y);
+      sprite.setFlipX(player.facing < 0);
+      sprite.setAlpha(player.alive ? 1 : 0.45);
+      sprite.setTint(this.tintFor(player, id));
+
+      if (player.jetting && player.alive) this.emitJet(player.x, player.y);
+    });
+
+    this.room.state.bullets.forEach((bullet, id) => {
+      seenBullets.add(id);
+      let sprite = this.bullets.get(id);
+      if (!sprite) {
+        sprite = this.add.image(bullet.x, bullet.y, 'bullet');
+        sprite.setDepth(8);
+        this.bullets.set(id, sprite);
+      }
+      sprite.setPosition(bullet.x, bullet.y);
+    });
+
+    this.room.state.grenades.forEach((grenade, id) => {
+      seenGrenades.add(id);
+      let sprite = this.grenades.get(id);
+      if (!sprite) {
+        sprite = this.add.image(grenade.x, grenade.y, 'grenade');
+        sprite.setDepth(9);
+        this.grenades.set(id, sprite);
+      }
+      sprite.setPosition(grenade.x, grenade.y);
+    });
+
+    for (const [id, sprite] of this.soldiers) {
+      if (!seenSoldiers.has(id)) {
+        sprite.destroy();
+        this.soldiers.delete(id);
+      }
     }
-
-    if (pointer.isDown && pointer.leftButtonDown()) {
-      const dir = this.player.aimAt(pointer.worldX, pointer.worldY);
-      this.player.tryFire(dir, this.bullets, this.time.now);
+    for (const [id, sprite] of this.bullets) {
+      if (!seenBullets.has(id)) {
+        sprite.destroy();
+        this.bullets.delete(id);
+      }
+    }
+    for (const [id, sprite] of this.grenades) {
+      if (!seenGrenades.has(id)) {
+        this.spawnExplosion(sprite.x, sprite.y);
+        sprite.destroy();
+        this.grenades.delete(id);
+      }
     }
   }
 
-  private updateBots(delta: number): void {
-    if (this.time.now < this.botThinkAt) {
-      for (const bot of this.bots) {
-        if (!bot.alive) continue;
-        bot.jumpOrJet(false, delta);
-      }
+  private tintFor(player: PlayerState, id: string): number {
+    if (id === this.sessionId) return COLORS.player;
+    if (player.isBot) return COLORS.bot;
+    return COLORS.other;
+  }
+
+  private updateHud(): void {
+    if (!this.room) return;
+    const me = this.room.state.players.get(this.sessionId);
+    if (!me) {
+      this.hud.setText('Waiting for spawn…');
       return;
     }
-    this.botThinkAt = this.time.now + BOT.thinkIntervalMs;
 
-    for (const bot of this.bots) {
-      if (!bot.alive) continue;
+    const others = [...this.room.state.players.entries()]
+      .filter(([id]) => id !== this.sessionId)
+      .map(
+        ([, p]) =>
+          `${p.isBot ? 'BOT' : p.name} ${p.alive ? `${Math.ceil(p.health)}HP` : 'DEAD'}`,
+      );
 
-      const target = this.player.alive
-        ? this.player
-        : this.bots.find((b) => b !== bot && b.alive);
-      if (!target) {
-        bot.moveHorizontal(0);
-        bot.jumpOrJet(false, delta);
-        continue;
-      }
-
-      const dx = target.x - bot.x;
-      const dy = target.y - bot.y;
-      const dist = Math.hypot(dx, dy);
-
-      const moveDir = Math.abs(dx) > 18 ? Math.sign(dx) : 0;
-      bot.moveHorizontal(moveDir);
-
-      const wantsJet = dy < -40 || (!bot.isOnGround && dy < 20);
-      bot.jumpOrJet(wantsJet, delta);
-
-      if (dist < BOT.fireRange) {
-        const aim = bot.aimAt(
-          target.x + Phaser.Math.FloatBetween(-30, 30),
-          target.y + Phaser.Math.FloatBetween(-20, 10),
-        );
-        aim.x += Phaser.Math.FloatBetween(-BOT.aimError, BOT.aimError);
-        aim.y += Phaser.Math.FloatBetween(-BOT.aimError, BOT.aimError);
-        aim.normalize();
-
-        if (Phaser.Math.Between(0, 100) > 55) {
-          bot.tryFire(aim, this.bullets, this.time.now);
-        } else if (dist < 260 && bot.grenades > 0 && Phaser.Math.Between(0, 100) > 92) {
-          bot.tryThrowGrenade(aim, this.grenades, this.time.now);
-        }
-      }
-    }
+    this.hud.setText(
+      [
+        `HP ${this.bar(me.health, PLAYER.maxHealth, 10)} ${Math.ceil(me.health)}`,
+        `FUEL ${this.bar(me.fuel, PLAYER.maxFuel, 10)} ${Math.ceil(me.fuel)}`,
+        `NADES ${me.grenades}/${PLAYER.maxGrenades}`,
+        `KILLS ${me.kills}`,
+        ...others,
+        me.alive ? '' : 'RESPAWNING…',
+        `room ${this.room.roomId.slice(0, 8)}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
   }
 
-  private onBulletHitSoldier: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
-    bulletObj,
-    soldierObj,
-  ) => {
-    const bullet = bulletObj as Phaser.Physics.Arcade.Image;
-    const soldier = soldierObj as Soldier;
-    const owner = bullet.getData('owner') as Soldier | undefined;
-    if (!soldier.alive || owner === soldier) return;
+  private bar(value: number, max: number, width: number): string {
+    const filled = Math.round((value / max) * width);
+    return '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, width - filled));
+  }
 
-    const damage = (bullet.getData('damage') as number) ?? PLAYER.bulletDamage;
-    this.bullets.killAndHide(bullet);
-    const body = bullet.body as Phaser.Physics.Arcade.Body | undefined;
-    if (body) body.enable = false;
-    soldier.takeDamage(damage, owner);
-  };
-
-  private onGrenadeExplode = (grenade: Phaser.Physics.Arcade.Image): void => {
-    if (!grenade.active) return;
-    const owner = grenade.getData('owner') as Soldier | undefined;
-    const damage = (grenade.getData('damage') as number) ?? PLAYER.grenadeDamage;
-    const x = grenade.x;
-    const y = grenade.y;
-
-    this.grenades.killAndHide(grenade);
-    const body = grenade.body as Phaser.Physics.Arcade.Body | undefined;
-    if (body) body.enable = false;
-
-    this.spawnExplosion(x, y);
-
-    for (const s of [this.player, ...this.bots]) {
-      if (!s.alive) continue;
-      const dist = Phaser.Math.Distance.Between(x, y, s.x, s.y);
-      if (dist <= PLAYER.grenadeBlastRadius) {
-        const falloff = 1 - dist / PLAYER.grenadeBlastRadius;
-        s.takeDamage(Math.round(damage * (0.45 + 0.55 * falloff)), owner);
-        const body = s.body as Phaser.Physics.Arcade.Body;
-        const angle = Math.atan2(s.y - y, s.x - x);
-        body.setVelocity(
-          body.velocity.x + Math.cos(angle) * 280 * falloff,
-          body.velocity.y + Math.sin(angle) * 280 * falloff - 80,
-        );
-      }
-    }
-  };
-
-  private onSoldierDied = (soldier: Soldier): void => {
-    this.spawnExplosion(soldier.x, soldier.y, soldier.kind === 'player' ? COLORS.player : COLORS.bot);
-    this.time.delayedCall(PLAYER.respawnDelayMs, () => {
-      if (!soldier.active) return;
-      const spawn = Phaser.Utils.Array.GetRandom(SPAWNS);
-      soldier.respawn(spawn.x, spawn.y);
+  private emitJet(x: number, y: number): void {
+    if (Math.random() > 0.4) return;
+    const p = this.add.image(x, y + 16, 'particle');
+    p.setTint(0x38bdf8);
+    p.setAlpha(0.8);
+    p.setDepth(5);
+    this.tweens.add({
+      targets: p,
+      y: p.y + 18,
+      alpha: 0,
+      scale: 0.2,
+      duration: 180,
+      onComplete: () => p.destroy(),
     });
-  };
+  }
 
   private spawnExplosion(x: number, y: number, tint = 0xfbbf24): void {
     for (let i = 0; i < 10; i++) {
@@ -282,38 +306,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private cullProjectiles(): void {
-    for (const child of this.bullets.getChildren()) {
-      const b = child as Phaser.Physics.Arcade.Image;
-      if (!b.active) continue;
-      if (b.x < -40 || b.x > GAME_WIDTH + 40 || b.y < -40 || b.y > GAME_HEIGHT + 40) {
-        this.bullets.killAndHide(b);
-        const body = b.body as Phaser.Physics.Arcade.Body | undefined;
-        if (body) body.enable = false;
-      }
+  private drawPlatforms(): void {
+    for (const p of PLATFORMS) {
+      const plat = this.add.image(p.x, p.y, 'platform');
+      plat.setDisplaySize(p.w, p.h);
+      plat.setDepth(1);
     }
-  }
-
-  private updateHud(): void {
-    const fuelBar = this.bar(this.player.fuel, PLAYER.maxFuel, 10);
-    const hpBar = this.bar(this.player.health, PLAYER.maxHealth, 10);
-    const botKills = this.bots.reduce((sum, b) => sum + b.kills, 0);
-    this.hud.setText(
-      [
-        `HP ${hpBar} ${Math.ceil(this.player.health)}`,
-        `FUEL ${fuelBar} ${Math.ceil(this.player.fuel)}`,
-        `NADES ${this.player.grenades}/${PLAYER.maxGrenades}`,
-        `KILLS ${this.player.kills}  DEATHS ${botKills}`,
-        this.player.alive ? '' : 'RESPAWNING…',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    );
-  }
-
-  private bar(value: number, max: number, width: number): string {
-    const filled = Math.round((value / max) * width);
-    return '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, width - filled));
   }
 
   private drawBackground(): void {

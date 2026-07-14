@@ -1,6 +1,6 @@
 # blat
 
-Local deathmatch slice of a Soldat-style 2D jetpack shooter, built for the browser.
+Soldat-style 2D jetpack deathmatch in the browser, with a server-authoritative Colyseus room.
 
 ## Play
 
@@ -9,7 +9,10 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints (usually `http://localhost:5173`).
+- Client: http://localhost:5173
+- Server: http://localhost:2567
+
+Open two browser tabs to fight another human. With one tab, two bots fill the arena.
 
 ### Controls
 
@@ -21,14 +24,11 @@ Open the URL Vite prints (usually `http://localhost:5173`).
 | Left click | Shoot |
 | Right click or G | Throw grenade |
 
-Fight two bots in a small arena. Die → respawn after 2 seconds.
-
 ## Stack
 
-- Vite + TypeScript
-- Phaser 4 (Arcade physics)
+- Vite + TypeScript + Phaser 4 (client render / input)
+- Colyseus 0.16 (authoritative simulation + state sync)
 
 ## Next
 
-1. Lift simulation into a Colyseus room (server-authoritative)
-2. Create / join via room code + shareable URL
+Create / join via room code + shareable URL.

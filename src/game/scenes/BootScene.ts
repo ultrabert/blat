@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, PLAYER } from '../constants';
+import { COLORS, PLAYER } from '../../../shared/constants';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
