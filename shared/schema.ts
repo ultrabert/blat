@@ -17,6 +17,8 @@ export class PlayerState extends Schema {
   @type('number') aimX = 1;
   @type('number') aimY = 0;
   @type('boolean') jetting = false;
+  @type('boolean') onGround = false;
+  @type('number') lastProcessedInput = 0;
 }
 
 export class BulletState extends Schema {

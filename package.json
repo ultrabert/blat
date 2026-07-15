@@ -8,6 +8,7 @@
     "dev:client": "vite",
     "dev:server": "tsx watch --tsconfig server/tsconfig.json server/index.ts",
     "build": "tsc && vite build",
+    "start": "tsx --tsconfig server/tsconfig.json server/index.ts",
     "preview": "vite preview"
   },
   "devDependencies": {

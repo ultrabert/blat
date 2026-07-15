@@ -1,7 +1,9 @@
 export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
 export const GRAVITY = 1400;
-export const TICK_MS = 50; // 20 Hz
+export const TICK_MS = 33; // ~30 Hz sim + state patches
+export const INTERP_DELAY_MS = 100;
+export const RECONCILE_SNAP_DIST = 48;
 
 export const PLAYER = {
   speed: 260,
@@ -70,6 +72,7 @@ export const SPAWNS = [
 ];
 
 export type PlayerInput = {
+  seq: number;
   move: number; // -1 | 0 | 1
   jet: boolean;
   aimX: number;

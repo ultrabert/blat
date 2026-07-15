@@ -1,21 +1,21 @@
 import Phaser from 'phaser';
-import { Client, Room } from 'colyseus.js';
+import type { Room } from 'colyseus.js';
 import {
   COLORS,
   GAME_HEIGHT,
   GAME_WIDTH,
   PLATFORMS,
   PLAYER,
-  type PlayerInput,
 } from '../../../shared/constants';
 import type { GameState, PlayerState } from '../../../shared/schema';
+import { PredictionController } from '../net/PredictionController';
+import { ProjectilePredictor } from '../net/ProjectilePredictor';
 
-type SoldierSprite = Phaser.GameObjects.Image & { jetting?: boolean };
-
-const COLYSEUS_URL = import.meta.env.VITE_COLYSEUS_URL ?? 'http://localhost:2567';
+type SoldierSprite = Phaser.GameObjects.Image;
 
 export class GameScene extends Phaser.Scene {
-  private room: Room<GameState> | null = null;
+  private room!: Room<GameState>;
+  private roomCode = '';
   private sessionId = '';
   private soldiers = new Map<string, SoldierSprite>();
   private bullets = new Map<string, Phaser.GameObjects.Image>();
@@ -27,15 +27,20 @@ export class GameScene extends Phaser.Scene {
   private keySpace!: Phaser.Input.Keyboard.Key;
   private keyG!: Phaser.Input.Keyboard.Key;
   private hud!: Phaser.GameObjects.Text;
-  private status!: Phaser.GameObjects.Text;
   private fireHeld = false;
-  private grenadeQueued = false;
+  private prediction = new PredictionController();
+  private projectiles = new ProjectilePredictor();
+  private nowMs = 0;
 
   constructor() {
     super('Game');
   }
 
   create(): void {
+    this.room = this.game.registry.get('room') as Room<GameState>;
+    this.roomCode = (this.game.registry.get('roomCode') as string) || '';
+    this.sessionId = this.room.sessionId;
+
     this.drawBackground();
     this.drawPlatforms();
 
@@ -48,7 +53,7 @@ export class GameScene extends Phaser.Scene {
     this.keyG = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.rightButtonDown() || pointer.button === 2) this.grenadeQueued = true;
+      if (pointer.rightButtonDown() || pointer.button === 2) this.prediction.latchGrenade();
       else this.fireHeld = true;
     });
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
@@ -65,20 +70,11 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
-    this.status = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'Connecting…', {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: '18px',
-        color: COLORS.hud,
-      })
-      .setOrigin(0.5)
-      .setDepth(200);
-
     this.add
       .text(
         16,
         GAME_HEIGHT - 52,
-        'A/D move · W/Space jump/jet · mouse aim · LMB shoot · RMB/G grenade · open 2 tabs to PvP',
+        'A/D move · W/Space jump/jet · mouse aim · LMB shoot · RMB/G grenade',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '13px',
@@ -89,86 +85,61 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100);
 
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    void this.connect();
   }
 
-  update(): void {
-    if (!this.room) return;
-    this.sendInput();
-    this.syncEntities();
-    this.updateHud();
-  }
+  update(_time: number, delta: number): void {
+    if (!this.room?.state?.players) return;
+    this.nowMs += delta;
 
-  private async connect(): Promise<void> {
-    this.status.setVisible(true);
-    this.status.setText('Connecting to server…');
+    if (this.fireHeld) this.prediction.latchFire();
+    if (Phaser.Input.Keyboard.JustDown(this.keyG)) this.prediction.latchGrenade();
 
-    for (let attempt = 1; attempt <= 10; attempt++) {
-      try {
-        const client = new Client(COLYSEUS_URL);
-        const room = await Promise.race([
-          client.joinOrCreate<GameState>('dm', { name: 'Soldier' }),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Join timed out after 5s')), 5000),
-          ),
-        ]);
-        this.room = room;
-        this.sessionId = room.sessionId;
-        this.status.setText('');
-        this.status.setVisible(false);
-        console.log('[blat] joined room', room.roomId, this.sessionId);
-        return;
-      } catch (err) {
-        const message =
-          err instanceof Error
-            ? err.message
-            : typeof err === 'string'
-              ? err
-              : 'WebSocket connection failed';
-        console.error('[blat] connect failed', attempt, message, err);
-        this.status.setText(
-          `Connecting… retry ${attempt}/10\n${message}\n${COLYSEUS_URL}`,
-        );
-        await new Promise((r) => setTimeout(r, 800));
-      }
-    }
-
-    this.status.setText(
-      `Could not connect to ${COLYSEUS_URL}\nStart the stack with: npm run dev`,
-    );
-  }
-
-  private sendInput(): void {
-    if (!this.room) return;
-
+    const serverMe = this.room.state.players.get(this.sessionId);
+    const aim = this.aimFromPointer(serverMe);
     let move = 0;
     if (this.cursors.left.isDown || this.keyA.isDown) move -= 1;
     if (this.cursors.right.isDown || this.keyD.isDown) move += 1;
 
+    if (serverMe && !serverMe.alive) this.projectiles.clear();
+
+    const packets = this.prediction.tick(
+      delta,
+      {
+        move,
+        jet: this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown,
+        aimX: aim.x,
+        aimY: aim.y,
+      },
+      serverMe,
+    );
+    for (const packet of packets) {
+      this.room.send('input', packet);
+      const body = this.prediction.predicted;
+      if (body && packet.fire) this.projectiles.tryFire(body, this.nowMs);
+      if (body && packet.grenade) {
+        this.projectiles.tryGrenade(body, serverMe?.grenades ?? 0, this.nowMs);
+      }
+    }
+
+    this.projectiles.step(delta / 1000, this.nowMs);
+    this.projectiles.match(this.room.state.bullets, this.room.state.grenades, this.sessionId);
+
+    this.syncEntities();
+    this.updateHud(serverMe);
+  }
+
+  private aimFromPointer(serverMe: PlayerState | undefined): { x: number; y: number } {
     const pointer = this.input.activePointer;
-    const me = this.room.state.players.get(this.sessionId);
-    const originX = me?.x ?? GAME_WIDTH / 2;
-    const originY = me?.y ?? GAME_HEIGHT / 2;
-    const aimX = pointer.worldX - originX;
-    const aimY = pointer.worldY - originY;
-
-    const grenade =
-      this.grenadeQueued || Phaser.Input.Keyboard.JustDown(this.keyG);
-    this.grenadeQueued = false;
-
-    const input: PlayerInput = {
-      move,
-      jet: this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown,
-      aimX,
-      aimY,
-      fire: this.fireHeld || (pointer.isDown && pointer.leftButtonDown()),
-      grenade,
+    const originX = this.prediction.predicted?.x ?? serverMe?.x ?? GAME_WIDTH / 2;
+    const originY = this.prediction.predicted?.y ?? serverMe?.y ?? GAME_HEIGHT / 2;
+    return {
+      x: pointer.worldX - originX,
+      y: pointer.worldY - originY,
     };
-    this.room.send('input', input);
   }
 
   private syncEntities(): void {
-    if (!this.room) return;
+    if (!this.room.state.players) return;
     const seenSoldiers = new Set<string>();
     const seenBullets = new Set<string>();
     const seenGrenades = new Set<string>();
@@ -177,19 +148,47 @@ export class GameScene extends Phaser.Scene {
       seenSoldiers.add(id);
       let sprite = this.soldiers.get(id);
       if (!sprite) {
-        sprite = this.add.image(player.x, player.y, 'soldier') as SoldierSprite;
+        sprite = this.add.image(player.x, player.y, 'soldier');
         sprite.setDepth(10);
         this.soldiers.set(id, sprite);
       }
-      sprite.setPosition(player.x, player.y);
-      sprite.setFlipX(player.facing < 0);
-      sprite.setAlpha(player.alive ? 1 : 0.45);
-      sprite.setTint(this.tintFor(player, id));
 
-      if (player.jetting && player.alive) this.emitJet(player.x, player.y);
+      if (id === this.sessionId && this.prediction.predicted) {
+        const local = this.prediction.predicted;
+        sprite.setPosition(local.x, local.y);
+        sprite.setFlipX(local.facing < 0);
+        sprite.setAlpha(local.alive ? 1 : 0.45);
+        sprite.setTint(COLORS.player);
+        if (local.jetting && local.alive) this.emitJet(local.x, local.y);
+      } else {
+        this.prediction.pushRemote(id, player, this.nowMs);
+        const sample = this.prediction.sampleRemote(id, this.nowMs);
+        if (sample) {
+          sprite.setPosition(sample.x, sample.y);
+          sprite.setFlipX(sample.facing < 0);
+          sprite.setAlpha(sample.alpha);
+          sprite.setTint(this.tintFor(player, id));
+          if (sample.jetting && sample.alive) this.emitJet(sample.x, sample.y);
+        } else {
+          sprite.setPosition(player.x, player.y);
+          sprite.setFlipX(player.facing < 0);
+          sprite.setAlpha(player.alive ? 1 : 0.45);
+          sprite.setTint(this.tintFor(player, id));
+        }
+      }
     });
 
-    this.room.state.bullets.forEach((bullet, id) => {
+    this.prediction.pruneRemotes(seenSoldiers);
+
+    this.room.state.bullets?.forEach((bullet, id) => {
+      if (this.projectiles.shouldHideServerBullet(id)) {
+        const existing = this.bullets.get(id);
+        if (existing) {
+          existing.destroy();
+          this.bullets.delete(id);
+        }
+        return;
+      }
       seenBullets.add(id);
       let sprite = this.bullets.get(id);
       if (!sprite) {
@@ -200,7 +199,27 @@ export class GameScene extends Phaser.Scene {
       sprite.setPosition(bullet.x, bullet.y);
     });
 
-    this.room.state.grenades.forEach((grenade, id) => {
+    for (const pred of this.projectiles.visibleBullets()) {
+      const id = pred.id;
+      seenBullets.add(id);
+      let sprite = this.bullets.get(id);
+      if (!sprite) {
+        sprite = this.add.image(pred.x, pred.y, 'bullet');
+        sprite.setDepth(8);
+        this.bullets.set(id, sprite);
+      }
+      sprite.setPosition(pred.x, pred.y);
+    }
+
+    this.room.state.grenades?.forEach((grenade, id) => {
+      if (this.projectiles.shouldHideServerGrenade(id)) {
+        const existing = this.grenades.get(id);
+        if (existing) {
+          existing.destroy();
+          this.grenades.delete(id);
+        }
+        return;
+      }
       seenGrenades.add(id);
       let sprite = this.grenades.get(id);
       if (!sprite) {
@@ -210,6 +229,22 @@ export class GameScene extends Phaser.Scene {
       }
       sprite.setPosition(grenade.x, grenade.y);
     });
+
+    for (const pred of this.projectiles.visibleGrenades()) {
+      const id = pred.id;
+      seenGrenades.add(id);
+      let sprite = this.grenades.get(id);
+      if (!sprite) {
+        sprite = this.add.image(pred.x, pred.y, 'grenade');
+        sprite.setDepth(9);
+        this.grenades.set(id, sprite);
+      }
+      sprite.setPosition(pred.x, pred.y);
+    }
+
+    for (const boom of this.projectiles.takeExplosions()) {
+      this.spawnExplosion(boom.x, boom.y);
+    }
 
     for (const [id, sprite] of this.soldiers) {
       if (!seenSoldiers.has(id)) {
@@ -225,7 +260,8 @@ export class GameScene extends Phaser.Scene {
     }
     for (const [id, sprite] of this.grenades) {
       if (!seenGrenades.has(id)) {
-        this.spawnExplosion(sprite.x, sprite.y);
+        // Server-despawned grenades we were rendering (others / unmatched)
+        if (!id.startsWith('pg_')) this.spawnExplosion(sprite.x, sprite.y);
         sprite.destroy();
         this.grenades.delete(id);
       }
@@ -238,14 +274,14 @@ export class GameScene extends Phaser.Scene {
     return COLORS.other;
   }
 
-  private updateHud(): void {
-    if (!this.room) return;
-    const me = this.room.state.players.get(this.sessionId);
-    if (!me) {
+  private updateHud(serverMe: PlayerState | undefined): void {
+    if (!serverMe) {
       this.hud.setText('Waiting for spawn…');
       return;
     }
 
+    const fuel = this.prediction.predicted?.fuel ?? serverMe.fuel;
+    const nades = Math.max(0, serverMe.grenades - this.projectiles.pendingGrenades());
     const others = [...this.room.state.players.entries()]
       .filter(([id]) => id !== this.sessionId)
       .map(
@@ -255,13 +291,13 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.setText(
       [
-        `HP ${this.bar(me.health, PLAYER.maxHealth, 10)} ${Math.ceil(me.health)}`,
-        `FUEL ${this.bar(me.fuel, PLAYER.maxFuel, 10)} ${Math.ceil(me.fuel)}`,
-        `NADES ${me.grenades}/${PLAYER.maxGrenades}`,
-        `KILLS ${me.kills}`,
+        `HP ${this.bar(serverMe.health, PLAYER.maxHealth, 10)} ${Math.ceil(serverMe.health)}`,
+        `FUEL ${this.bar(fuel, PLAYER.maxFuel, 10)} ${Math.ceil(fuel)}`,
+        `NADES ${nades}/${PLAYER.maxGrenades}`,
+        `KILLS ${serverMe.kills}`,
         ...others,
-        me.alive ? '' : 'RESPAWNING…',
-        `room ${this.room.roomId.slice(0, 8)}`,
+        serverMe.alive ? '' : 'RESPAWNING…',
+        this.roomCode ? `CODE ${this.roomCode}` : '',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -316,8 +352,10 @@ export class GameScene extends Phaser.Scene {
 
   private drawBackground(): void {
     const g = this.add.graphics();
-    g.fillGradientStyle(COLORS.bgTop, COLORS.bgTop, COLORS.bgBottom, COLORS.bgBottom, 1);
+    g.fillStyle(COLORS.bgTop, 1);
     g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    g.fillStyle(COLORS.bgBottom, 0.85);
+    g.fillRect(0, GAME_HEIGHT * 0.55, GAME_WIDTH, GAME_HEIGHT * 0.45);
     g.lineStyle(1, 0xffffff, 0.04);
     for (let x = 0; x < GAME_WIDTH; x += 40) g.lineBetween(x, 0, x, GAME_HEIGHT);
     for (let y = 0; y < GAME_HEIGHT; y += 40) g.lineBetween(0, y, GAME_WIDTH, y);
@@ -325,7 +363,7 @@ export class GameScene extends Phaser.Scene {
 
     this.add
       .text(GAME_WIDTH / 2, 28, 'BLAT', {
-        fontFamily: 'Georgia, "Times New Roman", serif',
+        fontFamily: "Georgia, 'Times New Roman', serif",
         fontSize: '28px',
         color: '#e8eefc',
       })

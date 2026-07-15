@@ -7,7 +7,54 @@
     <title>blat</title>
   </head>
   <body>
-    <div id="game"></div>
+    <div id="lobby">
+      <div class="lobby-panel">
+        <p class="lobby-brand">BLAT</p>
+        <p class="lobby-tag">Jetpack deathmatch · invite friends</p>
+
+        <label class="lobby-label" for="player-name">Name</label>
+        <input id="player-name" class="lobby-input" maxlength="16" placeholder="Soldier" autocomplete="off" />
+
+        <label class="lobby-label" for="access-password">Password</label>
+        <input
+          id="access-password"
+          class="lobby-input"
+          type="password"
+          maxlength="64"
+          placeholder="Shared access password"
+          autocomplete="current-password"
+        />
+
+        <button id="btn-create" class="lobby-btn lobby-btn-primary" type="button">Create game</button>
+
+        <div class="lobby-divider"><span>or join</span></div>
+
+        <label class="lobby-label" for="room-code">Room code</label>
+        <div class="lobby-row">
+          <input
+            id="room-code"
+            class="lobby-input lobby-input-code"
+            maxlength="6"
+            placeholder="ABCD"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="btn-join" class="lobby-btn" type="button">Join</button>
+        </div>
+
+        <p id="lobby-error" class="lobby-error" hidden></p>
+        <p id="lobby-status" class="lobby-status" hidden></p>
+      </div>
+    </div>
+
+    <div id="game-shell" hidden>
+      <div id="room-bar">
+        <span id="room-bar-code"></span>
+        <button id="btn-copy" type="button">Copy link</button>
+      </div>
+      <div id="game"></div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

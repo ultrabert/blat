@@ -8,6 +8,7 @@ import {
   SPAWNS,
   type PlayerInput,
 } from './constants.js';
+import { fellOutOfWorld, stepMovement, type MoveBody } from './physics.js';
 import {
   BulletState,
   GameState,
@@ -15,14 +16,20 @@ import {
   PlayerState,
 } from './schema.js';
 
+const MAX_INPUT_QUEUE = 48;
+/** When buffered, drain extra steps so seqs aren't dropped. */
+const MAX_INPUT_CATCHUP = 3;
+
 type InternalSoldier = {
   state: PlayerState;
   input: PlayerInput;
+  inputQueue: PlayerInput[];
   onGround: boolean;
   lastFireAt: number;
   lastGrenadeAt: number;
   respawnAt: number;
   botThinkAt: number;
+  lastQueuedSeq: number;
 };
 
 type InternalBullet = {
@@ -39,10 +46,6 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
-function len(x: number, y: number): number {
-  return Math.hypot(x, y) || 1;
-}
-
 function randomSpawn(): { x: number; y: number } {
   return SPAWNS[Math.floor(Math.random() * SPAWNS.length)]!;
 }
@@ -50,6 +53,62 @@ function randomSpawn(): { x: number; y: number } {
 let nextEntityId = 1;
 function eid(prefix: string): string {
   return `${prefix}_${nextEntityId++}`;
+}
+
+function toMoveBody(soldier: InternalSoldier): MoveBody {
+  const p = soldier.state;
+  return {
+    x: p.x,
+    y: p.y,
+    vx: p.vx,
+    vy: p.vy,
+    fuel: p.fuel,
+    facing: p.facing,
+    aimX: p.aimX,
+    aimY: p.aimY,
+    jetting: p.jetting,
+    alive: p.alive,
+    onGround: soldier.onGround,
+  };
+}
+
+function fromMoveBody(soldier: InternalSoldier, body: MoveBody): void {
+  const p = soldier.state;
+  p.x = body.x;
+  p.y = body.y;
+  p.vx = body.vx;
+  p.vy = body.vy;
+  p.fuel = body.fuel;
+  p.facing = body.facing;
+  p.aimX = body.aimX;
+  p.aimY = body.aimY;
+  p.jetting = body.jetting;
+  p.onGround = body.onGround;
+  soldier.onGround = body.onGround;
+}
+
+function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
+  return {
+    seq,
+    move: clamp(Math.round(input.move), -1, 1),
+    jet: !!input.jet,
+    aimX: input.aimX,
+    aimY: input.aimY,
+    fire: !!input.fire,
+    grenade: !!input.grenade,
+  };
+}
+
+function idleInput(seq = 0): PlayerInput {
+  return {
+    seq,
+    move: 0,
+    jet: false,
+    aimX: 1,
+    aimY: 0,
+    fire: false,
+    grenade: false,
+  };
 }
 
 export class Simulation {
@@ -72,15 +131,19 @@ export class Simulation {
     p.fuel = PLAYER.maxFuel;
     p.grenades = PLAYER.maxGrenades;
     p.alive = true;
+    p.onGround = false;
+    p.lastProcessedInput = 0;
     this.state.players.set(id, p);
     this.soldiers.set(id, {
       state: p,
-      input: { move: 0, jet: false, aimX: 1, aimY: 0, fire: false, grenade: false },
+      input: idleInput(0),
+      inputQueue: [],
       onGround: false,
       lastFireAt: 0,
       lastGrenadeAt: 0,
       respawnAt: 0,
       botThinkAt: 0,
+      lastQueuedSeq: 0,
     });
     return p;
   }
@@ -99,14 +162,13 @@ export class Simulation {
   setInput(id: string, input: PlayerInput): void {
     const s = this.soldiers.get(id);
     if (!s || s.state.isBot) return;
-    s.input = {
-      move: clamp(Math.round(input.move), -1, 1),
-      jet: !!input.jet,
-      aimX: input.aimX,
-      aimY: input.aimY,
-      fire: !!input.fire,
-      grenade: !!input.grenade,
-    };
+    const seq = Number(input.seq) || 0;
+    // Ignore duplicates / already-acked / already-queued
+    if (seq <= s.state.lastProcessedInput || seq <= s.lastQueuedSeq) return;
+    if (s.inputQueue.length >= MAX_INPUT_QUEUE) return;
+
+    s.lastQueuedSeq = seq;
+    s.inputQueue.push(normalizeInput(input, seq));
   }
 
   ensureBots(desired: number): void {
@@ -127,8 +189,21 @@ export class Simulation {
     const dt = dtMs / 1000;
 
     for (const soldier of this.soldiers.values()) {
-      if (soldier.state.isBot) this.updateBotBrain(soldier);
-      this.stepSoldier(soldier, dt);
+      if (soldier.state.isBot) {
+        this.updateBotBrain(soldier);
+        this.stepSoldier(soldier, dt);
+        continue;
+      }
+
+      // Drain backlog so each seq is simulated once (prediction-safe).
+      const queued = soldier.inputQueue.length;
+      const steps =
+        queued === 0 ? 1 : Math.min(Math.max(1, queued), MAX_INPUT_CATCHUP);
+      for (let i = 0; i < steps; i++) {
+        this.consumeNextInput(soldier);
+        this.stepSoldier(soldier, dt);
+        if (!soldier.state.alive) break;
+      }
     }
 
     for (const bullet of [...this.bullets.values()]) {
@@ -140,17 +215,34 @@ export class Simulation {
     }
   }
 
+  /** Pop next queued input, or hold last (with fire/grenade cleared). */
+  private consumeNextInput(soldier: InternalSoldier): void {
+    const next = soldier.inputQueue.shift();
+    if (next) {
+      soldier.input = next;
+      soldier.state.lastProcessedInput = next.seq;
+      return;
+    }
+    // Hold movement/aim, but don't re-fire on empty ticks
+    soldier.input = {
+      ...soldier.input,
+      fire: false,
+      grenade: false,
+    };
+  }
+
   private updateBotBrain(bot: InternalSoldier): void {
     if (!bot.state.alive) {
-      bot.input = { move: 0, jet: false, aimX: 1, aimY: 0, fire: false, grenade: false };
+      bot.input = idleInput(bot.state.lastProcessedInput);
       return;
     }
     if (this.now < bot.botThinkAt) return;
     bot.botThinkAt = this.now + BOT.thinkIntervalMs;
 
-    const target = [...this.soldiers.values()].find(
-      (s) => s !== bot && s.state.alive && !s.state.isBot,
-    ) ?? [...this.soldiers.values()].find((s) => s !== bot && s.state.alive);
+    const target =
+      [...this.soldiers.values()].find(
+        (s) => s !== bot && s.state.alive && !s.state.isBot,
+      ) ?? [...this.soldiers.values()].find((s) => s !== bot && s.state.alive);
 
     if (!target) {
       bot.input.move = 0;
@@ -174,50 +266,20 @@ export class Simulation {
     const p = soldier.state;
 
     if (!p.alive) {
-      p.vy += GRAVITY * dt;
-      p.y += p.vy * dt;
-      p.x += p.vx * dt;
+      const body = toMoveBody(soldier);
+      stepMovement(body, soldier.input, dt);
+      fromMoveBody(soldier, body);
       if (soldier.respawnAt && this.now >= soldier.respawnAt) {
         this.respawn(soldier);
       }
       return;
     }
 
-    const aimLen = len(soldier.input.aimX, soldier.input.aimY);
-    p.aimX = soldier.input.aimX / aimLen;
-    p.aimY = soldier.input.aimY / aimLen;
-    if (p.aimX !== 0) p.facing = p.aimX >= 0 ? 1 : -1;
+    const body = toMoveBody(soldier);
+    stepMovement(body, soldier.input, dt);
+    fromMoveBody(soldier, body);
 
-    if (soldier.input.move !== 0) {
-      p.vx = soldier.input.move * PLAYER.speed;
-      p.facing = soldier.input.move > 0 ? 1 : -1;
-    } else {
-      const drag = PLAYER.dragX * dt;
-      if (Math.abs(p.vx) <= drag) p.vx = 0;
-      else p.vx -= Math.sign(p.vx) * drag;
-    }
-
-    p.jetting = false;
-    if (soldier.input.jet && soldier.onGround && p.vy >= -10) {
-      p.vy = PLAYER.jumpVelocity;
-      soldier.onGround = false;
-    } else if (soldier.input.jet && p.fuel > 0) {
-      p.vy += PLAYER.jetAcceleration * dt;
-      p.fuel = Math.max(0, p.fuel - PLAYER.fuelBurnRate * dt);
-      p.jetting = true;
-    } else {
-      p.fuel = Math.min(PLAYER.maxFuel, p.fuel + PLAYER.fuelRegenRate * dt);
-    }
-
-    p.vy += GRAVITY * dt;
-    p.vx = clamp(p.vx, -PLAYER.maxVelocityX, PLAYER.maxVelocityX);
-    p.vy = clamp(p.vy, -PLAYER.maxVelocityY, PLAYER.maxVelocityY);
-
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    this.collideSoldier(soldier);
-
-    if (p.y > GAME_HEIGHT + 40) {
+    if (fellOutOfWorld(body) || p.y > GAME_HEIGHT + 40) {
       this.kill(soldier, undefined);
       return;
     }
@@ -225,44 +287,8 @@ export class Simulation {
     if (soldier.input.fire) this.tryFire(soldier);
     if (soldier.input.grenade) this.tryGrenade(soldier);
 
-    // one-shot actions
     soldier.input.fire = false;
     soldier.input.grenade = false;
-  }
-
-  private collideSoldier(soldier: InternalSoldier): void {
-    const p = soldier.state;
-    const halfW = (PLAYER.width - 4) / 2;
-    const halfH = (PLAYER.height - 2) / 2;
-    soldier.onGround = false;
-
-    p.x = clamp(p.x, halfW, GAME_WIDTH - halfW);
-
-    for (const plat of PLATFORMS) {
-      const left = plat.x - plat.w / 2;
-      const right = plat.x + plat.w / 2;
-      const top = plat.y - plat.h / 2;
-      const bottom = plat.y + plat.h / 2;
-
-      const sx = p.x;
-      const sy = p.y;
-      const playerLeft = sx - halfW;
-      const playerRight = sx + halfW;
-      const playerTop = sy - halfH;
-      const playerBottom = sy + halfH;
-
-      if (playerRight <= left || playerLeft >= right || playerBottom <= top || playerTop >= bottom) {
-        continue;
-      }
-
-      // Prefer landing on top when falling
-      const overlapTop = playerBottom - top;
-      if (p.vy >= 0 && overlapTop > 0 && overlapTop <= 18 + Math.abs(p.vy) * 0.05) {
-        p.y = top - halfH;
-        p.vy = 0;
-        soldier.onGround = true;
-      }
-    }
   }
 
   private tryFire(soldier: InternalSoldier): void {
@@ -335,7 +361,6 @@ export class Simulation {
     g.x += g.vx * dt;
     g.y += g.vy * dt;
 
-    // bounce on platforms
     for (const plat of PLATFORMS) {
       const left = plat.x - plat.w / 2;
       const right = plat.x + plat.w / 2;
@@ -394,6 +419,7 @@ export class Simulation {
     soldier.state.vy = -220;
     if (killer && killer !== soldier) killer.state.kills += 1;
     soldier.respawnAt = this.now + PLAYER.respawnDelayMs;
+    this.clearInputQueue(soldier);
   }
 
   private respawn(soldier: InternalSoldier): void {
@@ -407,7 +433,15 @@ export class Simulation {
     p.y = spawn.y;
     p.vx = 0;
     p.vy = 0;
+    p.onGround = false;
     soldier.respawnAt = 0;
     soldier.onGround = false;
+    this.clearInputQueue(soldier);
+  }
+
+  private clearInputQueue(soldier: InternalSoldier): void {
+    soldier.inputQueue.length = 0;
+    soldier.input = idleInput(soldier.state.lastProcessedInput);
+    soldier.lastQueuedSeq = soldier.state.lastProcessedInput;
   }
 }

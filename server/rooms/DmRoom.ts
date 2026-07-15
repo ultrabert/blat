@@ -1,13 +1,38 @@
 import { Room, Client } from 'colyseus';
 import { TICK_MS, type PlayerInput } from '../../shared/constants.js';
+import { normalizeRoomCode } from '../../shared/roomCode.js';
 import { GameState } from '../../shared/schema.js';
 import { Simulation } from '../../shared/simulation.js';
+
+type JoinOptions = {
+  code?: string;
+  name?: string;
+  password?: string;
+};
+
+function assertPassword(options: JoinOptions): void {
+  const expected = process.env.BLAT_PASSWORD;
+  if (!expected) return;
+  if (options.password !== expected) {
+    throw new Error('Wrong password');
+  }
+}
 
 export class DmRoom extends Room<GameState> {
   maxClients = 4;
   private sim!: Simulation;
+  roomCode = '';
 
-  onCreate(): void {
+  onCreate(options: JoinOptions = {}): void {
+    assertPassword(options);
+
+    const code = normalizeRoomCode(options.code || '');
+    if (!code) {
+      throw new Error('Room code required');
+    }
+
+    this.roomCode = code;
+    this.setMetadata({ code });
     this.setState(new GameState());
     this.sim = new Simulation(this.state);
     this.sim.ensureBots(2);
@@ -16,21 +41,29 @@ export class DmRoom extends Room<GameState> {
       this.sim.setInput(client.sessionId, message);
     });
 
+    this.setPatchRate(TICK_MS);
     this.setSimulationInterval((deltaTime) => {
       this.sim.step(deltaTime || TICK_MS);
       const humans = [...this.sim.soldiers.values()].filter((s) => !s.state.isBot).length;
       this.sim.ensureBots(humans >= 2 ? 0 : 2);
     }, TICK_MS);
+
+    console.log(`[dm] room created code=${code} id=${this.roomId}`);
   }
 
-  onJoin(client: Client, options: { name?: string } = {}): void {
+  onAuth(_client: Client, options: JoinOptions = {}): boolean {
+    assertPassword(options);
+    return true;
+  }
+
+  onJoin(client: Client, options: JoinOptions = {}): void {
     const name = (options.name || `Player`).slice(0, 16);
     this.sim.addPlayer(client.sessionId, name, false);
-    console.log(`[dm] ${client.sessionId} joined as ${name}`);
+    console.log(`[dm] ${client.sessionId} joined ${this.roomCode} as ${name}`);
   }
 
   onLeave(client: Client): void {
     this.sim.removePlayer(client.sessionId);
-    console.log(`[dm] ${client.sessionId} left`);
+    console.log(`[dm] ${client.sessionId} left ${this.roomCode}`);
   }
 }
