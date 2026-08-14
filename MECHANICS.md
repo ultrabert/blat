@@ -282,7 +282,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C6  
 **Tags:** `@mechanic soldier-read`  
-**Description:** Painted kits with a dark silhouette so figures read on dirt. Held guns are crisp vector props (light barrel, dark outline, bright muzzle pip) that track true aim; idle only dips a few degrees. Vest is a cool shade, not a pale wash. Cosmetic only — hitboxes stay on the sim capsule.  
+**Description:** Painted kits with a thin dark edge so figures read on dirt. Held guns are blued-steel vector props with a small brass muzzle that tracks true aim; idle only dips a few degrees. Vest is a cool shade, not a pale wash. Cosmetic only — hitboxes stay on the sim capsule.  
 **Files:** `src/game/StickSoldier.ts`, `src/game/skins.ts`
 
 ## Mechanic: scenery-parallax

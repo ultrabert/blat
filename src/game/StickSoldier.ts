@@ -65,9 +65,19 @@ type VerletStick = {
 const HEAD_DISPLAY = 17;
 const TORSO_W = 16;
 const LIMB_THICK = 8.8;
-const SILHOUETTE = 0x0b0e14;
+const SILHOUETTE = 0x12151c;
+const SILHOUETTE_PAD = 1.45;
+const SILHOUETTE_A = 0.7;
 /** Cool vest shade — readable armor, not a pale wash over the kit. */
 const VEST_TINT = 0x6d8aa8;
+
+/** Blued / parkerized steel — readable without going chrome-white. */
+const GUN_EDGE = 0x14181e;
+const GUN_BARREL = 0x4a525c;
+const GUN_RECEIVER = 0x2c323a;
+const GUN_GRIP = 0x3a3530;
+const GUN_HIGHLIGHT = 0x8a939e;
+const GUN_MUZZLE = 0xb8a57a;
 
 /** Held weapon display length (px) + grip/fore distances along barrel from pivot. */
 const HOLD_RIFLE = { len: 30, grip: 4, fore: 13 };
@@ -598,17 +608,17 @@ export class StickSoldier {
 
   private drawSilhouette(pose: Pose, includeHead: boolean): void {
     const g = this.fallbackGfx;
-    const w = LIMB_THICK + 3.8;
-    strokeSeg(g, pose.hip, pose.shoulder, w + 0.6, SILHOUETTE, 0.96);
-    strokeSeg(g, pose.hip, pose.lKnee, w, SILHOUETTE, 0.96);
-    strokeSeg(g, pose.lKnee, pose.lFoot, w - 0.4, SILHOUETTE, 0.96);
-    strokeSeg(g, pose.hip, pose.rKnee, w, SILHOUETTE, 0.96);
-    strokeSeg(g, pose.rKnee, pose.rFoot, w - 0.4, SILHOUETTE, 0.96);
-    strokeSeg(g, pose.shoulder, pose.offHand, w - 0.8, SILHOUETTE, 0.96);
-    strokeSeg(g, pose.shoulder, pose.gunHand, w - 0.4, SILHOUETTE, 0.96);
+    const w = LIMB_THICK + SILHOUETTE_PAD;
+    strokeSeg(g, pose.hip, pose.shoulder, w + 0.3, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(g, pose.hip, pose.lKnee, w, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(g, pose.lKnee, pose.lFoot, w - 0.2, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(g, pose.hip, pose.rKnee, w, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(g, pose.rKnee, pose.rFoot, w - 0.2, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(g, pose.shoulder, pose.offHand, w - 0.4, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(g, pose.shoulder, pose.gunHand, w - 0.2, SILHOUETTE, SILHOUETTE_A);
     if (includeHead) {
-      g.fillStyle(SILHOUETTE, 0.96);
-      g.fillCircle(pose.head.x, pose.head.y, HEAD_DISPLAY * 0.5 + 2.2);
+      g.fillStyle(SILHOUETTE, SILHOUETTE_A);
+      g.fillCircle(pose.head.x, pose.head.y, HEAD_DISPLAY * 0.5 + 1.0);
     }
   }
 
@@ -623,7 +633,7 @@ export class StickSoldier {
     this.paintGun(pivot, rot, hold, gunKind(view.weapon), tuck ? 0.88 : 1);
   }
 
-  /** Crisp vector gun — dark outline, light barrel, bright muzzle pip. */
+  /** Crisp vector gun — blued steel, thin edge, small brass muzzle. */
   private paintGun(
     pivot: Pt,
     rot: number,
@@ -648,19 +658,19 @@ export class StickSoldier {
     const muzzleAlong = hold.len - hold.grip + 3;
     const stockAlong = -hold.grip - 3;
     const barrelW =
-      kind === 'shot' || kind === 'launch' ? 4.6 : kind === 'sniper' || kind === 'bow' ? 2.6 : kind === 'pistol' ? 3.0 : 3.4;
-    const outlineW = barrelW + 2.4;
+      kind === 'shot' || kind === 'launch' ? 4.4 : kind === 'sniper' || kind === 'bow' ? 2.5 : kind === 'pistol' ? 2.9 : 3.2;
+    const outlineW = barrelW + 1.15;
     const stock = at(stockAlong);
     const muzzle = at(muzzleAlong);
-    const tip = at(muzzleAlong + 6);
+    const tip = at(muzzleAlong + 5);
 
     if (kind === 'melee') {
       const blade = at(hold.len + 2);
       const hilt = at(-2);
-      strokeSeg(g, hilt, blade, 4.6, SILHOUETTE, alpha);
-      strokeSeg(g, hilt, blade, 2.2, 0xe8edf4, alpha);
-      g.fillStyle(0xfff4c4, alpha);
-      g.fillCircle(blade.x, blade.y, 2.1);
+      strokeSeg(g, hilt, blade, 3.6, GUN_EDGE, alpha);
+      strokeSeg(g, hilt, blade, 2.0, GUN_HIGHLIGHT, alpha);
+      g.fillStyle(GUN_MUZZLE, alpha);
+      g.fillCircle(blade.x, blade.y, 1.5);
       return;
     }
 
@@ -668,57 +678,59 @@ export class StickSoldier {
       const nockF = at(muzzleAlong + 1, -7);
       const nockB = at(stockAlong - 1, -7);
       const grip = at(0, 1);
-      strokeSeg(g, nockB, grip, 3.8, SILHOUETTE, alpha);
-      strokeSeg(g, grip, nockF, 3.8, SILHOUETTE, alpha);
-      strokeSeg(g, nockB, grip, 2.0, 0xc4a574, alpha);
-      strokeSeg(g, grip, nockF, 2.0, 0xc4a574, alpha);
-      strokeSeg(g, nockB, nockF, 1.4, SILHOUETTE, alpha);
-      strokeSeg(g, nockB, nockF, 0.9, 0xf3efe6, alpha);
-      g.fillStyle(0xfff4c4, alpha);
-      g.fillCircle(nockF.x, nockF.y, 2.0);
+      strokeSeg(g, nockB, grip, 3.2, GUN_EDGE, alpha);
+      strokeSeg(g, grip, nockF, 3.2, GUN_EDGE, alpha);
+      strokeSeg(g, nockB, grip, 1.8, 0x8a6a45, alpha);
+      strokeSeg(g, grip, nockF, 1.8, 0x8a6a45, alpha);
+      strokeSeg(g, nockB, nockF, 1.2, GUN_EDGE, alpha);
+      strokeSeg(g, nockB, nockF, 0.7, 0xc8b896, alpha);
+      g.fillStyle(GUN_MUZZLE, alpha);
+      g.fillCircle(nockF.x, nockF.y, 1.5);
       return;
     }
 
-    // Outline then metal barrel
-    strokeSeg(g, stock, muzzle, outlineW, SILHOUETTE, alpha);
-    strokeSeg(g, stock, muzzle, barrelW, 0xe4eaf2, alpha);
+    strokeSeg(g, stock, muzzle, outlineW, GUN_EDGE, alpha);
+    strokeSeg(g, stock, muzzle, barrelW, GUN_BARREL, alpha);
 
-    // Receiver / handguard block near the grip
     const recA = at(-1, 0);
     const recB = at(kind === 'pistol' ? 5 : 8, 0);
-    strokeSeg(g, recA, recB, barrelW + 1.6, 0x4b5568, alpha);
+    strokeSeg(g, recA, recB, barrelW + 1.2, GUN_RECEIVER, alpha);
 
-    // Pistol grip / mag hanging toward the feet
     if (kind === 'pistol') {
-      strokeSeg(g, at(0, 0), at(-1.5, 6.5), 3.6, SILHOUETTE, alpha);
-      strokeSeg(g, at(0, 0), at(-1.5, 6.5), 2.2, 0x5b6573, alpha);
+      strokeSeg(g, at(0, 0), at(-1.5, 6.5), 3.2, GUN_EDGE, alpha);
+      strokeSeg(g, at(0, 0), at(-1.5, 6.5), 2.0, GUN_GRIP, alpha);
     } else if (kind !== 'launch') {
-      strokeSeg(g, at(3, 0.5), at(3, 4.5), 3.2, SILHOUETTE, alpha);
-      strokeSeg(g, at(3, 0.5), at(3, 4.5), 2.0, 0x3f4654, alpha);
+      strokeSeg(g, at(3, 0.5), at(3, 4.5), 2.8, GUN_EDGE, alpha);
+      strokeSeg(g, at(3, 0.5), at(3, 4.5), 1.8, GUN_GRIP, alpha);
     }
 
     if (kind === 'sniper') {
       const sc = at(10, -3.2);
-      g.fillStyle(SILHOUETTE, alpha);
-      g.fillCircle(sc.x, sc.y, 3.4);
-      g.fillStyle(0x9aa7b8, alpha);
-      g.fillCircle(sc.x, sc.y, 2.1);
+      g.fillStyle(GUN_EDGE, alpha);
+      g.fillCircle(sc.x, sc.y, 2.8);
+      g.fillStyle(0x3d4550, alpha);
+      g.fillCircle(sc.x, sc.y, 1.7);
     }
 
     if (kind === 'shot') {
-      strokeSeg(g, at(muzzleAlong - 8, -1.6), at(muzzleAlong, -1.6), 2.2, 0xc5ccd6, alpha);
+      strokeSeg(g, at(muzzleAlong - 8, -1.5), at(muzzleAlong, -1.5), 1.8, 0x5a636e, alpha);
     }
 
-    // Top-edge shine so the barrel reads as a cylinder
-    strokeSeg(g, at(stockAlong + 4, -barrelW * 0.28), at(muzzleAlong - 2, -barrelW * 0.28), 1.15, 0xffffff, alpha * 0.55);
+    strokeSeg(
+      g,
+      at(stockAlong + 4, -barrelW * 0.28),
+      at(muzzleAlong - 3, -barrelW * 0.28),
+      0.85,
+      GUN_HIGHLIGHT,
+      alpha * 0.32,
+    );
 
-    // Muzzle pip + tick past the barrel — the "where is it pointed" cue
-    strokeSeg(g, muzzle, tip, 2.4, SILHOUETTE, alpha);
-    strokeSeg(g, muzzle, tip, 1.35, 0xfff4c4, alpha);
-    g.fillStyle(SILHOUETTE, alpha);
-    g.fillCircle(muzzle.x, muzzle.y, 3.1);
-    g.fillStyle(0xfff4c4, alpha);
-    g.fillCircle(muzzle.x, muzzle.y, 2.05);
+    strokeSeg(g, muzzle, tip, 1.7, GUN_EDGE, alpha);
+    strokeSeg(g, muzzle, tip, 0.95, GUN_MUZZLE, alpha);
+    g.fillStyle(GUN_EDGE, alpha);
+    g.fillCircle(muzzle.x, muzzle.y, 2.15);
+    g.fillStyle(GUN_MUZZLE, alpha);
+    g.fillCircle(muzzle.x, muzzle.y, 1.25);
   }
 
   private drawFallbackStick(pose: Pose, view: StickView): void {
@@ -867,18 +879,18 @@ export class StickSoldier {
     const includeHead = view.deathKind !== 'head';
     const wpt = (i: number): Pt => ({ x: n[i]!.x, y: n[i]!.y });
 
-    const silW = LIMB_THICK + 3.8;
-    strokeSeg(this.fallbackGfx, wpt(1), wpt(2), silW + 0.6, SILHOUETTE, 0.96);
-    strokeSeg(this.fallbackGfx, wpt(2), wpt(5), silW, SILHOUETTE, 0.96);
-    strokeSeg(this.fallbackGfx, wpt(5), wpt(7), silW - 0.4, SILHOUETTE, 0.96);
-    strokeSeg(this.fallbackGfx, wpt(2), wpt(6), silW, SILHOUETTE, 0.96);
-    strokeSeg(this.fallbackGfx, wpt(6), wpt(8), silW - 0.4, SILHOUETTE, 0.96);
-    strokeSeg(this.fallbackGfx, wpt(1), wpt(4), silW - 0.8, SILHOUETTE, 0.96);
-    strokeSeg(this.fallbackGfx, wpt(1), wpt(3), silW - 0.4, SILHOUETTE, 0.96);
+    const silW = LIMB_THICK + SILHOUETTE_PAD;
+    strokeSeg(this.fallbackGfx, wpt(1), wpt(2), silW + 0.3, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(this.fallbackGfx, wpt(2), wpt(5), silW, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(this.fallbackGfx, wpt(5), wpt(7), silW - 0.2, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(this.fallbackGfx, wpt(2), wpt(6), silW, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(this.fallbackGfx, wpt(6), wpt(8), silW - 0.2, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(this.fallbackGfx, wpt(1), wpt(4), silW - 0.4, SILHOUETTE, SILHOUETTE_A);
+    strokeSeg(this.fallbackGfx, wpt(1), wpt(3), silW - 0.2, SILHOUETTE, SILHOUETTE_A);
     if (includeHead) {
-      strokeSeg(this.fallbackGfx, wpt(0), wpt(1), silW - 1, SILHOUETTE, 0.96);
-      this.fallbackGfx.fillStyle(SILHOUETTE, 0.96);
-      this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, HEAD_DISPLAY * 0.5 + 2.2);
+      strokeSeg(this.fallbackGfx, wpt(0), wpt(1), silW - 0.5, SILHOUETTE, SILHOUETTE_A);
+      this.fallbackGfx.fillStyle(SILHOUETTE, SILHOUETTE_A);
+      this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, HEAD_DISPLAY * 0.5 + 1.0);
     }
 
     const gunRot = ang(n[3]!.x - n[1]!.x, n[3]!.y - n[1]!.y);
