@@ -9,7 +9,7 @@ import {
   PLATFORMS,
   PLAYER,
   RAMPS,
-  TERRAIN_FILLS,
+  TERRAIN_POLYS,
   VIEW_HEIGHT,
   VIEW_WIDTH,
 } from '../../../shared/constants';
@@ -1113,17 +1113,8 @@ export class GameScene extends Phaser.Scene {
 
   private drawRamps(): void {
     const g = this.add.graphics().setDepth(0.85);
+    g.lineStyle(3, 0x1a1208, 0.7);
     for (const r of RAMPS) {
-      const thick = 36;
-      g.fillStyle(0x6b5344, 0.95);
-      g.beginPath();
-      g.moveTo(r.ax, r.ay);
-      g.lineTo(r.bx, r.by);
-      g.lineTo(r.bx, r.by + thick);
-      g.lineTo(r.ax, r.ay + thick);
-      g.closePath();
-      g.fillPath();
-      g.lineStyle(2, 0x1a1208, 0.55);
       g.beginPath();
       g.moveTo(r.ax, r.ay);
       g.lineTo(r.bx, r.by);
@@ -1172,19 +1163,18 @@ export class GameScene extends Phaser.Scene {
 
   private drawTerrain(): void {
     const g = this.add.graphics().setDepth(-5);
-    const useDirt = this.textures.exists('terrain_dirt');
-    for (const t of TERRAIN_FILLS) {
-      if (useDirt && t.w > 100) {
-        const tile = this.add.tileSprite(t.x, t.y, t.w, t.h, 'terrain_dirt');
-        tile.setDepth(-5);
-        tile.setTint(0x8b6914);
-        tile.setAlpha(0.85);
-      } else {
-        g.fillStyle(0x152238, 1);
-        g.fillRect(t.x - t.w / 2, t.y - t.h / 2, t.w, t.h);
-        g.fillStyle(0x1e314c, 0.55);
-        g.fillRect(t.x - t.w / 2, t.y - t.h / 2, t.w, Math.min(28, t.h * 0.12));
+    for (const poly of TERRAIN_POLYS) {
+      if (poly.length < 3) continue;
+      g.fillStyle(0x3d2a1a, 0.92);
+      g.beginPath();
+      g.moveTo(poly[0]!.x, poly[0]!.y);
+      for (let i = 1; i < poly.length; i++) {
+        g.lineTo(poly[i]!.x, poly[i]!.y);
       }
+      g.closePath();
+      g.fillPath();
+      g.lineStyle(2, 0x1a1208, 0.35);
+      g.strokePath();
     }
   }
 

@@ -74,7 +74,7 @@ describe('match-modes', () => {
 
   it('objectives-sit-on-ridge', () => {
     assert.ok(inRadius(OBJECTIVES.flagAlpha.x, OBJECTIVES.flagAlpha.y, 180, 280, 1));
-    assert.ok(inRadius(OBJECTIVES.point.x, OBJECTIVES.point.y, 1280, 740, 1));
+    assert.ok(inRadius(OBJECTIVES.point.x, OBJECTIVES.point.y, 1280, 830, 1));
     assert.ok(OBJECTIVES.infil.x < 400);
   });
 });

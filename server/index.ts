@@ -39,7 +39,7 @@ app.get('/api/rooms', async (_req, res) => {
           code: String(r.metadata?.code || ''),
           mode: String(r.metadata?.mode || 'dm'),
           realistic: !!r.metadata?.realistic,
-          map: String(r.metadata?.map || 'Ridge'),
+          map: String(r.metadata?.map || 'Arena'),
           clients: r.clients,
           maxClients: r.maxClients,
         })),

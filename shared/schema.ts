@@ -105,7 +105,7 @@ export class GameState extends Schema {
   @type({ map: PickupState }) pickups = new MapSchema<PickupState>();
   @type([KillFeedEntry]) killFeed = new ArraySchema<KillFeedEntry>();
   @type([ChatEntry]) chat = new ArraySchema<ChatEntry>();
-  @type('string') mapName = 'Ridge';
+  @type('string') mapName = 'Arena';
   @type('string') mode = 'dm';
   @type('boolean') realistic = false;
   @type('number') alphaScore = 0;

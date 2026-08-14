@@ -17,6 +17,7 @@ import {
   playerHalfExtents,
 } from './constants.js';
 import { pickAntiCampSpawn } from './spawns.js';
+import { traceBullet } from './trace.js';
 
 describe('arena-map', () => {
   it('map-is-taller-than-the-viewport-and-has-sky-and-caves', () => {
@@ -26,6 +27,10 @@ describe('arena-map', () => {
     assert.ok(Math.min(...ys) < 80, 'need sky pads');
     assert.ok(Math.max(...ys) > 1100, 'need cave floors');
     assert.ok(RAMPS.length >= 8, 'need cave ramps plus hills');
+    assert.ok(
+      RAMPS.some((r) => Math.abs(r.by - r.ay) > 80),
+      'bowl needs real slopes, not flat decks',
+    );
     const midCover = COVERS.find((c) => c.x === 1280 && c.y === 492);
     assert.ok(midCover, 'peek tests still use the mid bunker');
     const skyPlat = PLATFORMS.find((p) => p.x === 1280 && p.y === 160);
@@ -92,5 +97,17 @@ describe('arena-map', () => {
         );
       }
     }
+  });
+
+  it('slopes-block-bullets', () => {
+    const ramp = RAMPS.find((r) => r.ax === 400 && r.bx === 640);
+    assert.ok(ramp, 'left bowl ramp');
+    const x = 520;
+    const t = (x - ramp!.ax) / (ramp!.bx - ramp!.ax);
+    const y = ramp!.ay + t * (ramp!.by - ramp!.ay);
+    const hit = traceBullet(x, y - 80, x, y + 80, [], 'tester');
+    assert.ok(hit, 'shot through the slope should hit');
+    assert.equal(hit!.kind, 'platform');
+    assert.ok(Math.abs(hit!.y - y) < 4, `hit y=${hit!.y} ramp y=${y}`);
   });
 });

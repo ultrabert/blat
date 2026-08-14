@@ -75,8 +75,8 @@ describe('soldat-bonuses', () => {
   });
 
   it('berserk-walks-faster', () => {
-    const plain = body({ onGround: true, y: 800, berserk: false });
-    const hot = body({ onGround: true, y: 800, berserk: true });
+    const plain = body({ onGround: true, x: 360, y: 292, berserk: false });
+    const hot = body({ onGround: true, x: 360, y: 292, berserk: true });
     for (let i = 0; i < 12; i++) {
       stepMovement(plain, input({ move: 1 }), 1 / 30);
       stepMovement(hot, input({ move: 1 }), 1 / 30);
@@ -89,8 +89,8 @@ describe('soldat-bonuses', () => {
     const state = new GameState();
     const sim = new Simulation(state, { mode: 'dm' });
     const p = sim.addPlayer('a', 'A');
-    p.x = 500;
-    p.y = 540;
+    p.x = 640;
+    p.y = 450;
     for (let i = 0; i < 8; i++) sim.step(16);
     assert.equal(p.bonus, 'berserk');
     assert.ok(p.bonusUntil > 0);

@@ -12,7 +12,7 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 | # | Aspect | Soldat | Blat now | Why it matters |
 |---|---|---|---|---|
 | A1 | Jet as hover-strafe | Feather thrust, hang, ceiling slide, long air time | **Shipped** — thrust > gravity, ~5s fuel, jet strafe, ceiling slide. Grounded later if preferred. | Soldat’s fun *is* aerial gunplay. |
-| A2 | Inertia + slopes | Polygon ramps; you slide, kick, carry speed | **Shipped** — ground accel/brake; arcade `RAMPS` you can stand and slide on | Movement skill ceiling. Can fake ramps in arcade sim without Box2D. |
+| A2 | Inertia + slopes | Polygon ramps; you slide, kick, carry speed | **Shipped** — arcade `RAMPS` you stand/slide on; bullets hit the slope | Movement skill ceiling without Box2D. |
 | A3 | Mouse-lead camera | Screen pulled toward cursor; aim is the mouse | **Shipped** — camera pulled toward cursor (capped) | How you *look* while flying and spraying. |
 | A4 | Snappy sim | ~60 fps local, tight hits | **Shipped** — `TICK_MS` 16 (~62 Hz), `INTERP_DELAY_MS` 50 | Rubber, late hits, sluggish jets. |
 | A5 | Body blocking | Players collide / stack / boost | **Shipped** — pairwise AABB separate; stand-on | Close fights, nade boosts, spawn piles. |
@@ -41,7 +41,7 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 
 | # | Aspect | Soldat | Blat now | Why it matters |
 |---|---|---|---|---|
-| C1 | Maps | Many vertical poly maps (bunkers, ramps, sky) | **Shipped** — Ridge: bunkers, hill ramps, sky pads, side caves | Layout *is* the meta. |
+| C1 | Maps | Many vertical poly maps (bunkers, ramps, sky) | **Shipped** — Arena homage: sloped pit, rim decks, mid span, caves | Layout *is* the meta. |
 | C2 | Spawns | Multiple, anti-camp | **Shipped** — farthest from living, skip recent | Spawn-kill kills fun. |
 | C3 | HUD | Health/vest bars, ammo, nades, weapon icon | **Shipped** — bars + gun icon + nade counts | Read the fight at a glance. |
 | C4 | Names + kill feed | Tags, obituaries with weapon | **Shipped** — nametags + `[AK HS]` feed | Know who killed you with what. |
@@ -73,7 +73,7 @@ The clone is playable. This wave adds the missing Soldat toys and one blat-only 
 |---|---|---|---|---|
 | E1 | Bonuses | Berserker, Predator, Flame God | **Shipped** — yellow pads, 12s | Power-up chaos is Soldat |
 | E2 | Sprees | Killing Spree / Rampage / … | **Shipped** — 3/5/7/10 + first blood | Hear the stomp |
-| E3 | Leftover guns | SOCOM, Ruger, M4, Bow | **Shipped** — loot on Ridge | Each gun is a different game |
+| E3 | Leftover guns | SOCOM, Ruger, M4, Bow | **Shipped** — loot on Arena | Each gun is a different game |
 | E4 | Team colors | Blue / red kits | **Shipped** — Alpha navy, Bravo crimson | Read teams at range |
 | E5 | Throw flag | Toss along aim | **Shipped** — **F** while carrying | CTF skill, not just run |
 | E6 | Punch | Fist melee | **Shipped** — **3**, shove | Close pile without a knife swing |

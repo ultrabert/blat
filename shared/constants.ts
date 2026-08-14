@@ -4,7 +4,7 @@ export const VIEW_HEIGHT = 720;
 export const GAME_WIDTH = 2560;
 export const GAME_HEIGHT = 1200;
 /** Current DM layout — bunkers, ramps, sky pads, caves. */
-export const MAP_NAME = 'Ridge';
+export const MAP_NAME = 'Arena';
 export const GRAVITY = 1600;
 export const TICK_MS = 16; // ~62 Hz sim + state patches
 export const INTERP_DELAY_MS = 50;
@@ -114,14 +114,14 @@ export const COLORS = {
 export type PlatformSpec = { x: number; y: number; w: number; h: number };
 
 /**
- * Soldat-style arena: twin bunkers, hill ramps into a valley, sky pads,
- * and side caves under a broken bedrock (center floor stays solid for tests).
- * Platforms are walkable tops (pass-through from below). Covers are sparse on
- * purpose — protected pockets and chokes, with walk lanes around every solid.
+ * Arena homage (chakapoko's default DM): rim decks, a sloped pit, a mid span,
+ * sky pads, and side caves under the bowl. Center floor at y=850 (x=1280)
+ * stays solid so cover/prone tests hold. Platforms are walkable tops
+ * (pass-through from below). RAMPS are the Soldat-style angled surfaces.
  */
 export const PLATFORMS: PlatformSpec[] = [
-  // Center bedrock — top at y=850 (prone tests at x=1280)
-  { x: 1280, y: 870, w: 1080, h: 40 },
+  // Pit floor — top at y=850 (prone tests at x=1280)
+  { x: 1280, y: 870, w: 760, h: 40 },
   // Left / right cave floors
   { x: 300, y: 1160, w: 600, h: 36 },
   { x: 2260, y: 1160, w: 600, h: 36 },
@@ -129,37 +129,25 @@ export const PLATFORMS: PlatformSpec[] = [
   { x: 2000, y: 1020, w: 180, h: 18 },
   { x: 160, y: 1040, w: 140, h: 18 },
   { x: 2400, y: 1040, w: 140, h: 18 },
-  // Left base battlement + loft
+  // Rim decks + lofts (flag stands)
   { x: 220, y: 320, w: 400, h: 22 },
   { x: 80, y: 420, w: 140, h: 22 },
   { x: 200, y: 210, w: 220, h: 18 },
-  // Left hill descent
-  { x: 500, y: 400, w: 200, h: 22 },
-  { x: 680, y: 480, w: 180, h: 22 },
-  { x: 840, y: 560, w: 180, h: 22 },
-  { x: 1000, y: 640, w: 200, h: 22 },
-  // Valley floor + side shelves
-  { x: 1280, y: 780, w: 520, h: 22 },
-  { x: 1120, y: 720, w: 140, h: 22 },
-  { x: 1440, y: 720, w: 140, h: 22 },
-  // Mid bunker roof
-  { x: 1280, y: 520, w: 260, h: 22 },
-  // Right hill ascent (mirror)
-  { x: 1560, y: 640, w: 200, h: 22 },
-  { x: 1720, y: 560, w: 180, h: 22 },
-  { x: 1880, y: 480, w: 180, h: 22 },
-  { x: 2060, y: 400, w: 200, h: 22 },
-  // Right base battlement + loft
   { x: 2340, y: 320, w: 400, h: 22 },
   { x: 2480, y: 420, w: 140, h: 22 },
   { x: 2360, y: 210, w: 220, h: 18 },
-  // Floating fight platforms
+  // Bowl ledges
+  { x: 1120, y: 720, w: 140, h: 22 },
+  { x: 1440, y: 720, w: 140, h: 22 },
+  // Mid span (peek tests use the cover on this roof)
+  { x: 1280, y: 520, w: 280, h: 22 },
+  // Floating fight pads
   { x: 640, y: 240, w: 140, h: 22 },
   { x: 1920, y: 240, w: 140, h: 22 },
   { x: 1080, y: 280, w: 160, h: 22 },
   { x: 1480, y: 280, w: 160, h: 22 },
   { x: 1280, y: 160, w: 220, h: 22 },
-  // Sky nest (ceiling-slide test still uses y=160). Tiny side nests omitted so the sky stays readable.
+  // Sky nest (ceiling-slide test still uses y=160)
   { x: 400, y: 72, w: 130, h: 18 },
   { x: 2160, y: 72, w: 130, h: 18 },
   { x: 1280, y: 48, w: 150, h: 16 },
@@ -172,46 +160,72 @@ export const PLATFORMS: PlatformSpec[] = [
 export type RampSpec = { ax: number; ay: number; bx: number; by: number };
 
 export const RAMPS: RampSpec[] = [
-  // Left hill
-  { ax: 420, ay: 309, bx: 900, by: 629 },
-  { ax: 900, ay: 629, bx: 1020, by: 769 },
-  // Right hill
-  { ax: 1540, ay: 769, bx: 1660, by: 629 },
-  { ax: 1660, ay: 629, bx: 2140, by: 309 },
-  // Valley inner ramps
-  { ax: 1160, ay: 709, bx: 1280, by: 509 },
-  { ax: 1280, ay: 509, bx: 1400, by: 709 },
+  // Left bowl — rim into the pit
+  { ax: 400, ay: 309, bx: 640, by: 470 },
+  { ax: 640, ay: 470, bx: 880, by: 640 },
+  { ax: 880, ay: 640, bx: 1100, by: 849 },
+  // Right bowl
+  { ax: 1460, ay: 849, bx: 1680, by: 640 },
+  { ax: 1680, ay: 640, bx: 1920, by: 470 },
+  { ax: 1920, ay: 470, bx: 2160, by: 309 },
+  // Mid-span approaches
+  { ax: 1140, ay: 709, bx: 1280, by: 509 },
+  { ax: 1280, ay: 509, bx: 1420, by: 709 },
   // Drop into caves
-  { ax: 740, ay: 849, bx: 500, by: 1010 },
-  { ax: 500, ay: 1010, bx: 320, by: 1142 },
-  { ax: 1820, ay: 849, bx: 2060, by: 1010 },
-  { ax: 2060, ay: 1010, bx: 2240, by: 1142 },
+  { ax: 920, ay: 849, bx: 700, by: 1000 },
+  { ax: 700, ay: 1000, bx: 400, by: 1142 },
+  { ax: 1640, ay: 849, bx: 1860, by: 1000 },
+  { ax: 1860, ay: 1000, bx: 2160, by: 1142 },
 ];
 
-/** Visual hill/cliff masses (cosmetic; collision uses PLATFORMS + COVERS). */
-export type TerrainFill = { x: number; y: number; w: number; h: number };
+/** Filled Soldat-style terrain (visual; walkable collision is RAMPS + PLATFORMS). */
+export type TerrainPoly = { x: number; y: number }[];
 
-export const TERRAIN_FILLS: TerrainFill[] = [
-  // Center mass under remaining bedrock
-  { x: 1280, y: 980, w: 1100, h: 200 },
-  // Cave walls / floors
-  { x: 280, y: 1220, w: 640, h: 140 },
-  { x: 2280, y: 1220, w: 640, h: 140 },
-  { x: 80, y: 1100, w: 120, h: 280 },
-  { x: 2480, y: 1100, w: 120, h: 280 },
-  // Left mountain
-  { x: 180, y: 620, w: 480, h: 560 },
-  { x: 420, y: 700, w: 360, h: 400 },
-  { x: 700, y: 780, w: 320, h: 280 },
-  // Valley shoulders
-  { x: 1040, y: 840, w: 200, h: 140 },
-  { x: 1520, y: 840, w: 200, h: 140 },
-  // Right mountain
-  { x: 1860, y: 780, w: 320, h: 280 },
-  { x: 2140, y: 700, w: 360, h: 400 },
-  { x: 2380, y: 620, w: 480, h: 560 },
-  // Mid bunker pedestal
-  { x: 1280, y: 650, w: 200, h: 240 },
+export const TERRAIN_POLYS: TerrainPoly[] = [
+  // Left bowl mass
+  [
+    { x: 0, y: 309 },
+    { x: 400, y: 309 },
+    { x: 640, y: 470 },
+    { x: 880, y: 640 },
+    { x: 1100, y: 849 },
+    { x: 920, y: 849 },
+    { x: 700, y: 1000 },
+    { x: 400, y: 1142 },
+    { x: 0, y: 1142 },
+  ],
+  // Right bowl mass
+  [
+    { x: GAME_WIDTH, y: 309 },
+    { x: 2160, y: 309 },
+    { x: 1920, y: 470 },
+    { x: 1680, y: 640 },
+    { x: 1460, y: 849 },
+    { x: 1640, y: 849 },
+    { x: 1860, y: 1000 },
+    { x: 2160, y: 1142 },
+    { x: GAME_WIDTH, y: 1142 },
+  ],
+  // Pit bed
+  [
+    { x: 900, y: 849 },
+    { x: 1660, y: 849 },
+    { x: 1660, y: GAME_HEIGHT },
+    { x: 900, y: GAME_HEIGHT },
+  ],
+  // Cave slabs
+  [
+    { x: 0, y: 1142 },
+    { x: 600, y: 1142 },
+    { x: 600, y: GAME_HEIGHT },
+    { x: 0, y: GAME_HEIGHT },
+  ],
+  [
+    { x: 1960, y: 1142 },
+    { x: GAME_WIDTH, y: 1142 },
+    { x: GAME_WIDTH, y: GAME_HEIGHT },
+    { x: 1960, y: GAME_HEIGHT },
+  ],
 ];
 
 /** Waist-high cover + cliff faces (full AABB collision). */
@@ -219,26 +233,21 @@ export type CoverMaterial = 'sand' | 'wood' | 'stone';
 export type CoverSpec = { x: number; y: number; w: number; h: number; mat: CoverMaterial };
 
 export const COVERS: CoverSpec[] = [
-  // Mid bunker — one peek bag; roof walk lanes on both sides (peek tests use x=1280)
+  // Mid span — one peek bag; roof walk lanes on both sides (peek tests use x=1280)
   { x: 1280, y: 492, w: 70, h: 36, mat: 'sand' },
-  // Valley floor sandbags (open middle, covered flanks)
-  { x: 1180, y: 752, w: 56, h: 36, mat: 'sand' },
-  { x: 1380, y: 752, w: 56, h: 36, mat: 'sand' },
-  // Left base crates (kept off the loft spawn/flag at 180,280)
+  // Pit floor sandbags (open middle, covered flanks)
+  { x: 1180, y: 832, w: 56, h: 36, mat: 'sand' },
+  { x: 1380, y: 832, w: 56, h: 36, mat: 'sand' },
+  // Left rim crates (kept off the loft spawn/flag at 180,280)
   { x: 96, y: 292, w: 52, h: 34, mat: 'wood' },
   { x: 280, y: 292, w: 52, h: 34, mat: 'wood' },
-  // Right base crates (kept off the loft spawn/flag at 2380,280)
+  // Right rim crates (kept off the loft spawn/flag at 2380,280)
   { x: 2280, y: 292, w: 52, h: 34, mat: 'wood' },
   { x: 2464, y: 292, w: 52, h: 34, mat: 'wood' },
-  // Map-edge cliff faces + hillside chokes (ramp/jet to cross)
+  // Map-edge cliff faces
   { x: 40, y: 560, w: 48, h: 280, mat: 'stone' },
   { x: 2520, y: 560, w: 48, h: 280, mat: 'stone' },
-  { x: 900, y: 700, w: 28, h: 90, mat: 'stone' },
-  { x: 1660, y: 700, w: 28, h: 90, mat: 'stone' },
-  // Hill bunkers
-  { x: 680, y: 452, w: 52, h: 34, mat: 'sand' },
-  { x: 1880, y: 452, w: 52, h: 34, mat: 'sand' },
-  // Base outer walls (no interior pillars — those blocked the battlement)
+  // Base outer walls
   { x: 24, y: 250, w: 32, h: 160, mat: 'stone' },
   { x: 2536, y: 250, w: 32, h: 160, mat: 'stone' },
   // Sky bags offset from pad-center spawns
@@ -257,11 +266,11 @@ export const SPAWNS = [
   { x: 200, y: 180 },
   { x: 2360, y: 180 },
   { x: 1172, y: 480 },
-  { x: 1000, y: 600 },
-  { x: 1560, y: 600 },
+  { x: 1100, y: 830 },
+  { x: 1460, y: 830 },
   { x: 640, y: 200 },
   { x: 1920, y: 200 },
-  { x: 1280, y: 740 },
+  { x: 1280, y: 830 },
   { x: 400, y: 50 },
   { x: 2160, y: 50 },
   { x: 1280, y: 28 },

@@ -2,7 +2,7 @@
  * @mechanic ballistic-projectiles
  * @mechanic crouch-cover
  */
-import { COVERS, GAME_HEIGHT, GAME_WIDTH, PLATFORMS, playerHalfExtents } from './constants.js';
+import { COVERS, GAME_HEIGHT, GAME_WIDTH, PLATFORMS, RAMPS, playerHalfExtents } from './constants.js';
 import { bodyPartAtHit } from './accuracy.js';
 
 export type BulletTraceHit =
@@ -65,6 +65,27 @@ export function segmentHitAabb(
   return tEnter <= 1 ? tEnter : null;
 }
 
+/** Segment vs segment. Returns t along the first segment in [0, 1] or null. */
+export function segmentHitSegment(
+  x0: number,
+  y0: number,
+  dx: number,
+  dy: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number | null {
+  const ex = bx - ax;
+  const ey = by - ay;
+  const cross = dx * ey - dy * ex;
+  if (Math.abs(cross) < 1e-8) return null;
+  const t = ((ax - x0) * ey - (ay - y0) * ex) / cross;
+  const u = ((ax - x0) * dy - (ay - y0) * dx) / cross;
+  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+  return t;
+}
+
 /** Trace a bullet from (x0,y0) → (x1,y1). Earliest hit wins. */
 export function traceBullet(
   x0: number,
@@ -92,6 +113,13 @@ export function traceBullet(
     const t = segmentHitAabb(x0, y0, dx, dy, b.left, b.top, b.right, b.bottom);
     if (t !== null) {
       consider({ kind: 'bounds', t, x: x0 + dx * t, y: y0 + dy * t });
+    }
+  }
+
+  for (const ramp of RAMPS) {
+    const t = segmentHitSegment(x0, y0, dx, dy, ramp.ax, ramp.ay, ramp.bx, ramp.by);
+    if (t !== null) {
+      consider({ kind: 'platform', t, x: x0 + dx * t, y: y0 + dy * t });
     }
   }
 

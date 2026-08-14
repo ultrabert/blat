@@ -132,7 +132,12 @@ describe('ground-inertia-and-slopes', () => {
     });
     for (let i = 0; i < 10; i++) stepMovement(b, input({ move: 1 }), DT);
     assert.equal(b.onGround, true);
-    assert.ok(Math.abs(b.y + halfH - surfaceY) < 22, `feet near ramp, y=${b.y} surface=${surfaceY}`);
+    const tNow = (b.x - ramp.ax) / (ramp.bx - ramp.ax || 1);
+    const surfaceNow = ramp.ay + tNow * (ramp.by - ramp.ay);
+    assert.ok(
+      Math.abs(b.y + halfH - surfaceNow) < 22,
+      `feet near ramp, y=${b.y} surface=${surfaceNow}`,
+    );
   });
 });
 

@@ -35,7 +35,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Arcade `RAMPS` are line segments, not rigid-body polygons. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Arcade `RAMPS` are line segments (Soldat slopes without Box2D); bullets hit them. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
 **Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`.  
 **Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/simulation.ts`
 
@@ -247,8 +247,8 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C1  
 **Tags:** `@mechanic arena-map`  
-**Description:** Ridge is a vertical Soldat-style layout: twin bunkers, hill ramps, sky pads, and side caves under broken bedrock. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not polygon rigid bodies. Solids stay sparse: protected pockets and hillside chokes, with walk lanes around every cover so players do not spawn inside crates or wedge on battlements.  
-**Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit on the valley floor. Cover is thinner than a packed Soldat poly so jet-runs stay readable.  
+**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (visual); ramps are the walkable/shootable edges.  
+**Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit in the pit. Not a vertex-perfect Arena port — layout and slopes, not the original texture set.  
 **Tests:** `shared/world.test.ts` (`arena-map`)  
 **Files:** `shared/constants.ts`, `src/game/scenes/GameScene.ts`
 
@@ -299,7 +299,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** D1 / 8  
 **Tags:** `@mechanic match-modes`  
-**Description:** Soldat modes on Ridge. TDM / CTF / Infiltration are teams (Alpha left, Bravo right, no friendly fire). DM and Pointmatch are FFA. Score limits: DM 20, TDM 40, CTF 5, Point 80, Infil 5. Round 6 minutes.  
+**Description:** Soldat modes on Arena. TDM / CTF / Infiltration are teams (Alpha left, Bravo right, no friendly fire). DM and Pointmatch are FFA. Score limits: DM 20, TDM 40, CTF 5, Point 80, Infil 5. Round 6 minutes.  
 - **CTF:** flags at loft `{180,280}` / `{2380,280}`. Touch enemy flag to carry; score at own home if own flag is home. Die drops it; return after 8s or teammate touch.  
 - **Pointmatch:** hill `{1280,740}` r=72; sole occupant +4 score/sec.  
 - **Infiltration:** Bravo holds loft `{200,210}` for 1600ms to score; Alpha defends.  
@@ -358,7 +358,7 @@ Demo room defaults to TDM.
 
 **Phase:** E1  
 **Tags:** `@mechanic soldat-bonuses`  
-**Description:** Timed power-ups on Ridge pads (12s, respawn ~22s). **Berserk** — walk faster, melee ×2.6. **Predator** — near-invisible to enemies (hidden on minimap). **Flame God** — infinite flamer + flame immunity.  
+**Description:** Timed power-ups on Arena pads (12s, respawn ~22s). **Berserk** — walk faster, melee ×2.6. **Predator** — near-invisible to enemies (hidden on minimap). **Flame God** — infinite flamer + flame immunity.  
 **Tests:** `shared/bonuses.test.ts`  
 **Files:** `shared/bonuses.ts`, `shared/simulation.ts`, `MAP_PICKUPS`
 

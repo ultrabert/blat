@@ -51,7 +51,7 @@ export const MATCH = {
 export const OBJECTIVES = {
   flagAlpha: { x: 180, y: 280 },
   flagBravo: { x: 2380, y: 280 },
-  point: { x: 1280, y: 740 },
+  point: { x: 1280, y: 830 },
   infil: { x: 200, y: 210 },
 } as const;
 

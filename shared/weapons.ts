@@ -398,21 +398,21 @@ export type MapPickupSpec = {
  * respawn on a shorter timer; guns are a destination.
  */
 export const MAP_PICKUPS: MapPickupSpec[] = [
-  { id: 'w_ak_l', kind: 'weapon', item: 'ak', x: 500, y: 380 },
-  { id: 'w_m4_h', kind: 'weapon', item: 'm4', x: 1720, y: 540 },
-  { id: 'w_spas_l', kind: 'weapon', item: 'spas', x: 840, y: 540 },
+  { id: 'w_ak_l', kind: 'weapon', item: 'ak', x: 500, y: 360 },
+  { id: 'w_m4_h', kind: 'weapon', item: 'm4', x: 1720, y: 590 },
+  { id: 'w_spas_l', kind: 'weapon', item: 'spas', x: 840, y: 590 },
   { id: 'w_m79_m', kind: 'weapon', item: 'm79', x: 1380, y: 480 },
-  { id: 'w_flamer_m', kind: 'weapon', item: 'flamer', x: 1520, y: 760 },
+  { id: 'w_flamer_m', kind: 'weapon', item: 'flamer', x: 1540, y: 830 },
   { id: 'w_law_sky', kind: 'weapon', item: 'law', x: 1280, y: 140 },
-  { id: 'w_minigun_r', kind: 'weapon', item: 'minigun', x: 2060, y: 380 },
+  { id: 'w_minigun_r', kind: 'weapon', item: 'minigun', x: 2060, y: 360 },
   { id: 'w_barrett_r', kind: 'weapon', item: 'barrett', x: 1860, y: 220 },
   { id: 'w_ruger_r', kind: 'weapon', item: 'ruger', x: 2200, y: 540 },
   { id: 'w_bow_l', kind: 'weapon', item: 'bow', x: 1080, y: 260 },
   { id: 'w_saw_l', kind: 'weapon', item: 'chainsaw', x: 360, y: 540 },
   { id: 'w_socom_c', kind: 'weapon', item: 'socom', x: 560, y: 1000 },
-  { id: 'med_l', kind: 'medkit', item: '', x: 680, y: 460 },
-  { id: 'med_r', kind: 'medkit', item: '', x: 1880, y: 460 },
-  { id: 'med_v', kind: 'medkit', item: '', x: 1280, y: 760 },
+  { id: 'med_l', kind: 'medkit', item: '', x: 680, y: 478 },
+  { id: 'med_r', kind: 'medkit', item: '', x: 1880, y: 478 },
+  { id: 'med_v', kind: 'medkit', item: '', x: 1200, y: 830 },
   { id: 'vest_l', kind: 'vest', item: '', x: 80, y: 400 },
   { id: 'vest_r', kind: 'vest', item: '', x: 2480, y: 400 },
   { id: 'vest_m', kind: 'vest', item: '', x: 1280, y: 468 },
@@ -423,9 +423,9 @@ export const MAP_PICKUPS: MapPickupSpec[] = [
   { id: 'med_cave_r', kind: 'medkit', item: '', x: 2260, y: 1120 },
   { id: 'vest_cave_l', kind: 'vest', item: '', x: 160, y: 1020 },
   { id: 'nade_cave', kind: 'nade', item: 'frag', x: 2400, y: 1020 },
-  { id: 'bon_berserk', kind: 'bonus', item: 'berserk', x: 500, y: 540 },
+  { id: 'bon_berserk', kind: 'bonus', item: 'berserk', x: 640, y: 450 },
   { id: 'bon_pred', kind: 'bonus', item: 'predator', x: 1480, y: 250 },
-  { id: 'bon_flame', kind: 'bonus', item: 'flamegod', x: 2060, y: 540 },
+  { id: 'bon_flame', kind: 'bonus', item: 'flamegod', x: 1920, y: 450 },
 ];
 
 export const PICKUP_RADIUS = 28;
