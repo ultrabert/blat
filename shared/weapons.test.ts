@@ -1,6 +1,7 @@
 /**
  * @mechanic weapon-arsenal
  * @mechanic magazines-reload
+ * @mechanic weapon-pickups
  * @mechanic melee
  * @mechanic vest-medkits
  * @mechanic special-ballistics
@@ -9,10 +10,41 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { bodyDamageMult } from './accuracy.js';
 import { ballisticDamage } from './ballistics.js';
-import { PLAYER } from './constants.js';
+import { PLAYER, SPAWNS, type PlayerInput } from './constants.js';
 import { applyVestDamage, spawnAmmoFor } from './fire.js';
 import { NADE, NADE_KINDS } from './grenades.js';
-import { isMelee, PICKUP_ARM_MS, WEAPONS, isWeaponId } from './weapons.js';
+import { GameState } from './schema.js';
+import { Simulation } from './simulation.js';
+import {
+  isMelee,
+  MAP_PICKUPS,
+  PICKUP_ARM_MS,
+  PICKUP_RADIUS,
+  PICKUP_RESPAWN_MS,
+  WEAPON_RESPAWN_MS,
+  WEAPONS,
+  isWeaponId,
+} from './weapons.js';
+
+function tap(partial: Partial<PlayerInput> = {}): PlayerInput {
+  return {
+    seq: 1,
+    move: 0,
+    jet: false,
+    crouch: false,
+    aimX: 1,
+    aimY: 0,
+    fire: false,
+    grenade: false,
+    reload: false,
+    drop: false,
+    nadeCycle: false,
+    blat: false,
+    dash: false,
+    tossFlag: false,
+    ...partial,
+  };
+}
 
 describe('weapon-arsenal', () => {
   it('barrett-is-slower-and-tighter-than-ak', () => {
@@ -87,13 +119,65 @@ describe('magazines-reload', () => {
       assert.ok(w.magSize > 0, w.id);
       assert.ok(w.reloadMs > 0, w.id);
       const spawn = spawnAmmoFor(w.id);
-      assert.ok(spawn.ammo <= w.magSize);
-      assert.ok(spawn.reserve <= w.reserveMax);
+      assert.equal(spawn.ammo, w.magSize);
     }
+  });
+
+  it('reload-refills-mag-with-no-reserve', () => {
+    const sim = new Simulation(new GameState(), { mode: 'dm' });
+    const a = sim.addPlayer('a', 'A');
+    a.x = 1280;
+    a.y = 830;
+    a.weapon = 'de';
+    a.firearm = 'de';
+    a.ammo = 1;
+    a.reserve = 0;
+    a.aimX = 1;
+    a.aimY = 0;
+    for (let i = 0; i < 20; i++) sim.step(16);
+    a.x = 1280;
+    a.y = 830;
+    a.ammo = 1;
+    a.reserve = 0;
+    a.reloading = false;
+    sim.setInput('a', tap({ fire: true, seq: 1 }));
+    sim.step(16);
+    assert.equal(a.ammo, 0);
+    assert.equal(a.reloading, true);
+    for (let i = 0; i < 100; i++) sim.step(16);
+    assert.equal(a.ammo, WEAPONS.de.magSize);
+    assert.equal(a.reloading, false);
+    sim.setInput('a', tap({ fire: true, seq: 2 }));
+    sim.step(16);
+    assert.equal(a.ammo, WEAPONS.de.magSize - 1);
   });
 
   it('dropped-guns-are-not-instantly-regrabbed', () => {
     assert.ok(PICKUP_ARM_MS > 200);
+  });
+});
+
+describe('weapon-pickups', () => {
+  it('weapon-pads-are-sparse-unique-and-off-spawn', () => {
+    const guns = MAP_PICKUPS.filter((p) => p.kind === 'weapon');
+    assert.ok(guns.length <= 12, `too many gun pads: ${guns.length}`);
+    const items = guns.map((g) => g.item);
+    assert.equal(new Set(items).size, items.length, 'one pad per gun');
+    assert.ok(!MAP_PICKUPS.some((p) => p.kind === 'ammo'));
+    for (const id of ['socom', 'ruger', 'm4', 'bow'] as const) {
+      assert.ok(items.includes(id), `${id} should stay on the map`);
+    }
+    assert.ok(WEAPON_RESPAWN_MS >= 40000);
+    assert.ok(WEAPON_RESPAWN_MS > PICKUP_RESPAWN_MS);
+    for (const gun of guns) {
+      for (const spawn of SPAWNS) {
+        const dist = Math.hypot(gun.x - spawn.x, gun.y - spawn.y);
+        assert.ok(
+          dist > PICKUP_RADIUS * 2,
+          `${gun.item} at ${gun.x},${gun.y} is ${dist.toFixed(0)}px from spawn ${spawn.x},${spawn.y}`,
+        );
+      }
+    }
   });
 });
 

@@ -226,7 +226,7 @@ export class CombatHud {
     const mag =
       isMelee(weaponId) || !isFirearm(weaponId)
         ? '∞'
-        : `${num(me.ammo)} / ${weapon.magSize}   +${num(me.reserve)}`;
+        : `${num(me.ammo)} / ${weapon.magSize}`;
     const rel = me.reloading ? '  REL' : '';
     this.gunText.setText(`${weapon.name}   ${mag}${rel}`);
     const nade = txt(me.nadeType, 'frag').toUpperCase();

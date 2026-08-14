@@ -27,7 +27,7 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 | # | Aspect | Soldat | Blat now | Why it matters |
 |---|---|---|---|---|
 | B1 | Classic kit | DE, MP5, AK, Barrett, M79, LAW, flamer, knife, chainsaw, spas, minigun… | **Shipped** — that kit; spawn DE, loot the rest | Each gun is a different *game*. |
-| B2 | Magazines + reload | Finite mags, reload, ammo pickups | **Shipped** — mag + reserve, `R`, ammo boxes | Rhythm, panic reloads, dry-gun melee. |
+| B2 | Magazines + reload | Finite mags, reload, no ammo drought | **Shipped** — mag + reload, infinite reserve | Rhythm, panic reloads, dry-gun melee. |
 | B3 | Weapons as objects | Drop on death, throw, pick up off the ground | **Shipped** — swap on touch, `Q` drop, death drop | Map control and loot chaos. |
 | B4 | Melee | Knife / chainsaw / punch | **Shipped** — knife always (`2`); chainsaw loot | Finisher when dry or in a pile. |
 | B5 | Fast TTK + headshots | DE / Barrett delete; headshots matter | **Shipped** — DE 2-tap, Barrett head OHK, head 2× | Soldat is brutal, not a sponge fight. |

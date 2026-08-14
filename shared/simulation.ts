@@ -42,7 +42,6 @@ import {
   PlayerState,
 } from './schema.js';
 import {
-  AMMO_BOX,
   DEFAULT_MELEE,
   DEFAULT_WEAPON,
   isFirearm,
@@ -55,6 +54,7 @@ import {
   PICKUP_RADIUS,
   PICKUP_RESPAWN_MS,
   VEST_PICKUP,
+  WEAPON_RESPAWN_MS,
   WEAPONS,
   type PickupKind,
   type WeaponId,
@@ -712,8 +712,10 @@ export class Simulation {
       bot.input.fire = dist < 46 && Math.random() > 0.25;
     } else if (isFirearm(p.firearm)) {
       p.weapon = p.firearm;
-      if (p.ammo <= 0 && p.reserve > 0) bot.input.reload = true;
-      if (p.ammo <= 0) bot.input.fire = false;
+      if (p.ammo <= 0) {
+        bot.input.reload = true;
+        bot.input.fire = false;
+      }
     }
 
     this.botNadeInput(bot, dist, target);
@@ -1380,7 +1382,13 @@ export class Simulation {
           this.state.pickups.delete(id);
         } else {
           ps.active = false;
-          pickup.respawnAt = this.now + (ps.kind === 'bonus' ? BONUS.respawnMs : PICKUP_RESPAWN_MS);
+          pickup.respawnAt =
+            this.now +
+            (ps.kind === 'bonus'
+              ? BONUS.respawnMs
+              : ps.kind === 'weapon'
+                ? WEAPON_RESPAWN_MS
+                : PICKUP_RESPAWN_MS);
         }
         break;
       }
@@ -1405,8 +1413,8 @@ export class Simulation {
       }
       p.firearm = item;
       p.weapon = item;
-      p.ammo = ps.ammo || spawnAmmoFor(item).ammo;
-      p.reserve = ps.reserve || spawnAmmoFor(item).reserve;
+      p.ammo = Number.isFinite(ps.ammo) ? ps.ammo : spawnAmmoFor(item).ammo;
+      p.reserve = 0;
       p.reloading = false;
       soldier.reloadEndsAt = 0;
       return true;
@@ -1422,11 +1430,7 @@ export class Simulation {
       return true;
     }
     if (kind === 'ammo') {
-      if (!isFirearm(p.firearm)) return false;
-      const cap = WEAPONS[p.firearm as WeaponId].reserveMax;
-      if (p.reserve >= cap) return false;
-      p.reserve = Math.min(cap, p.reserve + AMMO_BOX);
-      return true;
+      return false;
     }
     if (kind === 'nade') {
       const nk = isNadeKind(ps.item) ? ps.item : 'frag';
@@ -1501,7 +1505,7 @@ export class Simulation {
     const id = isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON;
     if (isMelee(id) || !isFirearm(p.firearm)) return;
     const w = WEAPONS[p.firearm as WeaponId];
-    if (p.ammo >= w.magSize || p.reserve <= 0) return;
+    if (p.ammo >= w.magSize) return;
     p.reloading = true;
     soldier.reloadEndsAt = this.now + w.reloadMs;
   }
@@ -1516,10 +1520,7 @@ export class Simulation {
       return;
     }
     const w = WEAPONS[id];
-    const need = w.magSize - p.ammo;
-    const take = Math.min(need, p.reserve);
-    p.ammo += take;
-    p.reserve -= take;
+    p.ammo = w.magSize;
     p.reloading = false;
     soldier.reloadEndsAt = 0;
   }

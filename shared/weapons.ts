@@ -393,42 +393,36 @@ export type MapPickupSpec = {
   y: number;
 };
 
-/** Map pads — weapons are objects (swap on touch); kits/nades/ammo respawn. */
+/**
+ * Map pads — one of each gun, off spawn points. Kits/nades/bonuses still
+ * respawn on a shorter timer; guns are a destination.
+ */
 export const MAP_PICKUPS: MapPickupSpec[] = [
-  { id: 'w_ak_l', kind: 'weapon', item: 'ak', x: 220, y: 280 },
-  { id: 'w_barrett_r', kind: 'weapon', item: 'barrett', x: 2340, y: 280 },
-  { id: 'w_mp5_l', kind: 'weapon', item: 'mp5', x: 500, y: 380 },
-  { id: 'w_minigun_r', kind: 'weapon', item: 'minigun', x: 2060, y: 380 },
-  { id: 'w_spas_l', kind: 'weapon', item: 'spas', x: 1000, y: 600 },
-  { id: 'w_spas_r', kind: 'weapon', item: 'spas', x: 1560, y: 600 },
-  { id: 'w_flamer_m', kind: 'weapon', item: 'flamer', x: 1280, y: 740 },
-  { id: 'w_m79_m', kind: 'weapon', item: 'm79', x: 1172, y: 480 },
+  { id: 'w_ak_l', kind: 'weapon', item: 'ak', x: 500, y: 380 },
+  { id: 'w_m4_h', kind: 'weapon', item: 'm4', x: 1720, y: 540 },
+  { id: 'w_spas_l', kind: 'weapon', item: 'spas', x: 840, y: 540 },
+  { id: 'w_m79_m', kind: 'weapon', item: 'm79', x: 1380, y: 480 },
+  { id: 'w_flamer_m', kind: 'weapon', item: 'flamer', x: 1520, y: 760 },
   { id: 'w_law_sky', kind: 'weapon', item: 'law', x: 1280, y: 140 },
+  { id: 'w_minigun_r', kind: 'weapon', item: 'minigun', x: 2060, y: 380 },
+  { id: 'w_barrett_r', kind: 'weapon', item: 'barrett', x: 1860, y: 220 },
+  { id: 'w_ruger_r', kind: 'weapon', item: 'ruger', x: 2200, y: 540 },
+  { id: 'w_bow_l', kind: 'weapon', item: 'bow', x: 1080, y: 260 },
   { id: 'w_saw_l', kind: 'weapon', item: 'chainsaw', x: 360, y: 540 },
-  { id: 'w_saw_r', kind: 'weapon', item: 'chainsaw', x: 2200, y: 540 },
+  { id: 'w_socom_c', kind: 'weapon', item: 'socom', x: 560, y: 1000 },
   { id: 'med_l', kind: 'medkit', item: '', x: 680, y: 460 },
   { id: 'med_r', kind: 'medkit', item: '', x: 1880, y: 460 },
   { id: 'med_v', kind: 'medkit', item: '', x: 1280, y: 760 },
   { id: 'vest_l', kind: 'vest', item: '', x: 80, y: 400 },
   { id: 'vest_r', kind: 'vest', item: '', x: 2480, y: 400 },
   { id: 'vest_m', kind: 'vest', item: '', x: 1280, y: 468 },
-  { id: 'ammo_l', kind: 'ammo', item: '', x: 840, y: 540 },
-  { id: 'ammo_r', kind: 'ammo', item: '', x: 1720, y: 540 },
   { id: 'nade_cluster', kind: 'nade', item: 'cluster', x: 1120, y: 700 },
   { id: 'nade_sting', kind: 'nade', item: 'sting', x: 1440, y: 700 },
   { id: 'nade_frag', kind: 'nade', item: 'frag', x: 640, y: 220 },
-  { id: 'w_de_sky_l', kind: 'weapon', item: 'ak', x: 400, y: 50 },
-  { id: 'w_mp5_sky_r', kind: 'weapon', item: 'mp5', x: 2160, y: 50 },
   { id: 'med_cave_l', kind: 'medkit', item: '', x: 300, y: 1120 },
   { id: 'med_cave_r', kind: 'medkit', item: '', x: 2260, y: 1120 },
-  { id: 'ammo_cave_l', kind: 'ammo', item: '', x: 560, y: 1000 },
-  { id: 'ammo_cave_r', kind: 'ammo', item: '', x: 2000, y: 1000 },
   { id: 'vest_cave_l', kind: 'vest', item: '', x: 160, y: 1020 },
   { id: 'nade_cave', kind: 'nade', item: 'frag', x: 2400, y: 1020 },
-  { id: 'w_socom_c', kind: 'weapon', item: 'socom', x: 360, y: 1120 },
-  { id: 'w_ruger_r', kind: 'weapon', item: 'ruger', x: 2360, y: 180 },
-  { id: 'w_m4_h', kind: 'weapon', item: 'm4', x: 680, y: 380 },
-  { id: 'w_bow_l', kind: 'weapon', item: 'bow', x: 400, y: 180 },
   { id: 'bon_berserk', kind: 'bonus', item: 'berserk', x: 500, y: 540 },
   { id: 'bon_pred', kind: 'bonus', item: 'predator', x: 1480, y: 250 },
   { id: 'bon_flame', kind: 'bonus', item: 'flamegod', x: 2060, y: 540 },
@@ -436,11 +430,12 @@ export const MAP_PICKUPS: MapPickupSpec[] = [
 
 export const PICKUP_RADIUS = 28;
 export const PICKUP_RESPAWN_MS = 16000;
+/** Guns stay gone long enough that holding one is map control. */
+export const WEAPON_RESPAWN_MS = 50000;
 /** Dropped guns are not collected until this elapses (avoids instant re-grab). */
 export const PICKUP_ARM_MS = 480;
 export const MEDKIT_HEAL = 50;
 export const VEST_PICKUP = 60;
-export const AMMO_BOX = 40;
 export const MAX_VEST = 100;
 /** Vest soaks this fraction of incoming (head soaks less). */
 export const VEST_ABSORB = 0.5;

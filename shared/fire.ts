@@ -173,5 +173,6 @@ export function applyVestDamage(
 export function spawnAmmoFor(weaponId: WeaponId): { ammo: number; reserve: number } {
   const w = WEAPONS[weaponId];
   if (isMelee(weaponId)) return { ammo: 0, reserve: 0 };
-  return { ammo: w.magSize, reserve: Math.min(w.reserveMax, w.magSize * 2) };
+  // Magazines are finite; reserve is unused — reload always refills the mag.
+  return { ammo: w.magSize, reserve: 0 };
 }

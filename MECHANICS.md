@@ -175,7 +175,8 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** B2  
 **Tags:** `@mechanic magazines-reload`  
-**Description:** Firearms have mag + reserve. Empty mag or `R` reloads (`reloadMs`). Ammo boxes add reserve. Melee has no mag.  
+**Description:** Firearms have a finite mag. Empty mag or `R` reloads (`reloadMs`). Reload always refills the mag — guns do not run out of reserve. Mag size, fire rate, and reload time are the balance. Melee has no mag.  
+**Trade-offs:** No ammo drought or ammo-box camping. Spray guns pay in reload downtime instead.  
 **Tests:** `shared/weapons.test.ts` (`magazines-reload`)  
 **Files:** `shared/weapons.ts`, `shared/simulation.ts`, HUD
 
@@ -183,7 +184,9 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 7 — **B3 retune**  
 **Tags:** `@mechanic weapon-pickups`  
-**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Map pads respawn; drops are ephemeral.  
+**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Map pads are sparse (one of each gun, off spawn). Weapon pads respawn on `WEAPON_RESPAWN_MS` (~50s); kits/nades stay on `PICKUP_RESPAWN_MS`. Drops are ephemeral.  
+**Trade-offs:** Getting a Barrett or LAW is a trip and a hold. Losing it (death drop) is the other way to contest it.  
+**Tests:** `shared/weapons.test.ts` (`weapon-pickups`)  
 **Files:** `shared/weapons.ts` (`MAP_PICKUPS`), `shared/simulation.ts`, `schema.PickupState`
 
 ## Mechanic: melee
