@@ -5,15 +5,21 @@ Firearms (real recordings)
   https://github.com/buddingmonkey/FreeFirearmsSFXLibrary
   Authors: Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney
   License: CC0 1.0
-  Used (first-shot trims of Prepared SFX mixes):
-    1911 A_34P  -> shoot_pistol
-    AK-47 C_27P -> shoot_rifle
-    PPSh P_22P  -> shoot_smg
-    Mosin Nagant M_26P -> shoot_sniper
-    Mossberg N_30P -> shoot_shotgun
+  Used (Prepared SFX mixes, first/later-shot trims):
+    1911, Walther PPQ     -> shoot_pistol
+    AK-47, SKS            -> shoot_rifle
+    PPSh, Carl Gustav M45 -> shoot_smg
+    Mosin Nagant, Tikka   -> shoot_sniper
+    Mossberg, Nova        -> shoot_shotgun
+
+Flesh strikes
+  Independent.nu ljudbank (CC0) wet squish/splat impacts
+  https://opengameart.org/content/8-wet-squish-slurp-impacts
+  Layered with Kenney impactPunch_heavy + Kenney Sci-Fi slime
+  -> wet_hit variants
 
 Impacts, footsteps, UI, explosions, jets, melee
-  Kenney.nl CC0 packs (Impact Sounds, RPG Audio, Interface Sounds, Sci-Fi Sounds)
+  Kenney.nl CC0 packs (Impact Sounds, RPG Audio, Interface Sounds, Sci-Fi Sounds, Digital Audio)
   https://kenney.nl
   License: CC0 1.0
   Served via https://cc0-sounds.exi.software/

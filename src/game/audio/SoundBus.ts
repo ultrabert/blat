@@ -50,51 +50,39 @@ function shootBuf(kind: string): BufKey {
   return 'shoot_rifle';
 }
 
+function clips(stem: string, tags: readonly string[]): string[] {
+  return tags.map((t) => `/assets/sfx/${stem}${t}.ogg`);
+}
+
 const ASSET: Record<BufKey, readonly string[]> = {
-  shoot_pistol: ['/assets/sfx/shoot_pistol.ogg', '/assets/sfx/shoot_pistol_b.ogg'],
-  shoot_rifle: ['/assets/sfx/shoot_rifle.ogg', '/assets/sfx/shoot_rifle_b.ogg'],
-  shoot_smg: ['/assets/sfx/shoot_smg.ogg', '/assets/sfx/shoot_smg_b.ogg'],
-  shoot_sniper: ['/assets/sfx/shoot_sniper.ogg', '/assets/sfx/shoot_sniper_b.ogg'],
-  shoot_shotgun: ['/assets/sfx/shoot_shotgun.ogg', '/assets/sfx/shoot_shotgun_b.ogg'],
-  shoot_bow: ['/assets/sfx/shoot_bow.ogg', '/assets/sfx/shoot_bow_b.ogg'],
-  shoot_rocket: ['/assets/sfx/shoot_rocket.ogg'],
-  shoot_flamer: ['/assets/sfx/shoot_flamer.ogg'],
-  melee: ['/assets/sfx/melee.ogg', '/assets/sfx/melee_b.ogg'],
-  punch: ['/assets/sfx/punch.ogg'],
-  explode: ['/assets/sfx/explode.ogg', '/assets/sfx/explode_b.ogg'],
-  grenade: ['/assets/sfx/grenade.ogg', '/assets/sfx/grenade_b.ogg'],
-  land: ['/assets/sfx/land.ogg', '/assets/sfx/land_b.ogg'],
-  land_soft: ['/assets/sfx/land_soft.ogg', '/assets/sfx/land_soft_b.ogg'],
-  footstep: [
-    '/assets/sfx/footstep_0.ogg',
-    '/assets/sfx/footstep_1.ogg',
-    '/assets/sfx/footstep_2.ogg',
-    '/assets/sfx/footstep_3.ogg',
-    '/assets/sfx/footstep_4.ogg',
-  ],
-  hit: ['/assets/sfx/hit.ogg', '/assets/sfx/hit_b.ogg'],
-  wet_hit: ['/assets/sfx/wet_hit.ogg', '/assets/sfx/wet_hit_b.ogg'],
-  death: ['/assets/sfx/death.ogg', '/assets/sfx/death_b.ogg'],
-  pickup: ['/assets/sfx/pickup.ogg', '/assets/sfx/pickup_b.ogg'],
-  cook_tick: ['/assets/sfx/cook_tick.ogg'],
-  jet_loop: ['/assets/sfx/jet_loop.ogg'],
-  roll: ['/assets/sfx/roll.ogg', '/assets/sfx/roll_b.ogg'],
-  impact_dirt: [
-    '/assets/sfx/impact_dirt.ogg',
-    '/assets/sfx/impact_dirt_b.ogg',
-    '/assets/sfx/impact_dirt_c.ogg',
-    '/assets/sfx/impact_dirt_d.ogg',
-  ],
-  impact_sand: ['/assets/sfx/impact_sand.ogg', '/assets/sfx/impact_sand_b.ogg', '/assets/sfx/impact_sand_c.ogg'],
-  impact_wood: [
-    '/assets/sfx/impact_wood.ogg',
-    '/assets/sfx/impact_wood_b.ogg',
-    '/assets/sfx/impact_wood_c.ogg',
-    '/assets/sfx/impact_wood_d.ogg',
-  ],
-  impact_stone: ['/assets/sfx/impact_stone.ogg', '/assets/sfx/impact_stone_b.ogg', '/assets/sfx/impact_stone_c.ogg'],
-  dash: ['/assets/sfx/dash.ogg'],
-  pulse: ['/assets/sfx/pulse.ogg'],
+  shoot_pistol: clips('shoot_pistol', ['', '_b', '_c', '_d']),
+  shoot_rifle: clips('shoot_rifle', ['', '_b', '_c', '_d']),
+  shoot_smg: clips('shoot_smg', ['', '_b', '_c', '_d']),
+  shoot_sniper: clips('shoot_sniper', ['', '_b', '_c', '_d']),
+  shoot_shotgun: clips('shoot_shotgun', ['', '_b', '_c', '_d']),
+  shoot_bow: clips('shoot_bow', ['', '_b', '_c', '_d']),
+  shoot_rocket: clips('shoot_rocket', ['', '_b', '_c']),
+  shoot_flamer: clips('shoot_flamer', ['', '_b', '_c']),
+  melee: clips('melee', ['', '_b', '_c', '_d', '_e']),
+  punch: clips('punch', ['', '_b', '_c', '_d']),
+  explode: clips('explode', ['', '_b', '_c', '_d']),
+  grenade: clips('grenade', ['', '_b', '_c']),
+  land: clips('land', ['', '_b', '_c']),
+  land_soft: clips('land_soft', ['', '_b', '_c']),
+  footstep: clips('footstep', ['_0', '_1', '_2', '_3', '_4']),
+  hit: clips('hit', ['', '_b', '_c', '_d']),
+  wet_hit: clips('wet_hit', ['', '_b', '_c', '_d', '_e']),
+  death: clips('death', ['', '_b', '_c']),
+  pickup: clips('pickup', ['', '_b', '_c', '_d']),
+  cook_tick: clips('cook_tick', ['', '_b', '_c', '_d']),
+  jet_loop: clips('jet_loop', ['']),
+  roll: clips('roll', ['', '_b', '_c']),
+  impact_dirt: clips('impact_dirt', ['', '_b', '_c', '_d']),
+  impact_sand: clips('impact_sand', ['', '_b', '_c']),
+  impact_wood: clips('impact_wood', ['', '_b', '_c', '_d']),
+  impact_stone: clips('impact_stone', ['', '_b', '_c']),
+  dash: clips('dash', ['', '_b', '_c']),
+  pulse: clips('pulse', ['', '_b', '_c']),
 };
 
 export class SoundBus {
@@ -200,17 +188,19 @@ export class SoundBus {
 
   death(): void {
     this.setJetting(false);
-    if (this.play('death', { gain: 0.7, rate: 0.92 + Math.random() * 0.08 })) return;
+    if (this.play('death', { gain: 0.78, rate: 0.9 + Math.random() * 0.12 })) return;
     this.fallbackTone(220, 45, 0.22, 0.4);
   }
 
   wetHit(): void {
-    if (this.play('wet_hit', { gain: 0.68, rate: 0.94 + Math.random() * 0.1 })) return;
-    this.fallbackNoise(0.1, 400, 0.28);
+    const ok = this.play('wet_hit', { gain: 0.92, rate: 0.88 + Math.random() * 0.16 });
+    this.fleshThump();
+    if (ok) return;
+    this.fallbackNoise(0.12, 380, 0.32);
   }
 
   hit(): void {
-    if (this.play('hit', { gain: 0.52, rate: 0.95 + Math.random() * 0.1 })) return;
+    if (this.play('hit', { gain: 0.58, rate: 0.92 + Math.random() * 0.14 })) return;
     this.fallbackTone(160, 70, 0.12, 0.07);
   }
 
@@ -344,6 +334,25 @@ export class SoundBus {
     g.connect(this.master);
     src.start();
     return true;
+  }
+
+  /** Extra bass meat under a flesh strike so it hits in the chest, not just the squish. */
+  private fleshThump(): void {
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(78, t);
+    o.frequency.exponentialRampToValueAtTime(32, t + 0.14);
+    g.gain.setValueAtTime(0.42, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    o.connect(g);
+    g.connect(this.master);
+    o.start(t);
+    o.stop(t + 0.18);
+    this.fallbackNoise(0.07, 220, 0.14);
   }
 
   private ensure(): AudioContext | null {
