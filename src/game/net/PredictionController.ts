@@ -1,3 +1,6 @@
+/**
+ * @mechanic client-prediction
+ */
 import {
   INTERP_DELAY_MS,
   PLAYER,
@@ -136,6 +139,7 @@ export class PredictionController {
     this.accum += deltaMs;
     if (this.accum > TICK_MS * 5) this.accum = TICK_MS * 5;
 
+    let stepped = false;
     while (this.accum >= TICK_MS) {
       this.seq += 1;
       const input: PlayerInput = {
@@ -182,9 +186,10 @@ export class PredictionController {
 
       sent.push(input);
       this.accum -= TICK_MS;
+      stepped = true;
     }
 
-    this.reconcile(serverMe);
+    if (stepped) this.reconcile(serverMe);
     return sent;
   }
 
@@ -255,9 +260,24 @@ export class PredictionController {
       return;
     }
 
-    const blend = 0.35;
+    // Ignore patch noise — blending a 2px error every tick hops on slopes.
+    if (err < 8) {
+      this.predicted.vx += (corrected.vx - this.predicted.vx) * 0.25;
+      this.predicted.vy += (corrected.vy - this.predicted.vy) * 0.25;
+      this.predicted.fuel = corrected.fuel;
+      this.predicted.recoil = savedRecoil;
+      return;
+    }
+
+    const blend = 0.2;
+    const bothGrounded = this.predicted.onGround && corrected.onGround;
     this.predicted.x += (corrected.x - this.predicted.x) * blend;
-    this.predicted.y += (corrected.y - this.predicted.y) * blend;
+    if (bothGrounded) {
+      // Keep local Y. Replay Y is the slope at a lagged X; copying it lifts
+      // you off the surface, then collide snaps back — visual hopping.
+    } else {
+      this.predicted.y += (corrected.y - this.predicted.y) * blend;
+    }
     this.predicted.vx = corrected.vx;
     this.predicted.vy = corrected.vy;
     this.predicted.fuel = corrected.fuel;

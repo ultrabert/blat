@@ -455,7 +455,7 @@ function collideBody(body: MoveBody): void {
     }
   }
 
-  collideRamps(body);
+  collideRamps(body, wasGrounded);
 
   // Map sky — hang and strafe under the world ceiling
   const sky = halfH + 8;
@@ -526,24 +526,46 @@ function resolveSolid(
   }
 }
 
-function collideRamps(body: MoveBody): void {
+function collideRamps(body: MoveBody, wasGrounded: boolean): void {
   const { halfH } = playerHalfExtents(body.crouching, body.prone);
   const feetX = body.x;
   const feetY = body.y + halfH;
   const dt = TICK_MS / 1000;
+  // Hover/climb must not glue to a nearby slope (that reads as hopping).
+  // Jetting only seats when actually falling onto the surface.
+  if (body.jetting && body.vy < 20) return;
+  const canLand =
+    wasGrounded ||
+    body.vy >= 20 ||
+    body.rollMs > 0 ||
+    body.cannonballMs > 0;
+  if (!canLand) return;
+
+  let bestY = 0;
+  let bestSlope = 0;
+  let bestPen = Infinity;
+  let found = false;
   for (const r of RAMPS) {
     const span = r.bx - r.ax || 1;
     const t = (feetX - r.ax) / span;
-    if (t < -0.02 || t > 1.02) continue;
+    if (t < 0 || t > 1) continue;
     const surfaceY = r.ay + t * (r.by - r.ay);
     const pen = feetY - surfaceY;
-    if (pen > -10 && pen < 24 && body.vy >= -90) {
-      body.y = surfaceY - halfH;
-      body.vy = 0;
-      body.onGround = true;
-      const slope = (r.by - r.ay) / span;
-      body.vx += GRAVITY * slope * dt * 0.85;
+    const slop = wasGrounded ? 16 : 12;
+    if (pen <= -4 || pen >= slop) continue;
+    if (Math.abs(pen) < bestPen) {
+      bestPen = Math.abs(pen);
+      bestY = surfaceY;
+      bestSlope = (r.by - r.ay) / span;
+      found = true;
     }
+  }
+  if (!found) return;
+  body.y = bestY - halfH;
+  body.vy = 0;
+  body.onGround = true;
+  if (!body.jetting) {
+    body.vx += GRAVITY * bestSlope * dt * 0.85;
   }
 }
 

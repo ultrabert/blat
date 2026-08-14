@@ -445,8 +445,11 @@ export class GameScene extends Phaser.Scene {
     const lead = 0.42;
     const tx = x + lx * lead;
     const ty = y + ly * lead;
-    this.camX += (tx - this.camX) * 0.5;
-    this.camY += (ty - this.camY) * 0.5;
+    // @mechanic mouse-lead-camera — dt follow, not 0.5/frame (high Hz hops)
+    const dt = Math.max(0.001, Math.min(0.05, (this.lastDelta || 16) / 1000));
+    const follow = 1 - Math.exp(-18 * dt);
+    this.camX += (tx - this.camX) * follow;
+    this.camY += (ty - this.camY) * follow;
     this.centerCam();
   }
 

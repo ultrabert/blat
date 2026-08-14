@@ -139,6 +139,72 @@ describe('ground-inertia-and-slopes', () => {
       `feet near ramp, y=${b.y} surface=${surfaceNow}`,
     );
   });
+
+  it('jet-does-not-glue-to-nearby-ramp', () => {
+    const ramp = RAMPS[0]!;
+    const x = (ramp.ax + ramp.bx) / 2;
+    const t = (x - ramp.ax) / (ramp.bx - ramp.ax);
+    const surfaceY = ramp.ay + t * (ramp.by - ramp.ay);
+    const { halfH } = playerHalfExtents(false);
+    const startY = surfaceY - halfH - 18;
+    const b = body({
+      x,
+      y: startY,
+      vx: 40,
+      vy: -80,
+      onGround: false,
+      fuel: 100,
+      holdJet: true,
+    });
+    for (let i = 0; i < 12; i++) stepMovement(b, input({ jet: true, move: 1 }), DT);
+    assert.equal(b.onGround, false);
+    assert.ok(b.y < startY - 8, `should climb away, y=${b.y} start=${startY}`);
+    assert.ok(b.y + halfH < surfaceY - 4, `must not snap onto ramp, feet=${b.y + halfH} surface=${surfaceY}`);
+  });
+
+  it('jump-clears-ramp', () => {
+    const ramp = RAMPS[0]!;
+    const x = (ramp.ax + ramp.bx) / 2;
+    const t = (x - ramp.ax) / (ramp.bx - ramp.ax);
+    const surfaceY = ramp.ay + t * (ramp.by - ramp.ay);
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x,
+      y: surfaceY - halfH,
+      vx: 40,
+      vy: 0,
+      onGround: true,
+      fuel: 100,
+    });
+    stepMovement(b, input({ jet: true }), DT);
+    assert.equal(b.onGround, false);
+    assert.ok(b.vy < -200, `jump should launch, vy=${b.vy}`);
+    assert.ok(b.y + halfH < surfaceY - 2, `should leave the slope, feet=${b.y + halfH} surface=${surfaceY}`);
+  });
+
+  it('overlapping-ramps-do-not-yoyo', () => {
+    // x=1000 sits under the left bowl and near the cave drop in X.
+    const x = 1000;
+    const bowl = RAMPS.find((r) => r.ax <= x && r.bx >= x && r.ay < 800)!;
+    const t = (x - bowl.ax) / (bowl.bx - bowl.ax);
+    const surfaceY = bowl.ay + t * (bowl.by - bowl.ay);
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x,
+      y: surfaceY - halfH,
+      vx: 80,
+      vy: 0,
+      onGround: true,
+    });
+    let prevY = b.y;
+    for (let i = 0; i < 40; i++) {
+      stepMovement(b, input({ move: 1 }), DT);
+      const dy = Math.abs(b.y - prevY);
+      assert.ok(dy < 28, `y jumped ${dy}px at tick ${i} (${prevY} → ${b.y})`);
+      prevY = b.y;
+    }
+    assert.equal(b.onGround, true);
+  });
 });
 
 describe('prone-and-blocking', () => {

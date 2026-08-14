@@ -35,8 +35,8 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Arcade `RAMPS` are line segments (Soldat slopes without Box2D); bullets hit them. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
-**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`.  
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Arcade `RAMPS` are line segments (Soldat slopes without Box2D); bullets hit them. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50. A ramp seats only the nearest segment, and only if you were already grounded, are falling (`vy >= 20`), rolling, or cannonballing. Hover/climb jet does not glue — that was snapping players onto overlapping bowl/cave/span slopes.  
+**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; jet near a ramp does not snap on.  
 **Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/simulation.ts`
 
 ## Mechanic: ballistic-projectiles
@@ -85,8 +85,8 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** netcode  
 **Tags:** `@mechanic client-prediction`  
-**Description:** Local movement + projectiles predict; server reconciles via sequenced inputs. Held fire is true on every sim tick while the button is down (autos don’t skip a cooldown window on a hitch).  
-**Trade-offs:** Any sim divergence → rubber-banding / ghost shots. Shared math is mandatory.  
+**Description:** Local movement + projectiles predict; server reconciles via sequenced inputs. Held fire is true on every sim tick while the button is down (autos don’t skip a cooldown window on a hitch). Reconcile runs once per sim step (not every render frame). Errors under 8px keep predicted pose. Grounded replay never overwrites Y (lagged slope Y at a different X hops you off the surface). Else blend 0.2; snap beyond `RECONCILE_SNAP_DIST`.  
+**Trade-offs:** Any sim divergence → rubber-banding / ghost shots. Shared math is mandatory. Small deadzone can hide a few pixels of authority error in exchange for no slope chatter.  
 **Files:** `src/game/net/PredictionController.ts`, `ProjectilePredictor.ts`, `shared/simulation.ts`
 
 ## Mechanic: crouch-cover
@@ -240,7 +240,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** A3  
 **Tags:** `@mechanic mouse-lead-camera`  
-**Description:** Local camera follows the player plus a capped pull toward the cursor (lead 0.42, max 240px) at 0.5/frame so the world stays under you. Spectator camera still eases toward the fight cluster.  
+**Description:** Local camera follows the player plus a capped pull toward the cursor (lead 0.42, max 240px). Follow is dt-based (`1 - exp(-18 dt)`), not 0.5/frame — high refresh was amplifying 1–2px pose noise into hops. Spectator camera still eases toward the fight cluster.  
 **Files:** `src/game/scenes/GameScene.ts`
 
 ## Mechanic: arena-map
