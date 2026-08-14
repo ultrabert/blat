@@ -7,6 +7,7 @@ import {
   normalizeRoomCode,
 } from '../shared/roomCode';
 import type { GameState } from '../shared/schema';
+import { MODE_LABEL, parseMode } from '../shared/match';
 import { startGame } from './game/startGame';
 import { sound } from './game/audio/SoundBus';
 
@@ -26,6 +27,9 @@ const btnCreate = document.querySelector<HTMLButtonElement>('#btn-create')!;
 const btnDemo = document.querySelector<HTMLButtonElement>('#btn-demo')!;
 const btnJoin = document.querySelector<HTMLButtonElement>('#btn-join')!;
 const btnCopy = document.querySelector<HTMLButtonElement>('#btn-copy')!;
+const modeSelect = document.querySelector<HTMLSelectElement>('#match-mode')!;
+const realisticBox = document.querySelector<HTMLInputElement>('#match-realistic')!;
+const roomList = document.querySelector<HTMLElement>('#room-list')!;
 const roomBarCode = document.querySelector<HTMLElement>('#room-bar-code')!;
 const errorEl = document.querySelector<HTMLElement>('#lobby-error')!;
 const statusEl = document.querySelector<HTMLElement>('#lobby-status')!;
@@ -49,6 +53,8 @@ function joinOptions(extra: Record<string, string> = {}): Record<string, string>
   return {
     name: playerName(),
     password: accessPassword(),
+    mode: parseMode(modeSelect.value),
+    realistic: realisticBox.checked ? 'true' : 'false',
     ...extra,
   };
 }
@@ -60,6 +66,8 @@ function setBusy(busy: boolean): void {
   nameInput.disabled = busy;
   passwordInput.disabled = busy;
   codeInput.disabled = busy;
+  modeSelect.disabled = busy;
+  realisticBox.disabled = busy;
 }
 
 function showError(message: string): void {
@@ -283,3 +291,43 @@ if (path === '/demo' || params.has('demo')) {
     }
   }
 }
+
+type ListedRoom = {
+  code: string;
+  mode: string;
+  realistic: boolean;
+  clients: number;
+  maxClients: number;
+};
+
+async function refreshRooms(): Promise<void> {
+  if (!lobby.hidden) {
+    try {
+      const res = await fetch(`${COLYSEUS_URL}/api/rooms`);
+      const data = (await res.json()) as { rooms?: ListedRoom[] };
+      const rooms = (data.rooms || []).filter((r) => r.code && r.code !== 'DEMO');
+      if (!rooms.length) {
+        roomList.textContent = 'No public rooms — create one.';
+      } else {
+        roomList.replaceChildren();
+        for (const r of rooms) {
+          const row = document.createElement('div');
+          row.className = 'room-row';
+          const label = document.createElement('span');
+          label.textContent = `${r.code} · ${MODE_LABEL[parseMode(r.mode)]}${r.realistic ? ' · real' : ''} · ${r.clients}/${r.maxClients}`;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'Join';
+          btn.addEventListener('click', () => void joinRoom(r.code));
+          row.append(label, btn);
+          roomList.append(row);
+        }
+      }
+    } catch {
+      roomList.textContent = 'Could not list rooms.';
+    }
+  }
+  window.setTimeout(() => void refreshRooms(), 4000);
+}
+
+void refreshRooms();

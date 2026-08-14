@@ -54,14 +54,16 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 
 ## Wave D — after it’s fun
 
-Do not start these until A–C playtests feel close.
+| # | Aspect | Soldat | Blat now | Why it matters |
+|---|---|---|---|---|
+| D1 | Modes | TDM, CTF, Pointmatch, Infiltration | **Shipped** — lobby select; demo is TDM | Same map, different reasons to move |
+| D2 | Realistic | No jet, hotter guns | **Shipped** — jump only, damage ×1.65 | Grounded Soldat toggle |
+| D3 | Chat / taunts | T + F-keys | **Shipped** — T chat, F1–F4 | Callouts without voice |
+| D4 | Server browser | Public room list | **Shipped** — `/api/rooms` + lobby poll | Beyond invite codes |
+| D5 | Minimap + weather | Radar, wind | **Shipped** — radar, wind drift, rain/dust | Read the fight / map |
+| D6 | Original toy | — | **Shipped** — **E** blat pulse | Something that isn’t a Soldat clone |
 
-- TDM, CTF, Pointmatch, Infiltration
-- Realistic mode (no jet / higher damage) — Soldat toggle
-- Chat / taunts
-- Server browser (beyond invite codes)
-- Minimap, wind/weather
-- Original blat elements (new weapons, movement, modes)
+**D1–D6:** Wave D is in. Playtest modes at **https://blat.fly.dev/** (hard-refresh). `/demo` is TDM.
 
 ## Locked / not on this list
 

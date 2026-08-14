@@ -42,6 +42,10 @@ export class PlayerState extends Schema {
   @type('number') reserve = 21;
   @type('boolean') reloading = false;
   @type('number') lastProcessedInput = 0;
+  @type('number') team = 0;
+  @type('number') score = 0;
+  @type('number') blatReadyAt = 0;
+  @type('number') blatCd = 0;
 }
 
 export class BulletState extends Schema {
@@ -84,11 +88,39 @@ export class KillFeedEntry extends Schema {
   @type('boolean') headshot = false;
 }
 
+export class ChatEntry extends Schema {
+  @type('string') name = '';
+  @type('string') text = '';
+  @type('string') kind = 'chat';
+}
+
 export class GameState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type({ map: BulletState }) bullets = new MapSchema<BulletState>();
   @type({ map: GrenadeState }) grenades = new MapSchema<GrenadeState>();
   @type({ map: PickupState }) pickups = new MapSchema<PickupState>();
   @type([KillFeedEntry]) killFeed = new ArraySchema<KillFeedEntry>();
+  @type([ChatEntry]) chat = new ArraySchema<ChatEntry>();
   @type('string') mapName = 'Ridge';
+  @type('string') mode = 'dm';
+  @type('boolean') realistic = false;
+  @type('number') alphaScore = 0;
+  @type('number') bravoScore = 0;
+  @type('number') roundEndsAt = 0;
+  @type('string') winner = '';
+  @type('number') windVx = 0;
+  @type('number') weather = 0;
+  @type('number') flagAx = 180;
+  @type('number') flagAy = 280;
+  @type('number') flagBx = 2380;
+  @type('number') flagBy = 280;
+  @type('string') flagACarrier = '';
+  @type('string') flagBCarrier = '';
+  @type('boolean') flagAHome = true;
+  @type('boolean') flagBHome = true;
+  @type('number') pointOwner = 0;
+  @type('number') pulseX = 0;
+  @type('number') pulseY = 0;
+  @type('number') pulseAt = 0;
+  @type('number') now = 0;
 }

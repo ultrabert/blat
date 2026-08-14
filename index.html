@@ -25,6 +25,19 @@
           autocomplete="current-password"
         />
 
+        <label class="lobby-label" for="match-mode">Mode</label>
+        <select id="match-mode" class="lobby-input">
+          <option value="dm">Deathmatch</option>
+          <option value="tdm">Team DM</option>
+          <option value="ctf">Capture the Flag</option>
+          <option value="point">Pointmatch</option>
+          <option value="infil">Infiltration</option>
+        </select>
+        <label class="lobby-check">
+          <input id="match-realistic" type="checkbox" />
+          Realistic (no jet · hotter guns)
+        </label>
+
         <button id="btn-create" class="lobby-btn lobby-btn-primary" type="button">Create game</button>
         <button id="btn-demo" class="lobby-btn" type="button">Watch demo</button>
 
@@ -43,6 +56,9 @@
           <button id="btn-join" class="lobby-btn" type="button">Join</button>
         </div>
 
+        <div class="lobby-divider"><span>open rooms</span></div>
+        <div id="room-list" class="room-list">Looking for rooms…</div>
+
         <p id="lobby-error" class="lobby-error" hidden></p>
         <p id="lobby-status" class="lobby-status" hidden></p>
       </div>
@@ -54,6 +70,10 @@
         <button id="btn-copy" type="button">Copy link</button>
       </div>
       <div id="game"></div>
+      <div id="chat-dock">
+        <div id="chat-log"></div>
+        <input id="chat-input" maxlength="80" placeholder="T to chat · F1–F4 taunt" autocomplete="off" />
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

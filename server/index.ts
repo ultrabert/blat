@@ -28,6 +28,27 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+app.get('/api/rooms', async (_req, res) => {
+  try {
+    const listed = await matchMaker.query({});
+    res.json({
+      rooms: listed
+        .filter((r) => !r.metadata?.demo)
+        .map((r) => ({
+          roomId: r.roomId,
+          code: String(r.metadata?.code || ''),
+          mode: String(r.metadata?.mode || 'dm'),
+          realistic: !!r.metadata?.realistic,
+          map: String(r.metadata?.map || 'Ridge'),
+          clients: r.clients,
+          maxClients: r.maxClients,
+        })),
+    });
+  } catch (err) {
+    res.status(500).json({ rooms: [], error: String(err) });
+  }
+});
+
 if (serveClient) {
   app.use(express.static(distDir));
   app.get(/^(?!\/(?:matchmake|api)\b).*/, (_req, res) => {
@@ -64,6 +85,6 @@ httpServer.listen(PORT, () => {
   }
   void matchMaker.onReady
     .then(() => matchMaker.createRoom('dm', { code: 'DEMO' }))
-    .then((room) => console.log(`[blat] demo room ready ${room.roomId}`))
-    .catch((err) => console.warn('[blat] demo room warmup failed', err));
+    .then((room: { roomId: string }) => console.log(`[blat] demo room ready ${room.roomId}`))
+    .catch((err: unknown) => console.warn('[blat] demo room warmup failed', err));
 });

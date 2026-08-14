@@ -26,7 +26,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | 5 | Advanced movement (cannonball, etc.) | **Done** — bhop, kick jump, cannonball, backflip, air momentum |
 | 6 | Grenade cook, richer ragdoll/knockback | **Done** — cook/hold, blast+bullet knockback, death fling |
 | 7 | Weapon arsenal + pickups | **Done** — Wave B kit, mags, drops, vest, nades |
-| 8 | Modes / realism toggles / polish | Partial (DM lobby + spectator demo + Wave C HUD/map) |
+| 8 | Modes / realism toggles / polish | **Done** — TDM/CTF/Point/Infil, realistic, chat, browser, minimap, wind, blat pulse |
 
 ## Mechanic: arcade-physics-core
 
@@ -56,7 +56,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Phase:** 1/3 — **A1 retune**  
 **Tags:** `@mechanic limited-jetpack`  
 **Description:** Fuel-limited thrust that **beats gravity**. Hold W/Space to climb; feather to hover; strafe in air while jetting. Jetting into a platform underside (or the sky bound) dumps upward speed so you can slide along the ceiling. Fuel lasts ~5s continuous; regenerates on ground and slower while gliding (not while thrusting). Grounded W/Space is still a jump, then jets.  
-**Trade-offs:** Aerial duels dominate if fuel is too generous; spread is still worse while jetting (`state-accuracy`). Can retune toward grounded later without a netcode change.  
+**Trade-offs:** Aerial duels dominate if fuel is too generous; spread is still worse while jetting (`state-accuracy`). Can retune toward grounded later without a netcode change. Realistic mode disables air jet/backflip (ground jump stays).  
 **Tests:** `shared/movement.test.ts` (`limited-jetpack`)  
 **Files:** `shared/physics.ts`, `shared/constants.ts` (`PLAYER.jet*`, fuel), HUD in `GameScene`
 
@@ -290,6 +290,65 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 **Tags:** `@mechanic scenery-parallax`  
 **Description:** Parallax ridges/clouds plus world props (flags, barrels, antennas). No collision.  
 **Files:** `src/game/scenery.ts`, `BootScene`, `GameScene.drawBackground`
+
+## Mechanic: match-modes
+
+**Phase:** D1 / 8  
+**Tags:** `@mechanic match-modes`  
+**Description:** Soldat modes on Ridge. TDM / CTF / Infiltration are teams (Alpha left, Bravo right, no friendly fire). DM and Pointmatch are FFA. Score limits: DM 20, TDM 40, CTF 5, Point 80, Infil 5. Round 6 minutes.  
+- **CTF:** flags at loft `{180,280}` / `{2380,280}`. Touch enemy flag to carry; score at own home if own flag is home. Die drops it; return after 8s or teammate touch.  
+- **Pointmatch:** hill `{1280,740}` r=72; sole occupant +4 score/sec.  
+- **Infiltration:** Bravo holds loft `{200,210}` for 1600ms to score; Alpha defends.  
+Demo room defaults to TDM.  
+**Tests:** `shared/match.test.ts`, `shared/modes.test.ts`  
+**Files:** `shared/match.ts`, `shared/simulation.ts`, `server/rooms/DmRoom.ts`, lobby mode select
+
+## Mechanic: realistic-mode
+
+**Phase:** D2  
+**Tags:** `@mechanic realistic-mode`  
+**Description:** Soldat-style toggle. Air jet and backflip off; grounded jump still works. Damage × 1.65. Synced on `GameState.realistic` / `MoveBody.realistic` so prediction matches.  
+**Trade-offs:** Ground fights dominate; map verticality is harder without jets.  
+**Tests:** `shared/match.test.ts` (`realistic-air-jet-does-not-climb`), `shared/modes.test.ts`  
+**Files:** `shared/physics.ts`, `shared/simulation.ts`, lobby checkbox
+
+## Mechanic: blat-pulse
+
+**Phase:** D6  
+**Tags:** `@mechanic blat-pulse`  
+**Description:** Original toy. **E** — radial knockback (r=88) plus a small self-boost along aim. 4.2s cooldown. Does not hit teammates. Bots use it in knife range. FX via `pulseX/Y/At`.  
+**Tests:** `shared/match.test.ts`, `shared/modes.test.ts`  
+**Files:** `shared/match.ts` (`blatImpulse`), `shared/simulation.ts` (`tryBlat`)
+
+## Mechanic: wind-weather
+
+**Phase:** D5  
+**Tags:** `@mechanic wind-weather`  
+**Description:** `windVx` shifts ~11s. Airborne bodies drift `windVx * 0.55 * dt`; grenades `* 0.7`. Weather 0 clear / 1 rain / 2 dust (client particles).  
+**Tests:** `shared/match.test.ts` (`wind-drifts-airborne-bodies`)  
+**Files:** `shared/physics.ts`, `shared/simulation.ts`, `GameScene.drawWeather`
+
+## Mechanic: chat-taunts
+
+**Phase:** D3  
+**Tags:** `@mechanic chat-taunts`  
+**Description:** **T** focuses chat, Enter sends. F1–F4 taunts. Server sanitizes (strip controls, max 80, keep 10) and rate-limits ~450ms.  
+**Tests:** `shared/match.test.ts` (`chat-is-sanitized`)  
+**Files:** `shared/match.ts` (`sanitizeChat`), `DmRoom`, `GameScene`
+
+## Mechanic: server-browser
+
+**Phase:** D4  
+**Tags:** `@mechanic server-browser`  
+**Description:** `GET /api/rooms` lists non-demo rooms (code, mode, realistic, clients). Lobby polls every 4s. Invite codes still work.  
+**Files:** `server/index.ts`, `src/lobby.ts`
+
+## Mechanic: minimap
+
+**Phase:** D5  
+**Tags:** `@mechanic minimap`  
+**Description:** Bottom-right radar: soldiers, flags, hill, infil. Local pip brighter.  
+**Files:** `src/game/minimap.ts`
 
 ## How agents / humans must edit mechanics
 

@@ -70,6 +70,9 @@ export class PredictionController {
   private reloadLatch = false;
   private dropLatch = false;
   private nadeCycleLatch = false;
+  private blatLatch = false;
+  private realistic = false;
+  private windVx = 0;
   private remotes = new Map<string, RemoteSample[]>();
 
   latchFire(): void {
@@ -88,6 +91,15 @@ export class PredictionController {
     this.nadeCycleLatch = true;
   }
 
+  latchBlat(): void {
+    this.blatLatch = true;
+  }
+
+  setWorld(realistic: boolean, windVx: number): void {
+    this.realistic = realistic;
+    this.windVx = windVx;
+  }
+
   setGrenadeHeld(held: boolean): void {
     this.grenadeHeld = held;
   }
@@ -95,7 +107,7 @@ export class PredictionController {
   /** Fixed-step predict + return inputs that should be sent this frame. */
   tick(
     deltaMs: number,
-    sample: Omit<PlayerInput, 'seq' | 'fire' | 'grenade' | 'reload' | 'drop' | 'nadeCycle'>,
+    sample: Omit<PlayerInput, 'seq' | 'fire' | 'grenade' | 'reload' | 'drop' | 'nadeCycle' | 'blat'>,
     serverMe: PlayerState | undefined,
   ): PlayerInput[] {
     const sent: PlayerInput[] = [];
@@ -124,16 +136,20 @@ export class PredictionController {
         reload: this.reloadLatch,
         drop: this.dropLatch,
         nadeCycle: this.nadeCycleLatch,
+        blat: this.blatLatch,
       };
       this.fireLatch = false;
       this.reloadLatch = false;
       this.dropLatch = false;
       this.nadeCycleLatch = false;
+      this.blatLatch = false;
 
       this.pending.push(input);
       if (this.pending.length > 64) this.pending.shift();
 
       if (this.predicted.alive) {
+        this.predicted.realistic = this.realistic;
+        this.predicted.windVx = this.windVx;
         stepMovement(this.predicted, input, TICK_MS / 1000);
         const blockers = [];
         for (const buf of this.remotes.values()) {
@@ -193,6 +209,8 @@ export class PredictionController {
     serverBody.backflipMs = this.predicted.backflipMs;
     // Recoil kicks happen in ProjectilePredictor (not replayed here) — keep local.
     serverBody.recoil = this.predicted.recoil;
+    serverBody.realistic = this.realistic;
+    serverBody.windVx = this.windVx;
 
     const dx = this.predicted.x - serverBody.x;
     const dy = this.predicted.y - serverBody.y;

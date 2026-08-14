@@ -27,6 +27,7 @@ export type StickView = {
   showName?: boolean;
   vest?: number;
   deathKind?: string;
+  team?: number;
   /** Kept for ragdoll/gun fallback shading. */
   tint: number;
   alpha: number;
@@ -249,6 +250,8 @@ export class StickSoldier {
     const lift = view.alive ? (view.prone ? 16 : 28) : 22;
     this.nameTag.setPosition(view.x, view.y - lift);
     this.nameTag.setAlpha(view.alive ? 0.92 : 0.45);
+    const team = view.team || 0;
+    this.nameTag.setColor(team === 1 ? '#93c5fd' : team === 2 ? '#fca5a5' : '#e8eefc');
   }
 
   private ensureSkin(id: SkinId): void {

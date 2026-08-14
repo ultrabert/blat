@@ -30,6 +30,8 @@ import { SCENERY } from '../scenery';
 import { sound } from '../audio/SoundBus';
 import { VisceraFx } from '../fx/VisceraFx';
 import { CombatHud } from '../hud';
+import { MiniMap } from '../minimap';
+import { MATCH, OBJECTIVES, parseMode } from '../../../shared/match';
 import { PredictionController } from '../net/PredictionController';
 import { ProjectilePredictor } from '../net/ProjectilePredictor';
 
@@ -55,7 +57,17 @@ export class GameScene extends Phaser.Scene {
   private keyQ!: Phaser.Input.Keyboard.Key;
   private keyV!: Phaser.Input.Keyboard.Key;
   private keyTab!: Phaser.Input.Keyboard.Key;
+  private keyE!: Phaser.Input.Keyboard.Key;
+  private keyT!: Phaser.Input.Keyboard.Key;
+  private keyF1!: Phaser.Input.Keyboard.Key;
+  private keyF2!: Phaser.Input.Keyboard.Key;
+  private keyF3!: Phaser.Input.Keyboard.Key;
+  private keyF4!: Phaser.Input.Keyboard.Key;
   private hud!: CombatHud;
+  private miniMap!: MiniMap;
+  private objGfx!: Phaser.GameObjects.Graphics;
+  private lastPulseAt = 0;
+  private lastChatLen = 0;
   private crosshair!: Phaser.GameObjects.Graphics;
   private pickupSprites = new Map<string, Phaser.GameObjects.Container>();
   private localWeapon: WeaponId = DEFAULT_WEAPON;
@@ -118,8 +130,20 @@ export class GameScene extends Phaser.Scene {
     this.keyR = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyQ = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
     this.keyV = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.V);
-    keyboard.addCapture(Phaser.Input.Keyboard.KeyCodes.TAB);
+    keyboard.addCapture([
+      Phaser.Input.Keyboard.KeyCodes.TAB,
+      Phaser.Input.Keyboard.KeyCodes.F1,
+      Phaser.Input.Keyboard.KeyCodes.F2,
+      Phaser.Input.Keyboard.KeyCodes.F3,
+      Phaser.Input.Keyboard.KeyCodes.F4,
+    ]);
     this.keyTab = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
+    this.keyE = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.keyT = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    this.keyF1 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1);
+    this.keyF2 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2);
+    this.keyF3 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F3);
+    this.keyF4 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F4);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       sound.unlock();
@@ -139,6 +163,8 @@ export class GameScene extends Phaser.Scene {
     sound.unlock();
 
     this.hud = new CombatHud(this);
+    this.miniMap = new MiniMap(this);
+    this.objGfx = this.add.graphics().setDepth(3);
 
     this.crosshair = this.add.graphics().setDepth(90);
     this.input.setDefaultCursor(this.spectating ? 'default' : 'none');
@@ -149,7 +175,7 @@ export class GameScene extends Phaser.Scene {
         VIEW_HEIGHT - 14,
         this.spectating
           ? 'DEMO · bots fighting · Tab scores'
-          : 'Tab scores · 1 gun · 2 knife · R reload · Q drop · V nade · W jet',
+          : 'Tab scores · E pulse · T chat · F1–F4 taunt · 1/2 gun/knife · R reload · Q drop',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '11px',
@@ -176,23 +202,32 @@ export class GameScene extends Phaser.Scene {
     this.lastDelta = delta;
 
     if (this.spectating) {
-    this.syncEntities();
-    this.syncPickups();
-    this.watchWounds();
-    this.tickPing();
-    this.updateHud(undefined);
-    this.updateCamera(undefined);
+      this.syncEntities();
+      this.syncPickups();
+      this.watchWounds();
+      this.tickPing();
+      this.updateHud(undefined);
+      this.updateCamera(undefined);
+      this.drawObjectives();
+      this.miniMap.draw(this.room.state, '', parseMode(this.room.state.mode));
+      this.syncChat();
+      this.drawWeather();
+      this.watchPulse();
       return;
     }
 
+    const chatting = this.chatFocused();
     const serverMe = this.room.state.players.get(this.sessionId);
-    this.handleWeaponKeys(serverMe);
+    if (!chatting) this.handleWeaponKeys(serverMe);
 
-    if (this.fireHeld) this.prediction.latchFire();
-    if (Phaser.Input.Keyboard.JustDown(this.keyR)) this.prediction.latchReload();
-    if (Phaser.Input.Keyboard.JustDown(this.keyQ)) this.prediction.latchDrop();
-    if (Phaser.Input.Keyboard.JustDown(this.keyV)) this.prediction.latchNadeCycle();
-    if (this.keyG.isDown) this.grenadeHeld = true;
+    if (!chatting && this.fireHeld) this.prediction.latchFire();
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyR)) this.prediction.latchReload();
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyQ)) this.prediction.latchDrop();
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyV)) this.prediction.latchNadeCycle();
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyE)) this.prediction.latchBlat();
+    this.handleChatKeys(chatting);
+    if (chatting) this.grenadeHeld = false;
+    else if (this.keyG.isDown) this.grenadeHeld = true;
     if (Phaser.Input.Keyboard.JustUp(this.keyG) && !this.input.activePointer.rightButtonDown()) {
       this.grenadeHeld = false;
     }
@@ -226,13 +261,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.watchWounds();
+    this.prediction.setWorld(!!this.room.state.realistic, this.room.state.windVx || 0);
 
     const packets = this.prediction.tick(
       delta,
       {
-        move,
-        jet: this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown,
-        crouch: this.cursors.down.isDown || this.keyS.isDown,
+        move: chatting ? 0 : move,
+        jet:
+          !chatting &&
+          (this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown),
+        crouch: !chatting && (this.cursors.down.isDown || this.keyS.isDown),
         aimX: aim.x,
         aimY: aim.y,
       },
@@ -281,6 +319,11 @@ export class GameScene extends Phaser.Scene {
     this.updateHud(serverMe);
     this.drawCrosshair(serverMe);
     this.updateCamera(serverMe);
+    this.drawObjectives();
+    this.miniMap.draw(this.room.state, this.sessionId, parseMode(this.room.state.mode));
+    this.syncChat();
+    this.drawWeather();
+    this.watchPulse();
   }
 
   private handleWeaponKeys(serverMe: PlayerState | undefined): void {
@@ -461,6 +504,7 @@ export class GameScene extends Phaser.Scene {
             showName: false,
             vest: player.vest,
             deathKind: player.deathKind,
+            team: player.team,
             tint,
             alpha: local.alive ? 1 : 0.9,
           },
@@ -503,6 +547,7 @@ export class GameScene extends Phaser.Scene {
             showName: true,
             vest: player.vest,
             deathKind: player.deathKind,
+            team: player.team,
             tint,
             alpha: view.alive ? view.alpha : 0.9,
           },
@@ -1142,5 +1187,124 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setAlpha(0.2)
       .setDepth(100);
+  }
+
+  private chatFocused(): boolean {
+    return document.activeElement?.id === 'chat-input';
+  }
+
+  private handleChatKeys(chatting: boolean): void {
+    const input = document.querySelector<HTMLInputElement>('#chat-input');
+    if (!input) return;
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyT)) {
+      input.focus();
+      input.value = '';
+    }
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyF1)) this.room.send('taunt', { i: 0 });
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyF2)) this.room.send('taunt', { i: 1 });
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyF3)) this.room.send('taunt', { i: 2 });
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyF4)) this.room.send('taunt', { i: 3 });
+    if (!input.dataset.bound) {
+      input.dataset.bound = '1';
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+          const text = input.value.trim();
+          if (text) this.room.send('chat', { text });
+          input.value = '';
+          input.blur();
+          ev.preventDefault();
+        }
+        if (ev.key === 'Escape') {
+          input.value = '';
+          input.blur();
+        }
+        ev.stopPropagation();
+      });
+    }
+  }
+
+  private syncChat(): void {
+    const log = document.querySelector<HTMLElement>('#chat-log');
+    if (!log) return;
+    const rows: string[] = [];
+    this.room.state.chat?.forEach((c) => {
+      rows.push(`${c.kind === 'taunt' ? '!' : '>'} ${c.name}: ${c.text}`);
+    });
+    const next = rows.slice(0, 6).join('\n');
+    if (next.length === this.lastChatLen && log.childElementCount) return;
+    this.lastChatLen = next.length;
+    log.replaceChildren();
+    for (const line of rows.slice(0, 6)) {
+      const div = document.createElement('div');
+      div.textContent = line;
+      log.append(div);
+    }
+  }
+
+  private drawObjectives(): void {
+    const g = this.objGfx;
+    g.clear();
+    const st = this.room.state;
+    const mode = parseMode(st.mode);
+    if (mode === 'ctf') {
+      g.fillStyle(0x3b82f6, 0.95);
+      g.fillTriangle(st.flagAx, st.flagAy - 16, st.flagAx - 10, st.flagAy + 4, st.flagAx + 10, st.flagAy + 4);
+      g.fillStyle(0xef4444, 0.95);
+      g.fillTriangle(st.flagBx, st.flagBy - 16, st.flagBx - 10, st.flagBy + 4, st.flagBx + 10, st.flagBy + 4);
+    }
+    if (mode === 'point') {
+      g.lineStyle(2, st.pointOwner ? 0xfbbf24 : 0x94a3b8, 0.7);
+      g.strokeCircle(OBJECTIVES.point.x, OBJECTIVES.point.y, MATCH.pointRadius);
+    }
+    if (mode === 'infil') {
+      const r = MATCH.infilRadius;
+      g.lineStyle(2, 0xfbbf24, 0.75);
+      g.strokeRect(OBJECTIVES.infil.x - r, OBJECTIVES.infil.y - r * 0.5, r * 2, r);
+    }
+  }
+
+  private watchPulse(): void {
+    const at = this.room.state.pulseAt || 0;
+    if (at && at !== this.lastPulseAt) {
+      this.lastPulseAt = at;
+      this.pulseRing(this.room.state.pulseX, this.room.state.pulseY);
+    }
+  }
+
+  private pulseRing(x: number, y: number): void {
+    const ring = this.add.circle(x, y, 12, 0xc4b5fd, 0.35).setDepth(12);
+    this.tweens.add({
+      targets: ring,
+      scale: 7,
+      alpha: 0,
+      duration: 280,
+      onComplete: () => ring.destroy(),
+    });
+    sound.explode(0.35);
+  }
+
+  private drawWeather(): void {
+    const weather = this.room.state.weather || 0;
+    const wind = this.room.state.windVx || 0;
+    if (weather === 0) return;
+    const cam = this.cameras.main;
+    const n = weather === 1 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const px = cam.scrollX + Math.random() * VIEW_WIDTH;
+      const py = cam.scrollY + (weather === 1 ? -8 : Math.random() * VIEW_HEIGHT);
+      const p = this.add.image(px, py, 'particle');
+      p.setTint(weather === 1 ? 0x93c5fd : 0xd6c7a1);
+      p.setAlpha(weather === 1 ? 0.55 : 0.28);
+      p.setDepth(7);
+      p.setScale(weather === 1 ? 0.35 : 0.5);
+      this.tweens.add({
+        targets: p,
+        x: px + wind * 0.45 + (weather === 1 ? 30 : 80),
+        y: py + (weather === 1 ? 140 : 18),
+        alpha: 0,
+        duration: 280 + Math.random() * 180,
+        onComplete: () => p.destroy(),
+      });
+    }
   }
 }

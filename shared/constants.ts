@@ -294,6 +294,7 @@ export type PlayerInput = {
   reload: boolean;
   drop: boolean;
   nadeCycle: boolean;
+  blat: boolean;
 };
 
 export function playerHalfExtents(

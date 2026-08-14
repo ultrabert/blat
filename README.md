@@ -21,6 +21,8 @@ If `BLAT_PASSWORD` is set, enter it in the lobby before create/join. Leave it em
 2. Share the link (`?room=ABCD`) or the 4-letter code (**Copy link**)
 3. Friends open the link or enter the code + the shared password
 
+Lobby **Mode** + **Realistic** apply when you create. Open rooms list public matches (code, mode, players).
+
 One human → bots fill slots. Second human → bots leave.
 
 ### Controls
@@ -28,13 +30,16 @@ One human → bots fill slots. Second human → bots leave.
 | Input | Action |
 | --- | --- |
 | A / D or ← / → | Move |
-| W / ↑ / Space | Jump (grounded) or jet (air) |
+| W / ↑ / Space | Jump (grounded) or jet (air; off in Realistic) |
 | Mouse | Aim |
 | Left click | Shoot |
 | 1 / 2 | Equip firearm / melee |
 | R | Reload |
 | Q | Drop gun |
 | V | Cycle nade |
+| E | Blat pulse (knockback ring) |
+| T | Chat |
+| F1–F4 | Taunts |
 | Tab (hold) | Scoreboard |
 | Hold Right click or G | Cook grenade (release to throw; max cook = boom in hand) |
 

@@ -7,7 +7,6 @@ import {
   MAP_NAME,
   PLAYER,
   PLATFORMS,
-  SPAWNS,
   WAYPOINTS,
   playerHalfExtents,
   type PlayerInput,
@@ -34,6 +33,7 @@ import {
 import { traceBullet } from './trace.js';
 import {
   BulletState,
+  ChatEntry,
   GameState,
   GrenadeState,
   KillFeedEntry,
@@ -59,6 +59,20 @@ import {
   type WeaponId,
 } from './weapons.js';
 import { pickAntiCampSpawn } from './spawns.js';
+import {
+  blatImpulse,
+  inRadius,
+  isTeamMode,
+  MATCH,
+  OBJECTIVES,
+  parseMode,
+  sameTeam,
+  sanitizeChat,
+  scoreLimit,
+  spawnPoolForTeam,
+  TEAM,
+  type MatchMode,
+} from './match.js';
 
 const MAX_INPUT_QUEUE = 48;
 /** When buffered, drain extra steps so seqs aren't dropped. */
@@ -212,6 +226,7 @@ function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
     reload: !!input.reload,
     drop: !!input.drop,
     nadeCycle: !!input.nadeCycle,
+    blat: !!input.blat,
   };
 }
 
@@ -228,6 +243,7 @@ function idleInput(seq = 0): PlayerInput {
     reload: false,
     drop: false,
     nadeCycle: false,
+    blat: false,
   };
 }
 
@@ -238,10 +254,40 @@ export class Simulation {
   private pickups = new Map<string, InternalPickup>();
   private now = 0;
   private recentSpawnIndices: number[] = [];
+  private windAt = 0;
+  private flagAReturnAt = 0;
+  private flagBReturnAt = 0;
+  private pointAcc = 0;
+  private infilHold = new Map<string, number>();
 
-  constructor(private readonly state: GameState) {
+  constructor(
+    private readonly state: GameState,
+    opts: { mode?: string; realistic?: boolean } = {},
+  ) {
     this.state.mapName = MAP_NAME;
+    this.state.mode = parseMode(opts.mode);
+    this.state.realistic = !!opts.realistic;
+    this.resetObjectives();
     this.initPickups();
+  }
+
+  private mode(): MatchMode {
+    return parseMode(this.state.mode);
+  }
+
+  private resetObjectives(): void {
+    this.state.flagAx = OBJECTIVES.flagAlpha.x;
+    this.state.flagAy = OBJECTIVES.flagAlpha.y;
+    this.state.flagBx = OBJECTIVES.flagBravo.x;
+    this.state.flagBy = OBJECTIVES.flagBravo.y;
+    this.state.flagACarrier = '';
+    this.state.flagBCarrier = '';
+    this.state.flagAHome = true;
+    this.state.flagBHome = true;
+    this.state.pointOwner = 0;
+    this.flagAReturnAt = 0;
+    this.flagBReturnAt = 0;
+    this.infilHold.clear();
   }
 
   private initPickups(): void {
@@ -265,22 +311,38 @@ export class Simulation {
   }
 
   /** @mechanic anti-camp-spawns */
-  private pickSpawn(excludeId?: string): { x: number; y: number } {
+  private pickSpawn(excludeId?: string, team = 0): { x: number; y: number } {
+    const pool = spawnPoolForTeam(team as 0 | 1 | 2);
     const living = [...this.soldiers.values()]
       .filter((s) => s.state.alive && s.state.id !== excludeId)
       .map((s) => ({ x: s.state.x, y: s.state.y }));
-    const { spawn, index } = pickAntiCampSpawn(SPAWNS, living, this.recentSpawnIndices);
-    this.recentSpawnIndices.push(index);
-    if (this.recentSpawnIndices.length > 5) this.recentSpawnIndices.shift();
+    const recent = team ? [] : this.recentSpawnIndices;
+    const { spawn, index } = pickAntiCampSpawn(pool, living, recent);
+    if (!team) {
+      this.recentSpawnIndices.push(index);
+      if (this.recentSpawnIndices.length > 5) this.recentSpawnIndices.shift();
+    }
     return spawn;
   }
 
+  private assignTeam(): number {
+    if (!isTeamMode(this.mode())) return TEAM.none;
+    let a = 0;
+    let b = 0;
+    for (const s of this.soldiers.values()) {
+      if (s.state.team === TEAM.alpha) a += 1;
+      if (s.state.team === TEAM.bravo) b += 1;
+    }
+    return a <= b ? TEAM.alpha : TEAM.bravo;
+  }
+
   addPlayer(id: string, name: string, isBot = false): PlayerState {
-    const spawn = this.pickSpawn(id);
     const p = new PlayerState();
     p.id = id;
     p.name = name;
     p.isBot = isBot;
+    p.team = this.assignTeam();
+    const spawn = this.pickSpawn(id, p.team);
     p.x = spawn.x;
     p.y = spawn.y;
     p.health = PLAYER.maxHealth;
@@ -302,6 +364,8 @@ export class Simulation {
     p.deaths = 0;
     p.ping = 0;
     p.deathKind = '';
+    p.score = 0;
+    p.blatReadyAt = 0;
     p.onGround = false;
     p.crouching = false;
     p.rolling = false;
@@ -380,6 +444,17 @@ export class Simulation {
     s.state.ping = Math.max(0, Math.min(999, Math.round(ping)));
   }
 
+  addChat(name: string, text: string, kind = 'chat'): void {
+    const clean = sanitizeChat(text);
+    if (!clean) return;
+    const row = new ChatEntry();
+    row.name = (name || 'Soldier').slice(0, 16);
+    row.text = clean;
+    row.kind = kind === 'taunt' ? 'taunt' : 'chat';
+    this.state.chat.unshift(row);
+    while (this.state.chat.length > MATCH.chatKeep) this.state.chat.pop();
+  }
+
   private equipHands(s: InternalSoldier, want: string): void {
     const p = s.state;
     if (want === 'firearm' || want === 'gun') {
@@ -442,6 +517,8 @@ export class Simulation {
   step(dtMs: number): void {
     this.now += dtMs;
     const dt = dtMs / 1000;
+    if (!this.state.roundEndsAt) this.state.roundEndsAt = this.now + MATCH.roundMs;
+    this.state.now = this.now;
 
     for (const soldier of this.soldiers.values()) {
       if (soldier.state.isBot) {
@@ -472,6 +549,9 @@ export class Simulation {
     }
 
     this.stepPickups();
+    this.stepWeather();
+    this.stepObjectives(dt);
+    this.checkRound();
   }
 
   private separateSoldiers(): void {
@@ -526,6 +606,7 @@ export class Simulation {
       reload: false,
       drop: false,
       nadeCycle: false,
+      blat: false,
     };
   }
 
@@ -545,7 +626,14 @@ export class Simulation {
       (s) => s !== bot && s.state.alive,
     );
     const humans = others.filter((s) => !s.state.isBot);
-    const pool = humans.length > 0 ? humans : others;
+    const enemies = isTeamMode(this.mode())
+      ? others.filter((s) => s.state.team !== bot.state.team)
+      : others;
+    const pool = humans.filter((s) => enemies.includes(s)).length
+      ? humans.filter((s) => enemies.includes(s))
+      : enemies.length
+        ? enemies
+        : others;
     const target = this.pickBotTarget(bot, pool);
 
     const p = bot.state;
@@ -605,6 +693,11 @@ export class Simulation {
     }
 
     this.botNadeInput(bot, dist, target);
+    bot.input.blat =
+      !!target &&
+      dist < MATCH.blatRadius &&
+      this.now >= p.blatReadyAt &&
+      Math.random() > 0.72;
   }
 
   private botGoal(
@@ -612,6 +705,17 @@ export class Simulation {
     target: InternalSoldier | undefined,
   ): { x: number; y: number } {
     const p = bot.state;
+    const mode = this.mode();
+    if (mode === 'ctf') {
+      if (this.state.flagACarrier === p.id) return { ...OBJECTIVES.flagAlpha };
+      if (this.state.flagBCarrier === p.id) return { ...OBJECTIVES.flagBravo };
+      if (p.team === TEAM.alpha) return { x: this.state.flagBx, y: this.state.flagBy };
+      if (p.team === TEAM.bravo) return { x: this.state.flagAx, y: this.state.flagAy };
+    }
+    if (mode === 'point') return { ...OBJECTIVES.point };
+    if (mode === 'infil') {
+      return p.team === TEAM.bravo ? { ...OBJECTIVES.infil } : { ...OBJECTIVES.flagAlpha };
+    }
     if (p.health < BOT.medkitHp) {
       const med = this.nearestPickup(bot, (ps) => ps.kind === 'medkit' && ps.active);
       if (med) return { x: med.x, y: med.y };
@@ -747,19 +851,19 @@ export class Simulation {
   private stepSoldier(soldier: InternalSoldier, dt: number): void {
     const p = soldier.state;
 
+    const body = toMoveBody(soldier);
+    body.realistic = this.state.realistic;
+    body.windVx = this.state.windVx;
+    stepMovement(body, soldier.input, dt);
+    fromMoveBody(soldier, body);
+    p.blatCd = Math.max(0, p.blatReadyAt - this.now);
+
     if (!p.alive) {
-      const body = toMoveBody(soldier);
-      stepMovement(body, soldier.input, dt);
-      fromMoveBody(soldier, body);
       if (soldier.respawnAt && this.now >= soldier.respawnAt) {
         this.respawn(soldier);
       }
       return;
     }
-
-    const body = toMoveBody(soldier);
-    stepMovement(body, soldier.input, dt);
-    fromMoveBody(soldier, body);
 
     if (fellOutOfWorld(body) || p.y > GAME_HEIGHT + 40) {
       soldier.lastHitWeapon = 'fall';
@@ -772,9 +876,11 @@ export class Simulation {
     this.updateReload(soldier);
     if (soldier.input.reload) this.startReload(soldier);
     if (soldier.input.fire) this.tryFire(soldier);
+    if (soldier.input.blat) this.tryBlat(soldier);
     this.updateGrenadeCook(soldier);
 
     soldier.input.fire = false;
+    soldier.input.blat = false;
   }
 
   /**
@@ -1072,6 +1178,7 @@ export class Simulation {
     const g = grenade.state;
     g.vy += GRAVITY * dt;
     g.vx *= Math.max(0, 1 - 40 * dt);
+    g.vx += this.state.windVx * 0.7 * dt;
     g.x += g.vx * dt;
     g.y += g.vy * dt;
 
@@ -1373,13 +1480,15 @@ export class Simulation {
     weapon = '',
   ): void {
     if (!soldier.state.alive) return;
+    if (killer && sameTeam(killer.state.team, soldier.state.team, this.mode())) return;
     if (impulse) {
       soldier.state.vx += impulse.vx;
       soldier.state.vy += impulse.vy;
     }
     if (weapon) soldier.lastHitWeapon = weapon;
     else if (killer) soldier.lastHitWeapon = killer.state.weapon;
-    const next = applyVestDamage(soldier.state.health, soldier.state.vest, amount, bodyPart);
+    const scaled = this.state.realistic ? amount * MATCH.realisticDamage : amount;
+    const next = applyVestDamage(soldier.state.health, soldier.state.vest, scaled, bodyPart);
     soldier.state.health = next.health;
     soldier.state.vest = next.vest;
     if (soldier.state.health <= 0) this.kill(soldier, killer, bodyPart);
@@ -1425,7 +1534,16 @@ export class Simulation {
     } else {
       soldier.state.vy -= 70;
     }
-    if (killer && killer !== soldier) killer.state.kills += 1;
+    if (killer && killer !== soldier) {
+      killer.state.kills += 1;
+      const mode = this.mode();
+      if (mode === 'dm' || mode === 'tdm') killer.state.score += 1;
+      if (mode === 'tdm') {
+        if (killer.state.team === TEAM.alpha) this.state.alphaScore += 1;
+        if (killer.state.team === TEAM.bravo) this.state.bravoScore += 1;
+      }
+    }
+    this.dropCarriedFlags(soldier);
     this.pushKillFeed(killer, soldier, soldier.lastHitWeapon, bodyPart === 'head');
     soldier.respawnAt = this.now + PLAYER.respawnDelayMs;
     this.clearInputQueue(soldier);
@@ -1447,7 +1565,7 @@ export class Simulation {
   }
 
   private respawn(soldier: InternalSoldier): void {
-    const spawn = this.pickSpawn(soldier.state.id);
+    const spawn = this.pickSpawn(soldier.state.id, soldier.state.team);
     const p = soldier.state;
     p.alive = true;
     p.health = PLAYER.maxHealth;
@@ -1500,5 +1618,218 @@ export class Simulation {
     soldier.inputQueue.length = 0;
     soldier.input = idleInput(soldier.state.lastProcessedInput);
     soldier.lastQueuedSeq = soldier.state.lastProcessedInput;
+  }
+
+  /** @mechanic blat-pulse */
+  private tryBlat(soldier: InternalSoldier): void {
+    const p = soldier.state;
+    if (this.now < p.blatReadyAt) return;
+    p.blatReadyAt = this.now + MATCH.blatCooldownMs;
+    this.state.pulseX = p.x;
+    this.state.pulseY = p.y;
+    this.state.pulseAt = this.now;
+    const aim = Math.hypot(p.aimX, p.aimY) || 1;
+    p.vx += (p.aimX / aim) * MATCH.blatSelf * 0.35;
+    p.vy += (p.aimY / aim) * MATCH.blatSelf * 0.2 - 40;
+    for (const other of this.soldiers.values()) {
+      if (other === soldier || !other.state.alive) continue;
+      if (sameTeam(p.team, other.state.team, this.mode())) continue;
+      if (!inRadius(other.state.x, other.state.y, p.x, p.y, MATCH.blatRadius)) continue;
+      const imp = blatImpulse(p.x, p.y, other.state.x, other.state.y, MATCH.blatForce);
+      this.damage(other, 8, soldier, imp, 'torso', 'blat');
+    }
+  }
+
+  private dropCarriedFlags(soldier: InternalSoldier): void {
+    const id = soldier.state.id;
+    if (this.state.flagACarrier === id) {
+      this.state.flagACarrier = '';
+      this.state.flagAx = soldier.state.x;
+      this.state.flagAy = soldier.state.y;
+      this.state.flagAHome = false;
+      this.flagAReturnAt = this.now + MATCH.flagReturnMs;
+    }
+    if (this.state.flagBCarrier === id) {
+      this.state.flagBCarrier = '';
+      this.state.flagBx = soldier.state.x;
+      this.state.flagBy = soldier.state.y;
+      this.state.flagBHome = false;
+      this.flagBReturnAt = this.now + MATCH.flagReturnMs;
+    }
+  }
+
+  /** @mechanic wind-weather */
+  private stepWeather(): void {
+    if (this.now < this.windAt) return;
+    this.windAt = this.now + MATCH.windShiftMs * (0.7 + Math.random() * 0.6);
+    const next = (Math.random() * 2 - 1) * MATCH.windMax;
+    this.state.windVx = this.state.windVx * 0.2 + next * 0.8;
+    this.state.weather = Math.abs(this.state.windVx) > 70 ? 1 : Math.abs(this.state.windVx) > 40 ? 2 : 0;
+  }
+
+  /** @mechanic match-modes */
+  private stepObjectives(dt: number): void {
+    const mode = this.mode();
+    if (mode === 'ctf') this.stepCtf();
+    else if (mode === 'point') this.stepPoint(dt);
+    else if (mode === 'infil') this.stepInfil(dt);
+    this.followFlagCarriers();
+  }
+
+  private followFlagCarriers(): void {
+    const a = this.soldiers.get(this.state.flagACarrier);
+    if (a?.state.alive) {
+      this.state.flagAx = a.state.x;
+      this.state.flagAy = a.state.y - 18;
+    }
+    const b = this.soldiers.get(this.state.flagBCarrier);
+    if (b?.state.alive) {
+      this.state.flagBx = b.state.x;
+      this.state.flagBy = b.state.y - 18;
+    }
+  }
+
+  private stepCtf(): void {
+    if (this.state.winner) return;
+    if (!this.state.flagACarrier && !this.state.flagAHome && this.now >= this.flagAReturnAt) {
+      this.returnFlag('a');
+    }
+    if (!this.state.flagBCarrier && !this.state.flagBHome && this.now >= this.flagBReturnAt) {
+      this.returnFlag('b');
+    }
+    for (const s of this.soldiers.values()) {
+      if (!s.state.alive) continue;
+      const p = s.state;
+      if (
+        !this.state.flagACarrier &&
+        inRadius(p.x, p.y, this.state.flagAx, this.state.flagAy, MATCH.captureRadius)
+      ) {
+        if (p.team === TEAM.bravo) {
+          this.state.flagACarrier = p.id;
+          this.state.flagAHome = false;
+        } else if (p.team === TEAM.alpha && !this.state.flagAHome) {
+          this.returnFlag('a');
+        }
+      }
+      if (
+        !this.state.flagBCarrier &&
+        inRadius(p.x, p.y, this.state.flagBx, this.state.flagBy, MATCH.captureRadius)
+      ) {
+        if (p.team === TEAM.alpha) {
+          this.state.flagBCarrier = p.id;
+          this.state.flagBHome = false;
+        } else if (p.team === TEAM.bravo && !this.state.flagBHome) {
+          this.returnFlag('b');
+        }
+      }
+      if (
+        this.state.flagBCarrier === p.id &&
+        this.state.flagAHome &&
+        inRadius(p.x, p.y, OBJECTIVES.flagAlpha.x, OBJECTIVES.flagAlpha.y, MATCH.captureRadius)
+      ) {
+        this.state.alphaScore += 1;
+        p.score += 1;
+        this.returnFlag('b');
+      }
+      if (
+        this.state.flagACarrier === p.id &&
+        this.state.flagBHome &&
+        inRadius(p.x, p.y, OBJECTIVES.flagBravo.x, OBJECTIVES.flagBravo.y, MATCH.captureRadius)
+      ) {
+        this.state.bravoScore += 1;
+        p.score += 1;
+        this.returnFlag('a');
+      }
+    }
+  }
+
+  private returnFlag(which: 'a' | 'b'): void {
+    if (which === 'a') {
+      this.state.flagAx = OBJECTIVES.flagAlpha.x;
+      this.state.flagAy = OBJECTIVES.flagAlpha.y;
+      this.state.flagACarrier = '';
+      this.state.flagAHome = true;
+      this.flagAReturnAt = 0;
+    } else {
+      this.state.flagBx = OBJECTIVES.flagBravo.x;
+      this.state.flagBy = OBJECTIVES.flagBravo.y;
+      this.state.flagBCarrier = '';
+      this.state.flagBHome = true;
+      this.flagBReturnAt = 0;
+    }
+  }
+
+  private stepPoint(dt: number): void {
+    if (this.state.winner) return;
+    const inside = [...this.soldiers.values()].filter(
+      (s) =>
+        s.state.alive &&
+        inRadius(s.state.x, s.state.y, OBJECTIVES.point.x, OBJECTIVES.point.y, MATCH.pointRadius),
+    );
+    if (inside.length === 1) {
+      const s = inside[0]!;
+      this.state.pointOwner = s.state.team || 1;
+      this.pointAcc += dt * MATCH.pointScorePerSec;
+      while (this.pointAcc >= 1) {
+        this.pointAcc -= 1;
+        s.state.score += 1;
+      }
+    } else {
+      this.state.pointOwner = 0;
+      this.pointAcc = 0;
+    }
+  }
+
+  private stepInfil(dt: number): void {
+    if (this.state.winner) return;
+    for (const s of this.soldiers.values()) {
+      const p = s.state;
+      if (!p.alive || p.team !== TEAM.bravo) {
+        this.infilHold.delete(p.id);
+        continue;
+      }
+      if (inRadius(p.x, p.y, OBJECTIVES.infil.x, OBJECTIVES.infil.y, MATCH.infilRadius)) {
+        const held = (this.infilHold.get(p.id) || 0) + dt * 1000;
+        this.infilHold.set(p.id, held);
+        if (held >= MATCH.infilHoldMs) {
+          this.infilHold.set(p.id, 0);
+          this.state.bravoScore += 1;
+          p.score += 1;
+        }
+      } else {
+        this.infilHold.delete(p.id);
+      }
+    }
+  }
+
+  private checkRound(): void {
+    if (this.state.winner) return;
+    const mode = this.mode();
+    const limit = scoreLimit(mode);
+    if (mode === 'dm' || mode === 'point') {
+      let best: InternalSoldier | undefined;
+      for (const s of this.soldiers.values()) {
+        if (!best || s.state.score > best.state.score) best = s;
+      }
+      if (best && best.state.score >= limit) this.state.winner = best.state.name;
+    } else if (this.state.alphaScore >= limit) {
+      this.state.winner = 'Alpha';
+    } else if (this.state.bravoScore >= limit) {
+      this.state.winner = 'Bravo';
+    }
+    if (!this.state.winner && this.state.roundEndsAt && this.now >= this.state.roundEndsAt) {
+      if (mode === 'dm' || mode === 'point') {
+        let best: InternalSoldier | undefined;
+        for (const s of this.soldiers.values()) {
+          if (!best || s.state.score > best.state.score) best = s;
+        }
+        this.state.winner = best?.state.name || 'draw';
+      } else if (this.state.alphaScore === this.state.bravoScore) {
+        this.state.winner = 'draw';
+      } else {
+        this.state.winner =
+          this.state.alphaScore > this.state.bravoScore ? 'Alpha' : 'Bravo';
+      }
+    }
   }
 }

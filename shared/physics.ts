@@ -3,6 +3,8 @@
  * @mechanic crouch-cover
  * @mechanic limited-jetpack
  * @mechanic advanced-movement
+ * @mechanic realistic-mode
+ * @mechanic wind-weather
  * @tradeoff momentum-vs-control (overspeed coasts; air steer is soft)
  * @tradeoff cannonball-vs-accuracy (dive converts fall→speed, wide spread)
  */
@@ -50,6 +52,10 @@ export type MoveBody = {
   backflipMs: number;
   prone: boolean;
   proneHoldMs: number;
+  /** Wave D — Soldat realistic: jump only, no air jet. */
+  realistic?: boolean;
+  /** Horizontal wind (px/s) applied while airborne. */
+  windVx?: number;
 };
 
 export type MoveInput = {
@@ -274,6 +280,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
 
   applyHorizontal(body, input, dt, body.onGround);
 
+  const canJet = !body.realistic;
   body.jetting = false;
   if (input.jet && body.onGround && body.vy >= -10) {
     // Kick jump + bunny hop
@@ -300,6 +307,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.prone = false;
     body.proneHoldMs = 0;
   } else if (
+    canJet &&
     jetEdge &&
     !body.onGround &&
     input.crouch &&
@@ -317,7 +325,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.cannonballMs = 0;
     body.crouching = false;
     body.jetting = true;
-  } else if (input.jet && body.fuel > 0) {
+  } else if (canJet && input.jet && body.fuel > 0) {
     // @mechanic limited-jetpack — thrust beats gravity; hold climbs, feather hovers
     body.vy += PLAYER.jetAcceleration * dt;
     if (body.vy < -PLAYER.jetMaxAscent) body.vy = -PLAYER.jetMaxAscent;
@@ -338,6 +346,9 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
   }
 
   body.vy += GRAVITY * dt;
+  if (!body.onGround && body.windVx) {
+    body.vx += body.windVx * 0.55 * dt;
+  }
   body.vx = clamp(body.vx, -PLAYER.maxVelocityX, PLAYER.maxVelocityX);
   body.vy = clamp(body.vy, -PLAYER.maxVelocityY, PLAYER.maxVelocityY);
 

@@ -6,6 +6,7 @@ import {
   VIEW_HEIGHT,
   VIEW_WIDTH,
 } from '../../shared/constants';
+import { isTeamMode, MATCH, MODE_LABEL, parseMode, TEAM_NAME } from '../../shared/match';
 import type { GameState, KillFeedEntry, PlayerState } from '../../shared/schema';
 import {
   DEFAULT_WEAPON,
@@ -117,13 +118,30 @@ export class CombatHud {
     this.drawBars(frame);
     this.drawGun(frame);
     this.drawFeed(state);
-    this.metaText.setText(
-      frame.spectating
-        ? `DEMO  ${MAP_NAME}`
-        : `${MAP_NAME}${frame.roomCode ? `  ${frame.roomCode}` : ''}${
-            frame.me && !frame.me.alive ? '  RESPAWNING' : ''
-          }`,
-    );
+    const mode = parseMode(state.mode);
+    const wind = Math.round(state.windVx || 0);
+    const remain = state.roundEndsAt
+      ? Math.max(0, Math.ceil((state.roundEndsAt - (state.now || 0)) / 1000))
+      : 0;
+    const mm = Math.floor(remain / 60);
+    const ss = String(remain % 60).padStart(2, '0');
+    const scores = isTeamMode(mode)
+      ? `A ${state.alphaScore}  B ${state.bravoScore}`
+      : frame.me
+        ? `SCORE ${frame.me.score}`
+        : '';
+    const bits = [
+      frame.spectating ? 'DEMO' : MAP_NAME,
+      MODE_LABEL[mode],
+      state.realistic ? 'REAL' : '',
+      scores,
+      `${mm}:${ss}`,
+      wind ? `WIND ${wind > 0 ? '+' : ''}${wind}` : '',
+      state.winner ? `WIN ${state.winner}` : '',
+      frame.me && !frame.me.alive ? 'RESPAWNING' : '',
+      !frame.spectating && frame.roomCode ? frame.roomCode : '',
+    ].filter(Boolean);
+    this.metaText.setText(bits.join('  '));
     this.drawScoreboard(state, frame);
   }
 
@@ -140,6 +158,9 @@ export class CombatHud {
     this.meter(g, x, y, 168, 8, me.vest / PLAYER.maxVest, 0x7dd3fc, 0x38bdf8, 0x0ea5e9, true);
     y += 14;
     this.meter(g, x, y, 168, 8, frame.fuel / PLAYER.maxFuel, 0xfb923c, 0xf97316, 0xea580c);
+    y += 14;
+    const blatFrac = 1 - Math.min(1, (me.blatCd || 0) / MATCH.blatCooldownMs);
+    this.meter(g, x, y, 168, 6, blatFrac, 0xc4b5fd, 0xa78bfa, 0x7c3aed);
     if (frame.cooking) {
       y += 14;
       this.meter(g, x, y, 168, 6, frame.cookFrac, 0xfbbf24, 0xf97316, 0xef4444);
@@ -192,7 +213,9 @@ export class CombatHud {
     this.gunText.setText(`${weapon.name}   ${mag}${rel}`);
     const nade = (me.nadeType || 'frag').toUpperCase();
     this.nadeText.setText(
-      `F ${me.frags}   C ${me.clusters}   S ${me.stings}   [${nade}]   K ${me.kills}`,
+      `F ${me.frags}   C ${me.clusters}   S ${me.stings}   [${nade}]   E pulse${
+        (me.blatCd || 0) > 0 ? '' : '  •'
+      }`,
     );
   }
 
@@ -215,17 +238,23 @@ export class CombatHud {
     if (!frame.scoreboard) return;
     const players: PlayerState[] = [];
     state.players?.forEach((p) => players.push(p));
-    players.sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+    const mode = parseMode(state.mode);
+    players.sort((a, b) => b.score - a.score || b.kills - a.kills || a.deaths - b.deaths);
+    const header = isTeamMode(mode)
+      ? `  ${MODE_LABEL[mode]}   A ${state.alphaScore}  B ${state.bravoScore}`
+      : `  ${MODE_LABEL[mode]}`;
     const lines = [
-      `  ${MAP_NAME}                         TAB`,
-      '  NAME              K   D   PING',
+      `${header}                    TAB`,
+      '  NAME              T    S   K   D  PING',
       ...players.map((p) => {
         const name = (p.isBot ? `BOT ${p.name}` : p.name).slice(0, 16).padEnd(16);
+        const team = isTeamMode(mode) ? TEAM_NAME[(p.team === 1 || p.team === 2 ? p.team : 0) as 0 | 1 | 2].slice(0, 1).padStart(2) : ' -';
+        const s = String(p.score).padStart(3);
         const k = String(p.kills).padStart(3);
         const d = String(p.deaths).padStart(3);
         const ping = p.isBot ? '  —' : String(p.ping || 0).padStart(4);
         const mark = p.alive ? ' ' : '*';
-        return `${mark} ${name} ${k} ${d}  ${ping}`;
+        return `${mark} ${name} ${team} ${s} ${k} ${d} ${ping}`;
       }),
     ];
     const text = lines.join('\n');
