@@ -4,9 +4,11 @@ import {
   GAME_HEIGHT,
   GAME_WIDTH,
   GRAVITY,
+  MAP_NAME,
   PLAYER,
   PLATFORMS,
   SPAWNS,
+  WAYPOINTS,
   playerHalfExtents,
   type PlayerInput,
 } from './constants.js';
@@ -34,6 +36,7 @@ import {
   BulletState,
   GameState,
   GrenadeState,
+  KillFeedEntry,
   PickupState,
   PlayerState,
 } from './schema.js';
@@ -55,6 +58,7 @@ import {
   type PickupKind,
   type WeaponId,
 } from './weapons.js';
+import { pickAntiCampSpawn } from './spawns.js';
 
 const MAX_INPUT_QUEUE = 48;
 /** When buffered, drain extra steps so seqs aren't dropped. */
@@ -90,6 +94,10 @@ type InternalSoldier = {
   botStrafeDir: -1 | 1;
   botStyleUntil: number;
   lastQueuedSeq: number;
+  botGoalX: number;
+  botGoalY: number;
+  botCookUntil: number;
+  lastHitWeapon: string;
 };
 
 type InternalBullet = {
@@ -124,9 +132,7 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
-function randomSpawn(): { x: number; y: number } {
-  return SPAWNS[Math.floor(Math.random() * SPAWNS.length)]!;
-}
+const KILL_FEED_MAX = 8;
 
 let nextEntityId = 1;
 function eid(prefix: string): string {
@@ -231,8 +237,10 @@ export class Simulation {
   private grenades = new Map<string, InternalGrenade>();
   private pickups = new Map<string, InternalPickup>();
   private now = 0;
+  private recentSpawnIndices: number[] = [];
 
   constructor(private readonly state: GameState) {
+    this.state.mapName = MAP_NAME;
     this.initPickups();
   }
 
@@ -256,8 +264,19 @@ export class Simulation {
     }
   }
 
+  /** @mechanic anti-camp-spawns */
+  private pickSpawn(excludeId?: string): { x: number; y: number } {
+    const living = [...this.soldiers.values()]
+      .filter((s) => s.state.alive && s.state.id !== excludeId)
+      .map((s) => ({ x: s.state.x, y: s.state.y }));
+    const { spawn, index } = pickAntiCampSpawn(SPAWNS, living, this.recentSpawnIndices);
+    this.recentSpawnIndices.push(index);
+    if (this.recentSpawnIndices.length > 5) this.recentSpawnIndices.shift();
+    return spawn;
+  }
+
   addPlayer(id: string, name: string, isBot = false): PlayerState {
-    const spawn = randomSpawn();
+    const spawn = this.pickSpawn(id);
     const p = new PlayerState();
     p.id = id;
     p.name = name;
@@ -280,6 +299,9 @@ export class Simulation {
     p.nadeType = 'frag';
     p.grenades = 4;
     p.alive = true;
+    p.deaths = 0;
+    p.ping = 0;
+    p.deathKind = '';
     p.onGround = false;
     p.crouching = false;
     p.rolling = false;
@@ -314,6 +336,10 @@ export class Simulation {
       botStrafeDir: 1,
       botStyleUntil: 0,
       lastQueuedSeq: 0,
+      botGoalX: spawn.x,
+      botGoalY: spawn.y,
+      botCookUntil: 0,
+      lastHitWeapon: '',
     });
     return p;
   }
@@ -346,6 +372,12 @@ export class Simulation {
     const s = this.soldiers.get(id);
     if (!s || !s.state.alive || s.state.isBot) return;
     this.equipHands(s, weaponRaw);
+  }
+
+  setPing(id: string, ping: number): void {
+    const s = this.soldiers.get(id);
+    if (!s || s.state.isBot) return;
+    s.state.ping = Math.max(0, Math.min(999, Math.round(ping)));
   }
 
   private equipHands(s: InternalSoldier, want: string): void {
@@ -499,7 +531,7 @@ export class Simulation {
 
   /**
    * @mechanic bot-dm-ai
-   * Sticky target + strafe/backoff so two bots cannot mirror-chase forever.
+   * Sticky target, waypoints/jets, loot + nade cook, strafe so bots use the map.
    */
   private updateBotBrain(bot: InternalSoldier): void {
     if (!bot.state.alive) {
@@ -516,18 +548,18 @@ export class Simulation {
     const pool = humans.length > 0 ? humans : others;
     const target = this.pickBotTarget(bot, pool);
 
-    if (!target) {
-      bot.input.move = 0;
-      bot.input.jet = false;
-      bot.input.fire = false;
-      bot.input.crouch = false;
-      return;
-    }
+    const p = bot.state;
+    const goal = this.botGoal(bot, target);
+    bot.botGoalX = goal.x;
+    bot.botGoalY = goal.y;
 
-    const dx = target.state.x - bot.state.x;
-    const dy = target.state.y - bot.state.y;
+    const dx = (target?.state.x ?? goal.x) - p.x;
+    const dy = (target?.state.y ?? goal.y) - p.y;
     const dist = Math.hypot(dx, dy);
-    const toward = Math.abs(dx) > 16 ? (Math.sign(dx) as -1 | 1) : 0;
+    const gdx = goal.x - p.x;
+    const gdy = goal.y - p.y;
+    const gdist = Math.hypot(gdx, gdy);
+    const toward = Math.abs(gdx) > 14 ? (Math.sign(gdx) as -1 | 1) : 0;
 
     if (this.now >= bot.botStyleUntil) {
       const roll = Math.random();
@@ -539,7 +571,9 @@ export class Simulation {
         this.now + BOT.styleMinMs + Math.random() * (BOT.styleMaxMs - BOT.styleMinMs);
     }
 
-    if (bot.botMoveStyle === 2) {
+    if (gdist > BOT.waypointSlack && bot.botMoveStyle !== 2) {
+      bot.input.move = toward || bot.botStrafeDir;
+    } else if (bot.botMoveStyle === 2) {
       bot.input.move = toward ? ((-toward) as -1 | 1) : bot.botStrafeDir;
     } else if (bot.botMoveStyle === 1) {
       bot.input.move = bot.botStrafeDir;
@@ -548,13 +582,13 @@ export class Simulation {
     }
 
     bot.input.jet =
-      (dy < -80 && dist > 48 && bot.botMoveStyle !== 2) || (!bot.onGround && dy < -16);
-    bot.input.crouch = bot.botMoveStyle === 1 && bot.onGround && dist < 200;
+      (gdy < -70 && gdist > 40) ||
+      (!bot.onGround && gdy < -12) ||
+      (p.y > 980 && gdist > 80 && p.fuel > 20);
+    bot.input.crouch = bot.botMoveStyle === 1 && bot.onGround && dist < 200 && gdist < 160;
     bot.input.aimX = dx + (Math.random() * 60 - 30);
     bot.input.aimY = dy + (Math.random() * 30 - 20);
-    const p = bot.state;
-    bot.input.fire = dist < BOT.fireRange && Math.random() > 0.42;
-    bot.input.grenade = false;
+    bot.input.fire = !!target && dist < BOT.fireRange && Math.random() > 0.42;
     bot.input.reload = false;
     bot.input.drop = false;
     bot.input.nadeCycle = false;
@@ -570,10 +604,112 @@ export class Simulation {
       if (p.ammo <= 0) bot.input.fire = false;
     }
 
-    const nadeChance = dist < 120 ? 0.88 : 0.94;
-    if (dist < 280 && p.grenades > 0 && Math.random() > nadeChance) {
-      this.throwGrenade(bot, GRENADE.fuseMs, { consumeInventory: true });
+    this.botNadeInput(bot, dist, target);
+  }
+
+  private botGoal(
+    bot: InternalSoldier,
+    target: InternalSoldier | undefined,
+  ): { x: number; y: number } {
+    const p = bot.state;
+    if (p.health < BOT.medkitHp) {
+      const med = this.nearestPickup(bot, (ps) => ps.kind === 'medkit' && ps.active);
+      if (med) return { x: med.x, y: med.y };
     }
+    if (p.firearm === DEFAULT_WEAPON || p.firearm === '') {
+      const gun = this.nearestPickup(
+        bot,
+        (ps) => ps.kind === 'weapon' && ps.active && isFirearm(ps.item) && ps.item !== DEFAULT_WEAPON,
+      );
+      if (gun) {
+        const gunDist = Math.hypot(gun.x - p.x, gun.y - p.y);
+        const tDist = target
+          ? Math.hypot(target.state.x - p.x, target.state.y - p.y)
+          : 9999;
+        if (gunDist < tDist * 0.7) return { x: gun.x, y: gun.y };
+      }
+    }
+    if (!target) {
+      const wp = this.nearestWaypoint(p.x, p.y);
+      return wp ?? { x: p.x, y: p.y };
+    }
+    const tx = target.state.x;
+    const ty = target.state.y;
+    const dist = Math.hypot(tx - p.x, ty - p.y);
+    if (dist < BOT.waypointSlack) return { x: tx, y: ty };
+    return this.steerViaWaypoint(p.x, p.y, tx, ty);
+  }
+
+  private nearestPickup(
+    bot: InternalSoldier,
+    ok: (ps: PickupState) => boolean,
+  ): PickupState | null {
+    let best: PickupState | null = null;
+    let bestD = Infinity;
+    for (const pickup of this.pickups.values()) {
+      const ps = pickup.state;
+      if (!ok(ps)) continue;
+      const d = Math.hypot(ps.x - bot.state.x, ps.y - bot.state.y);
+      if (d < bestD) {
+        bestD = d;
+        best = ps;
+      }
+    }
+    return best;
+  }
+
+  private nearestWaypoint(x: number, y: number): { x: number; y: number } | null {
+    let best = WAYPOINTS[0] ?? null;
+    let bestD = Infinity;
+    for (const w of WAYPOINTS) {
+      const d = Math.hypot(w.x - x, w.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = w;
+      }
+    }
+    return best;
+  }
+
+  private steerViaWaypoint(
+    x: number,
+    y: number,
+    tx: number,
+    ty: number,
+  ): { x: number; y: number } {
+    const direct = Math.hypot(tx - x, ty - y);
+    let best = { x: tx, y: ty };
+    let bestCost = direct;
+    for (const w of WAYPOINTS) {
+      const toWp = Math.hypot(w.x - x, w.y - y);
+      const wpTo = Math.hypot(tx - w.x, ty - w.y);
+      const cost = toWp + wpTo * 0.82;
+      if (cost < bestCost && toWp > 40) {
+        bestCost = cost;
+        best = w;
+      }
+    }
+    return best;
+  }
+
+  private botNadeInput(
+    bot: InternalSoldier,
+    dist: number,
+    target: InternalSoldier | undefined,
+  ): void {
+    const p = bot.state;
+    if (this.now < bot.botCookUntil) {
+      bot.input.grenade = true;
+      bot.input.fire = false;
+      return;
+    }
+    bot.input.grenade = false;
+    if (!target || p.grenades <= 0) return;
+    if (dist < BOT.nadeMinDist || dist > BOT.nadeMaxDist) return;
+    if (Math.random() > 0.08) return;
+    bot.botCookUntil = this.now + 280 + Math.random() * 520;
+    bot.input.grenade = true;
+    bot.input.fire = false;
   }
 
   private pickBotTarget(
@@ -626,6 +762,7 @@ export class Simulation {
     fromMoveBody(soldier, body);
 
     if (fellOutOfWorld(body) || p.y > GAME_HEIGHT + 40) {
+      soldier.lastHitWeapon = 'fall';
       this.kill(soldier, undefined);
       return;
     }
@@ -675,6 +812,7 @@ export class Simulation {
         radius: NADE[soldier.cookKind].blastRadius,
         damage: NADE[soldier.cookKind].blastDamage,
         knockback: NADE[soldier.cookKind].knockback,
+        weapon: soldier.cookKind,
       });
       return;
     }
@@ -856,7 +994,7 @@ export class Simulation {
     if (!victim) return;
     const dmg = Math.round(damage * bodyDamageMult(hit.bodyPart));
     const impulse = bulletImpulse(ax, ay, dmg);
-    this.damage(victim, dmg, soldier, impulse, hit.bodyPart);
+    this.damage(victim, dmg, soldier, impulse, hit.bodyPart, p.weapon);
   }
 
   /**
@@ -897,6 +1035,7 @@ export class Simulation {
         this.blastAt(hit.x, hit.y, killer, {
           radius: bullet.blastRadius,
           damage: bullet.blastDamage,
+          weapon: bullet.weapon,
         });
       } else if (hit.kind === 'player') {
         const victim = this.soldiers.get(hit.playerId);
@@ -909,7 +1048,7 @@ export class Simulation {
                     bodyDamageMult(hit.bodyPart),
                 );
           const impulse = bulletImpulse(b.vx, b.vy, dmg);
-          this.damage(victim, dmg, killer, impulse, hit.bodyPart);
+          this.damage(victim, dmg, killer, impulse, hit.bodyPart, bullet.weapon);
         }
       }
       this.removeBullet(b.id);
@@ -975,6 +1114,7 @@ export class Simulation {
       radius: def.blastRadius,
       damage: def.blastDamage,
       knockback: def.knockback,
+      weapon: grenade.kind,
     });
 
     if (grenade.kind === 'cluster' && !grenade.cluster) {
@@ -1010,7 +1150,14 @@ export class Simulation {
         if (hit?.kind === 'player') {
           const victim = this.soldiers.get(hit.playerId);
           if (victim) {
-            this.damage(victim, NADE.sting.pelletDamage, killer, undefined, hit.bodyPart);
+            this.damage(
+              victim,
+              NADE.sting.pelletDamage,
+              killer,
+              undefined,
+              hit.bodyPart,
+              'sting',
+            );
           }
         }
       }
@@ -1025,11 +1172,12 @@ export class Simulation {
     x: number,
     y: number,
     killer?: InternalSoldier,
-    opts?: { radius?: number; damage?: number; knockback?: number },
+    opts?: { radius?: number; damage?: number; knockback?: number; weapon?: string },
   ): void {
     const radius = opts?.radius ?? GRENADE.blastRadius;
     const dmg = opts?.damage ?? GRENADE.blastDamage;
     const kb = opts?.knockback ?? 1;
+    const weapon = opts?.weapon ?? 'frag';
     for (const soldier of this.soldiers.values()) {
       if (!soldier.state.alive) continue;
       const dist = Math.hypot(soldier.state.x - x, soldier.state.y - y);
@@ -1042,6 +1190,7 @@ export class Simulation {
         killer,
         impulse,
         'blast',
+        weapon,
       );
     }
   }
@@ -1221,19 +1370,26 @@ export class Simulation {
     killer?: InternalSoldier,
     impulse?: { vx: number; vy: number },
     bodyPart: 'head' | 'torso' | 'legs' | 'blast' = 'torso',
+    weapon = '',
   ): void {
     if (!soldier.state.alive) return;
     if (impulse) {
       soldier.state.vx += impulse.vx;
       soldier.state.vy += impulse.vy;
     }
+    if (weapon) soldier.lastHitWeapon = weapon;
+    else if (killer) soldier.lastHitWeapon = killer.state.weapon;
     const next = applyVestDamage(soldier.state.health, soldier.state.vest, amount, bodyPart);
     soldier.state.health = next.health;
     soldier.state.vest = next.vest;
-    if (soldier.state.health <= 0) this.kill(soldier, killer);
+    if (soldier.state.health <= 0) this.kill(soldier, killer, bodyPart);
   }
 
-  private kill(soldier: InternalSoldier, killer?: InternalSoldier): void {
+  private kill(
+    soldier: InternalSoldier,
+    killer?: InternalSoldier,
+    bodyPart: 'head' | 'torso' | 'legs' | 'blast' = 'torso',
+  ): void {
     if (!soldier.state.alive) return;
     soldier.state.alive = false;
     soldier.state.health = 0;
@@ -1241,6 +1397,15 @@ export class Simulation {
     soldier.cooking = false;
     soldier.state.cooking = false;
     soldier.state.reloading = false;
+    soldier.state.deaths += 1;
+    soldier.state.deathKind =
+      soldier.lastHitWeapon === 'fall'
+        ? 'fall'
+        : bodyPart === 'head'
+          ? 'head'
+          : bodyPart === 'blast'
+            ? 'blast'
+            : 'body';
     if (isFirearm(soldier.state.firearm)) {
       this.spawnDroppedWeapon(
         soldier.state.x,
@@ -1261,12 +1426,28 @@ export class Simulation {
       soldier.state.vy -= 70;
     }
     if (killer && killer !== soldier) killer.state.kills += 1;
+    this.pushKillFeed(killer, soldier, soldier.lastHitWeapon, bodyPart === 'head');
     soldier.respawnAt = this.now + PLAYER.respawnDelayMs;
     this.clearInputQueue(soldier);
   }
 
+  private pushKillFeed(
+    killer: InternalSoldier | undefined,
+    victim: InternalSoldier,
+    weapon: string,
+    headshot: boolean,
+  ): void {
+    const row = new KillFeedEntry();
+    row.killer = killer && killer !== victim ? killer.state.name : '';
+    row.victim = victim.state.name;
+    row.weapon = weapon || (killer ? killer.state.weapon : 'fall');
+    row.headshot = headshot;
+    this.state.killFeed.unshift(row);
+    while (this.state.killFeed.length > KILL_FEED_MAX) this.state.killFeed.pop();
+  }
+
   private respawn(soldier: InternalSoldier): void {
-    const spawn = randomSpawn();
+    const spawn = this.pickSpawn(soldier.state.id);
     const p = soldier.state;
     p.alive = true;
     p.health = PLAYER.maxHealth;
@@ -1294,6 +1475,9 @@ export class Simulation {
     p.rollMs = 0;
     p.cannonball = false;
     p.backflip = false;
+    p.deathKind = '';
+    soldier.lastHitWeapon = '';
+    soldier.botCookUntil = 0;
     soldier.respawnAt = 0;
     soldier.onGround = false;
     soldier.rollMs = 0;

@@ -1,8 +1,10 @@
 export const VIEW_WIDTH = 1280;
 export const VIEW_HEIGHT = 720;
-/** World arena — wider than the viewport; camera follows the player. */
+/** World arena — wider and taller than the viewport; camera follows the player. */
 export const GAME_WIDTH = 2560;
-export const GAME_HEIGHT = 900;
+export const GAME_HEIGHT = 1200;
+/** Current DM layout — bunkers, ramps, sky pads, caves. */
+export const MAP_NAME = 'Ridge';
 export const GRAVITY = 1600;
 export const TICK_MS = 16; // ~62 Hz sim + state patches
 export const INTERP_DELAY_MS = 50;
@@ -81,6 +83,10 @@ export const BOT = {
   retargetMaxMs: 2200,
   styleMinMs: 280,
   styleMaxMs: 900,
+  nadeMinDist: 90,
+  nadeMaxDist: 360,
+  medkitHp: 42,
+  waypointSlack: 180,
 } as const;
 
 /** Spectator DEMO room — enough bodies that a 1v1 chase cannot dominate. */
@@ -103,16 +109,24 @@ export const COLORS = {
 export type PlatformSpec = { x: number; y: number; w: number; h: number };
 
 /**
- * Soldat-style arena: twin high bases, stepped hills into a valley,
- * floating mid platforms, and a high sky bridge.
+ * Soldat-style arena: twin bunkers, hill ramps into a valley, sky pads,
+ * and side caves under a broken bedrock (center floor stays solid for tests).
  * Platforms are walkable tops (pass-through from below).
  */
 export const PLATFORMS: PlatformSpec[] = [
-  // Continuous bedrock — no fall-off holes
-  { x: 1280, y: 870, w: 2560, h: 40 },
-  // Left base battlement
+  // Center bedrock — top at y=850 (prone tests at x=1280)
+  { x: 1280, y: 870, w: 1080, h: 40 },
+  // Left / right cave floors
+  { x: 300, y: 1160, w: 600, h: 36 },
+  { x: 2260, y: 1160, w: 600, h: 36 },
+  { x: 560, y: 1020, w: 180, h: 18 },
+  { x: 2000, y: 1020, w: 180, h: 18 },
+  { x: 160, y: 1040, w: 140, h: 18 },
+  { x: 2400, y: 1040, w: 140, h: 18 },
+  // Left base battlement + loft
   { x: 220, y: 320, w: 400, h: 22 },
   { x: 80, y: 420, w: 140, h: 22 },
+  { x: 200, y: 210, w: 220, h: 18 },
   // Left hill descent
   { x: 500, y: 400, w: 200, h: 22 },
   { x: 680, y: 480, w: 180, h: 22 },
@@ -129,15 +143,22 @@ export const PLATFORMS: PlatformSpec[] = [
   { x: 1720, y: 560, w: 180, h: 22 },
   { x: 1880, y: 480, w: 180, h: 22 },
   { x: 2060, y: 400, w: 200, h: 22 },
-  // Right base battlement
+  // Right base battlement + loft
   { x: 2340, y: 320, w: 400, h: 22 },
   { x: 2480, y: 420, w: 140, h: 22 },
+  { x: 2360, y: 210, w: 220, h: 18 },
   // Floating fight platforms
   { x: 640, y: 240, w: 140, h: 22 },
   { x: 1920, y: 240, w: 140, h: 22 },
   { x: 1080, y: 280, w: 160, h: 22 },
   { x: 1480, y: 280, w: 160, h: 22 },
   { x: 1280, y: 160, w: 220, h: 22 },
+  // Sky nest (ceiling-slide test still uses y=160)
+  { x: 400, y: 72, w: 130, h: 18 },
+  { x: 2160, y: 72, w: 130, h: 18 },
+  { x: 1280, y: 48, w: 150, h: 16 },
+  { x: 880, y: 100, w: 110, h: 16 },
+  { x: 1680, y: 100, w: 110, h: 16 },
   // Inner cliff ledges
   { x: 360, y: 560, w: 120, h: 22 },
   { x: 2200, y: 560, w: 120, h: 22 },
@@ -156,14 +177,24 @@ export const RAMPS: RampSpec[] = [
   // Valley inner ramps
   { ax: 1160, ay: 709, bx: 1280, by: 509 },
   { ax: 1280, ay: 509, bx: 1400, by: 709 },
+  // Drop into caves
+  { ax: 740, ay: 849, bx: 500, by: 1010 },
+  { ax: 500, ay: 1010, bx: 320, by: 1142 },
+  { ax: 1820, ay: 849, bx: 2060, by: 1010 },
+  { ax: 2060, ay: 1010, bx: 2240, by: 1142 },
 ];
 
 /** Visual hill/cliff masses (cosmetic; collision uses PLATFORMS + COVERS). */
 export type TerrainFill = { x: number; y: number; w: number; h: number };
 
 export const TERRAIN_FILLS: TerrainFill[] = [
-  // Full-width ground mass under bedrock
-  { x: 1280, y: 920, w: 2560, h: 120 },
+  // Center mass under remaining bedrock
+  { x: 1280, y: 980, w: 1100, h: 200 },
+  // Cave walls / floors
+  { x: 280, y: 1220, w: 640, h: 140 },
+  { x: 2280, y: 1220, w: 640, h: 140 },
+  { x: 80, y: 1100, w: 120, h: 280 },
+  { x: 2480, y: 1100, w: 120, h: 280 },
   // Left mountain
   { x: 180, y: 620, w: 480, h: 560 },
   { x: 420, y: 700, w: 360, h: 400 },
@@ -204,17 +235,51 @@ export const COVERS: CoverSpec[] = [
   // Hill bunkers
   { x: 680, y: 452, w: 52, h: 34 },
   { x: 1880, y: 452, w: 52, h: 34 },
+  // Base interiors
+  { x: 24, y: 250, w: 32, h: 160 },
+  { x: 340, y: 268, w: 22, h: 90 },
+  { x: 2536, y: 250, w: 32, h: 160 },
+  { x: 2220, y: 268, w: 22, h: 90 },
+  // Sky bags
+  { x: 400, y: 54, w: 44, h: 28 },
+  { x: 2160, y: 54, w: 44, h: 28 },
+  // Cave rooms
+  { x: 200, y: 1132, w: 56, h: 40 },
+  { x: 2360, y: 1132, w: 56, h: 40 },
+  { x: 560, y: 992, w: 48, h: 34 },
+  { x: 2000, y: 992, w: 48, h: 34 },
 ];
 
 export const SPAWNS = [
   { x: 180, y: 280 },
   { x: 2380, y: 280 },
+  { x: 200, y: 180 },
+  { x: 2360, y: 180 },
   { x: 1280, y: 480 },
   { x: 1000, y: 600 },
   { x: 1560, y: 600 },
   { x: 640, y: 200 },
   { x: 1920, y: 200 },
   { x: 1280, y: 740 },
+  { x: 400, y: 50 },
+  { x: 2160, y: 50 },
+  { x: 1280, y: 28 },
+  { x: 300, y: 1120 },
+  { x: 2260, y: 1120 },
+  { x: 160, y: 1000 },
+  { x: 2400, y: 1000 },
+];
+
+/** Bot navigation nodes — spawns plus fight pads. */
+export const WAYPOINTS = [
+  ...SPAWNS,
+  { x: 1280, y: 140 },
+  { x: 880, y: 80 },
+  { x: 1680, y: 80 },
+  { x: 560, y: 1000 },
+  { x: 2000, y: 1000 },
+  { x: 220, y: 300 },
+  { x: 2340, y: 300 },
 ];
 
 export type PlayerInput = {

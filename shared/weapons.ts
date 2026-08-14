@@ -321,6 +321,14 @@ export const MAP_PICKUPS: MapPickupSpec[] = [
   { id: 'nade_cluster', kind: 'nade', item: 'cluster', x: 1120, y: 700 },
   { id: 'nade_sting', kind: 'nade', item: 'sting', x: 1440, y: 700 },
   { id: 'nade_frag', kind: 'nade', item: 'frag', x: 640, y: 220 },
+  { id: 'w_de_sky_l', kind: 'weapon', item: 'ak', x: 400, y: 50 },
+  { id: 'w_mp5_sky_r', kind: 'weapon', item: 'mp5', x: 2160, y: 50 },
+  { id: 'med_cave_l', kind: 'medkit', item: '', x: 300, y: 1120 },
+  { id: 'med_cave_r', kind: 'medkit', item: '', x: 2260, y: 1120 },
+  { id: 'ammo_cave_l', kind: 'ammo', item: '', x: 560, y: 1000 },
+  { id: 'ammo_cave_r', kind: 'ammo', item: '', x: 2000, y: 1000 },
+  { id: 'vest_cave_l', kind: 'vest', item: '', x: 160, y: 1020 },
+  { id: 'nade_cave', kind: 'nade', item: 'frag', x: 2400, y: 1020 },
 ];
 
 export const PICKUP_RADIUS = 28;

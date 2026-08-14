@@ -26,7 +26,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | 5 | Advanced movement (cannonball, etc.) | **Done** — bhop, kick jump, cannonball, backflip, air momentum |
 | 6 | Grenade cook, richer ragdoll/knockback | **Done** — cook/hold, blast+bullet knockback, death fling |
 | 7 | Weapon arsenal + pickups | **Done** — Wave B kit, mags, drops, vest, nades |
-| 8 | Modes / realism toggles / polish | Partial (DM lobby + spectator demo) |
+| 8 | Modes / realism toggles / polish | Partial (DM lobby + spectator demo + Wave C HUD/map) |
 
 ## Mechanic: arcade-physics-core
 
@@ -219,9 +219,9 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 8  
 **Tags:** `@mechanic bot-dm-ai`  
-**Description:** Bots pick a sticky target (prefer humans, else other soldiers) and hold it for ~0.7–2.2s, then nearest or random. Close range they strafe / back off / roll instead of always walking into the target. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
-**Trade-offs:** Random retarget + strafe breaks 1v1 mirror loops; bots look less “aimed.” Extra demo bots cost a bit of sim.  
-**Files:** `shared/simulation.ts` (`updateBotBrain`), `shared/constants.ts` (`BOT`, `DEMO_BOTS`), `server/rooms/DmRoom.ts`
+**Description:** Bots pick a sticky target (prefer humans), steer via `WAYPOINTS` (jet to high pads / drop into caves), seek medkits when hurt and guns when still on DE, cook nades in mid range, and strafe/backoff up close. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
+**Trade-offs:** Waypoint greedy-steer is not a navmesh — bots can still take odd paths around bunkers. Extra demo bots cost a bit of sim.  
+**Files:** `shared/simulation.ts` (`updateBotBrain`), `shared/constants.ts` (`BOT`, `WAYPOINTS`, `DEMO_BOTS`), `server/rooms/DmRoom.ts`
 
 ## Mechanic: body-blocking
 
@@ -238,6 +238,58 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 **Tags:** `@mechanic mouse-lead-camera`  
 **Description:** Local camera lerps toward the player plus a capped pull toward the cursor (lead 0.42, max 240px). Spectator camera still follows the fight cluster.  
 **Files:** `src/game/scenes/GameScene.ts`
+
+## Mechanic: arena-map
+
+**Phase:** C1  
+**Tags:** `@mechanic arena-map`  
+**Description:** Ridge is a vertical Soldat-style layout: twin bunkers, hill ramps, sky pads, and side caves under broken bedrock. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not polygon rigid bodies.  
+**Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit on the valley floor.  
+**Tests:** `shared/world.test.ts` (`arena-map`)  
+**Files:** `shared/constants.ts`, `src/game/scenes/GameScene.ts`
+
+## Mechanic: anti-camp-spawns
+
+**Phase:** C2  
+**Tags:** `@mechanic anti-camp-spawns`  
+**Description:** Respawn picks the slot farthest from living players and skips the last few used indices.  
+**Tests:** `shared/world.test.ts`  
+**Files:** `shared/spawns.ts`, `shared/simulation.ts`
+
+## Mechanic: combat-hud
+
+**Phase:** C3  
+**Tags:** `@mechanic combat-hud`  
+**Description:** Screen-space HP / vest / fuel bars, weapon icon + mag, nade counts, cook meter.  
+**Files:** `src/game/hud.ts`, `GameScene`
+
+## Mechanic: kill-feed
+
+**Phase:** C4  
+**Tags:** `@mechanic kill-feed`  
+**Description:** Nametags over other soldiers. Obituaries `Killer [AK HS] Victim` (or `Victim [FALL]`). Synced `killFeed` array (max 8).  
+**Files:** `shared/schema.ts` (`KillFeedEntry`), `shared/simulation.ts`, `StickSoldier`, `src/game/hud.ts`
+
+## Mechanic: scoreboard
+
+**Phase:** C5  
+**Tags:** `@mechanic scoreboard`  
+**Description:** Hold Tab for K/D/ping. Client RTT handshake (`ping`/`pong`/`rtt`). Bots show —.  
+**Files:** `src/game/hud.ts`, `server/rooms/DmRoom.ts`, `PlayerState.deaths` / `ping`
+
+## Mechanic: soldier-read
+
+**Phase:** C6  
+**Tags:** `@mechanic soldier-read`  
+**Description:** Painted kits, distinct held-gun props, vest tint, ragdoll keeps the gun; headshots drop the head. Cosmetic only.  
+**Files:** `src/game/StickSoldier.ts`, `src/game/skins.ts`
+
+## Mechanic: scenery-parallax
+
+**Phase:** C7  
+**Tags:** `@mechanic scenery-parallax`  
+**Description:** Parallax ridges/clouds plus world props (flags, barrels, antennas). No collision.  
+**Files:** `src/game/scenery.ts`, `BootScene`, `GameScene.drawBackground`
 
 ## How agents / humans must edit mechanics
 

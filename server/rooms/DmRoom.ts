@@ -50,6 +50,12 @@ export class DmRoom extends Room<GameState> {
     this.onMessage('weapon', (client, message: { weapon?: string }) => {
       if (message?.weapon) this.sim.setWeapon(client.sessionId, String(message.weapon));
     });
+    this.onMessage('ping', (client, sentAt: number) => {
+      client.send('pong', sentAt);
+    });
+    this.onMessage('rtt', (client, rtt: number) => {
+      this.sim.setPing(client.sessionId, Number(rtt) || 0);
+    });
 
     this.setPatchRate(TICK_MS);
     this.setSimulationInterval((deltaTime) => {

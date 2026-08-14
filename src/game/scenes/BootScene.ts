@@ -103,6 +103,45 @@ export class BootScene extends Phaser.Scene {
     g.fillStyle(0x4b5563, 1);
     g.fillRect(0, 35, 32, 5);
     g.generateTexture('cover', 32, 40);
+    g.clear();
+
+    if (!this.textures.exists('bg_cloud')) {
+      g.fillStyle(0xdbeafe, 0.9);
+      g.fillCircle(28, 22, 16);
+      g.fillCircle(44, 20, 18);
+      g.fillCircle(60, 24, 14);
+      g.fillCircle(18, 26, 12);
+      g.generateTexture('bg_cloud', 80, 44);
+      g.clear();
+    }
+    if (!this.textures.exists('prop_barrel')) {
+      g.fillStyle(0x7c2d12, 1);
+      g.fillRoundedRect(6, 4, 20, 28, 4);
+      g.fillStyle(0x9a3412, 1);
+      g.fillRect(6, 10, 20, 4);
+      g.fillRect(6, 22, 20, 4);
+      g.fillStyle(0x1c1917, 1);
+      g.fillRect(6, 4, 20, 3);
+      g.generateTexture('prop_barrel', 32, 36);
+      g.clear();
+    }
+    if (!this.textures.exists('prop_antenna')) {
+      g.fillStyle(0x64748b, 1);
+      g.fillRect(14, 8, 3, 40);
+      g.fillStyle(0x94a3b8, 1);
+      g.fillTriangle(8, 10, 16, 0, 24, 10);
+      g.fillCircle(16, 8, 4);
+      g.generateTexture('prop_antenna', 32, 52);
+      g.clear();
+    }
+    if (!this.textures.exists('prop_flag')) {
+      g.fillStyle(0xcbd5e1, 1);
+      g.fillRect(6, 4, 3, 40);
+      g.fillStyle(0xdc2626, 1);
+      g.fillTriangle(9, 6, 30, 14, 9, 22);
+      g.generateTexture('prop_flag', 32, 48);
+      g.clear();
+    }
     g.destroy();
   }
 }

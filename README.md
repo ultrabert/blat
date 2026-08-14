@@ -31,7 +31,11 @@ One human → bots fill slots. Second human → bots leave.
 | W / ↑ / Space | Jump (grounded) or jet (air) |
 | Mouse | Aim |
 | Left click | Shoot |
-| 1 / 2 / 3 | Equip Rifle / Sniper / Shotgun (if unlocked) |
+| 1 / 2 | Equip firearm / melee |
+| R | Reload |
+| Q | Drop gun |
+| V | Cycle nade |
+| Tab (hold) | Scoreboard |
 | Hold Right click or G | Cook grenade (release to throw; max cook = boom in hand) |
 
 ## Play live

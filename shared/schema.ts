@@ -1,4 +1,4 @@
-import { Schema, type, MapSchema } from '@colyseus/schema';
+import { Schema, type, MapSchema, ArraySchema } from '@colyseus/schema';
 
 export class PlayerState extends Schema {
   @type('string') id = '';
@@ -17,6 +17,9 @@ export class PlayerState extends Schema {
   @type('number') stings = 1;
   @type('string') nadeType = 'frag';
   @type('number') kills = 0;
+  @type('number') deaths = 0;
+  @type('number') ping = 0;
+  @type('string') deathKind = '';
   @type('boolean') alive = true;
   @type('number') facing = 1;
   @type('number') aimX = 1;
@@ -74,9 +77,18 @@ export class PickupState extends Schema {
   @type('boolean') active = true;
 }
 
+export class KillFeedEntry extends Schema {
+  @type('string') killer = '';
+  @type('string') victim = '';
+  @type('string') weapon = '';
+  @type('boolean') headshot = false;
+}
+
 export class GameState extends Schema {
   @type({ map: PlayerState }) players = new MapSchema<PlayerState>();
   @type({ map: BulletState }) bullets = new MapSchema<BulletState>();
   @type({ map: GrenadeState }) grenades = new MapSchema<GrenadeState>();
   @type({ map: PickupState }) pickups = new MapSchema<PickupState>();
+  @type([KillFeedEntry]) killFeed = new ArraySchema<KillFeedEntry>();
+  @type('string') mapName = 'Ridge';
 }

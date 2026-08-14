@@ -18,7 +18,6 @@ import type { GameState, PlayerState } from '../../../shared/schema';
 import type { TraceTarget } from '../../../shared/trace';
 import {
   DEFAULT_WEAPON,
-  isFirearm,
   isMelee,
   isWeaponId,
   weaponIconKey,
@@ -30,6 +29,7 @@ import { skinForId, SKINS } from '../skins';
 import { SCENERY } from '../scenery';
 import { sound } from '../audio/SoundBus';
 import { VisceraFx } from '../fx/VisceraFx';
+import { CombatHud } from '../hud';
 import { PredictionController } from '../net/PredictionController';
 import { ProjectilePredictor } from '../net/ProjectilePredictor';
 
@@ -54,7 +54,8 @@ export class GameScene extends Phaser.Scene {
   private keyR!: Phaser.Input.Keyboard.Key;
   private keyQ!: Phaser.Input.Keyboard.Key;
   private keyV!: Phaser.Input.Keyboard.Key;
-  private hud!: Phaser.GameObjects.Text;
+  private keyTab!: Phaser.Input.Keyboard.Key;
+  private hud!: CombatHud;
   private crosshair!: Phaser.GameObjects.Graphics;
   private pickupSprites = new Map<string, Phaser.GameObjects.Container>();
   private localWeapon: WeaponId = DEFAULT_WEAPON;
@@ -83,6 +84,7 @@ export class GameScene extends Phaser.Scene {
   private camY = GAME_HEIGHT / 2;
   private shakeMs = 0;
   private shakeAmp = 0;
+  private lastPingAt = 0;
 
   constructor() {
     super('Game');
@@ -116,6 +118,8 @@ export class GameScene extends Phaser.Scene {
     this.keyR = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyQ = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
     this.keyV = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.V);
+    keyboard.addCapture(Phaser.Input.Keyboard.KeyCodes.TAB);
+    this.keyTab = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       sound.unlock();
@@ -134,33 +138,32 @@ export class GameScene extends Phaser.Scene {
     this.input.mouse?.disableContextMenu();
     sound.unlock();
 
-    this.hud = this.add
-      .text(16, 12, '', {
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontSize: '14px',
-        color: COLORS.hud,
-      })
-      .setScrollFactor(0)
-      .setDepth(100);
+    this.hud = new CombatHud(this);
 
     this.crosshair = this.add.graphics().setDepth(90);
     this.input.setDefaultCursor(this.spectating ? 'default' : 'none');
 
     this.add
       .text(
-        16,
-        VIEW_HEIGHT - 52,
+        VIEW_WIDTH - 16,
+        VIEW_HEIGHT - 14,
         this.spectating
-          ? 'DEMO · bots fighting · open /demo after each ship to watch'
-          : '1 gun · 2 knife · R reload · Q drop · V nade · A/D · W jet · S crouch/prone · RMB cook · LMB',
+          ? 'DEMO · bots fighting · Tab scores'
+          : 'Tab scores · 1 gun · 2 knife · R reload · Q drop · V nade · W jet',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          fontSize: '13px',
+          fontSize: '11px',
           color: COLORS.muted,
         },
       )
+      .setOrigin(1, 1)
       .setScrollFactor(0)
-      .setDepth(100);
+      .setDepth(100)
+      .setAlpha(0.7);
+
+    this.room.onMessage('pong', (sentAt: number) => {
+      if (typeof sentAt === 'number') this.room.send('rtt', Date.now() - sentAt);
+    });
 
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
     this.cameras.main.setRoundPixels(true);
@@ -173,11 +176,12 @@ export class GameScene extends Phaser.Scene {
     this.lastDelta = delta;
 
     if (this.spectating) {
-      this.syncEntities();
-      this.syncPickups();
-      this.watchWounds();
-      this.updateHud(undefined);
-      this.updateCamera(undefined);
+    this.syncEntities();
+    this.syncPickups();
+    this.watchWounds();
+    this.tickPing();
+    this.updateHud(undefined);
+    this.updateCamera(undefined);
       return;
     }
 
@@ -273,6 +277,7 @@ export class GameScene extends Phaser.Scene {
 
     this.syncEntities();
     this.syncPickups();
+    this.tickPing();
     this.updateHud(serverMe);
     this.drawCrosshair(serverMe);
     this.updateCamera(serverMe);
@@ -452,6 +457,10 @@ export class GameScene extends Phaser.Scene {
             skin,
             weapon: isWeaponId(this.localWeapon) ? this.localWeapon : weapon,
             aimReady: this.fireHeld || this.nowMs < this.aimReadyUntil,
+            name: player.name,
+            showName: false,
+            vest: player.vest,
+            deathKind: player.deathKind,
             tint,
             alpha: local.alive ? 1 : 0.9,
           },
@@ -490,6 +499,10 @@ export class GameScene extends Phaser.Scene {
             skin,
             weapon,
             aimReady: true,
+            name: player.isBot ? player.name : player.name,
+            showName: true,
+            vest: player.vest,
+            deathKind: player.deathKind,
             tint,
             alpha: view.alive ? view.alpha : 0.9,
           },
@@ -789,65 +802,29 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private updateHud(serverMe: PlayerState | undefined): void {
-    if (this.spectating) {
-      const roster = [...this.room.state.players.entries()]
-        .map(
-          ([, p]) =>
-            `${p.isBot ? 'BOT' : p.name} ${p.alive ? `${Math.ceil(p.health)}HP` : 'DEAD'}`,
-        )
-        .join(' · ');
-      this.hud.setText(`DEMO  watching\n${roster || 'Waiting for bots…'}`);
-      return;
-    }
-    if (!serverMe) {
-      this.hud.setText('Waiting for spawn…');
-      return;
-    }
+  private tickPing(): void {
+    if (this.spectating) return;
+    if (this.nowMs - this.lastPingAt < 1500) return;
+    this.lastPingAt = this.nowMs;
+    this.room.send('ping', Date.now());
+  }
 
-    const fuel = this.prediction.predicted?.fuel ?? serverMe.fuel;
-    const cooking = this.localCooking || !!serverMe.cooking;
+  private updateHud(serverMe: PlayerState | undefined): void {
+    const fuel = this.prediction.predicted?.fuel ?? serverMe?.fuel ?? PLAYER.maxFuel;
+    const cooking = this.localCooking || !!serverMe?.cooking;
     const cookFrac = cooking
       ? Math.min(1, (this.nowMs - this.cookStartedAt) / GRENADE.fuseMs)
       : 0;
-    const others = [...this.room.state.players.entries()]
-      .filter(([id]) => id !== this.sessionId)
-      .map(
-        ([, p]) =>
-          `${p.isBot ? 'BOT' : p.name} ${p.alive ? `${Math.ceil(p.health)}HP` : 'DEAD'}`,
-      );
-
-    const weaponId = isWeaponId(serverMe.weapon) ? serverMe.weapon : DEFAULT_WEAPON;
-    const weapon = WEAPONS[weaponId];
-    const gunName = isWeaponId(serverMe.firearm) ? WEAPONS[serverMe.firearm].short : '—';
-    const meleeName = isWeaponId(serverMe.melee) ? WEAPONS[serverMe.melee].short : 'KN';
-    const mag =
-      isMelee(weaponId) || !isFirearm(weaponId)
-        ? '∞'
-        : `${serverMe.ammo}/${weapon.magSize} +${serverMe.reserve}`;
-    const slots = [
-      `1:${gunName}${isFirearm(weaponId) ? '«' : ''}`,
-      `2:${meleeName}${isMelee(weaponId) ? '«' : ''}`,
-    ].join('  ');
-    const nadeLine = `NADES F${serverMe.frags} C${serverMe.clusters} S${serverMe.stings} [${(serverMe.nadeType || 'frag').toUpperCase()}]`;
-
-    this.hud.setText(
-      [
-        `HP ${this.bar(serverMe.health, PLAYER.maxHealth, 10)} ${Math.ceil(serverMe.health)}`,
-        `VEST ${this.bar(serverMe.vest, PLAYER.maxVest, 10)} ${Math.ceil(serverMe.vest)}`,
-        `FUEL ${this.bar(fuel, PLAYER.maxFuel, 10)} ${Math.ceil(fuel)}`,
-        `GUN ${weapon.name}  ${mag}${serverMe.reloading ? '  REL' : ''}`,
-        slots,
-        nadeLine,
-        cooking ? `COOK ${this.bar(cookFrac * GRENADE.fuseMs, GRENADE.fuseMs, 10)}` : '',
-        `KILLS ${serverMe.kills}`,
-        ...others,
-        serverMe.alive ? '' : 'RESPAWNING…',
-        this.roomCode ? `CODE ${this.roomCode}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n'),
-    );
+    this.hud.update(this.room.state, {
+      me: serverMe,
+      fuel,
+      cooking,
+      cookFrac,
+      spectating: this.spectating,
+      scoreboard: this.keyTab?.isDown ?? false,
+      roomCode: this.roomCode,
+      nowMs: this.nowMs,
+    });
   }
 
   private drawCrosshair(serverMe?: PlayerState): void {
@@ -893,11 +870,6 @@ export class GameScene extends Phaser.Scene {
     g.strokePath();
     g.fillStyle(0xe8e4dc, 0.9);
     g.fillCircle(px, py, 1.5);
-  }
-
-  private bar(value: number, max: number, width: number): string {
-    const filled = Math.round((value / max) * width);
-    return '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, width - filled));
   }
 
   private watchWounds(): void {
@@ -1117,27 +1089,58 @@ export class GameScene extends Phaser.Scene {
 
   private drawBackground(): void {
     const g = this.add.graphics();
-    // Cool distant sky → warmer near-horizon (Soldat-ish depth)
     g.fillStyle(0x152238, 1);
     g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
     g.fillStyle(0x243656, 1);
-    g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.42);
-    g.fillStyle(0x3d2a1a, 0.35);
-    g.fillRect(0, GAME_HEIGHT * 0.55, GAME_WIDTH, GAME_HEIGHT * 0.45);
-    g.lineStyle(1, 0xffffff, 0.03);
-    for (let x = 0; x < GAME_WIDTH; x += 64) g.lineBetween(x, 0, x, GAME_HEIGHT);
-    for (let y = 0; y < GAME_HEIGHT; y += 64) g.lineBetween(0, y, GAME_WIDTH, y);
-    g.setDepth(-10);
+    g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.38);
+    g.fillStyle(0x3d2a1a, 0.28);
+    g.fillRect(0, GAME_HEIGHT * 0.52, GAME_WIDTH, GAME_HEIGHT * 0.48);
+    g.setDepth(-12);
+
+    const ridges = this.add.graphics().setDepth(-11).setScrollFactor(0.18);
+    ridges.fillStyle(0x1b2a44, 1);
+    ridges.beginPath();
+    ridges.moveTo(-80, 420);
+    ridges.lineTo(220, 260);
+    ridges.lineTo(480, 340);
+    ridges.lineTo(820, 210);
+    ridges.lineTo(1180, 300);
+    ridges.lineTo(1500, 190);
+    ridges.lineTo(1860, 280);
+    ridges.lineTo(2280, 200);
+    ridges.lineTo(2680, 330);
+    ridges.lineTo(2680, 900);
+    ridges.lineTo(-80, 900);
+    ridges.closePath();
+    ridges.fillPath();
+    ridges.fillStyle(0x122036, 0.85);
+    ridges.fillTriangle(100, 520, 360, 280, 620, 520);
+    ridges.fillTriangle(1700, 540, 2040, 250, 2380, 540);
+
+    if (this.textures.exists('bg_cloud')) {
+      for (const c of [
+        { x: 280, y: 90, s: 0.7, a: 0.35, f: 0.12 },
+        { x: 900, y: 60, s: 0.9, a: 0.28, f: 0.1 },
+        { x: 1600, y: 80, s: 0.75, a: 0.32, f: 0.14 },
+        { x: 2200, y: 50, s: 0.85, a: 0.25, f: 0.11 },
+      ]) {
+        const img = this.add.image(c.x, c.y, 'bg_cloud');
+        img.setScale(c.s);
+        img.setAlpha(c.a);
+        img.setScrollFactor(c.f);
+        img.setDepth(-10);
+      }
+    }
 
     this.add
-      .text(VIEW_WIDTH / 2, 28, 'BLAT', {
+      .text(VIEW_WIDTH / 2, 22, 'BLAT', {
         fontFamily: "Georgia, 'Times New Roman', serif",
-        fontSize: '28px',
+        fontSize: '22px',
         color: '#e8eefc',
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setAlpha(0.28)
+      .setAlpha(0.2)
       .setDepth(100);
   }
 }

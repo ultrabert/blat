@@ -41,14 +41,16 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 
 | # | Aspect | Soldat | Blat now | Why it matters |
 |---|---|---|---|---|
-| C1 | Maps | Many vertical poly maps (bunkers, ramps, sky) | One AABB arena | Layout *is* the meta. |
-| C2 | Spawns | Multiple, anti-camp | Random from a short list | Spawn-kill kills fun. |
-| C3 | HUD | Health/vest bars, ammo, nades, weapon icon | Monospace text | Read the fight at a glance. |
-| C4 | Names + kill feed | Tags, obituaries with weapon | Roster HP line | Know who killed you with what. |
-| C5 | Scoreboard | Tab scores / ping | None | DM needs a reason to keep playing. |
-| C6 | Soldier read | Distinct kits, held guns, gore poses | Stick + painted skins | Silhouette at range. |
-| C7 | Scenery / parallax | Dense props, weather optional | Sparse crates / sandbags | Place, not a debug level. |
-| C8 | Bots that use the map | Waypoints, jets, nades, guns | Chase + strafe | Demo and solo practice. |
+| C1 | Maps | Many vertical poly maps (bunkers, ramps, sky) | **Shipped** — Ridge: bunkers, hill ramps, sky pads, side caves | Layout *is* the meta. |
+| C2 | Spawns | Multiple, anti-camp | **Shipped** — farthest from living, skip recent | Spawn-kill kills fun. |
+| C3 | HUD | Health/vest bars, ammo, nades, weapon icon | **Shipped** — bars + gun icon + nade counts | Read the fight at a glance. |
+| C4 | Names + kill feed | Tags, obituaries with weapon | **Shipped** — nametags + `[AK HS]` feed | Know who killed you with what. |
+| C5 | Scoreboard | Tab scores / ping | **Shipped** — Tab: K/D/ping | DM needs a reason to keep playing. |
+| C6 | Soldier read | Distinct kits, held guns, gore poses | **Shipped** — skins, held guns, vest, ragdoll gore | Silhouette at range. |
+| C7 | Scenery / parallax | Dense props, weather optional | **Shipped** — ridges, clouds, flags, barrels | Place, not a debug level. |
+| C8 | Bots that use the map | Waypoints, jets, nades, guns | **Shipped** — waypoint steer, loot, cook nades | Demo and solo practice. |
+
+**C1–C8:** Wave C is in. Playtest the map and HUD before Wave D.
 
 ## Wave D — after it’s fun
 

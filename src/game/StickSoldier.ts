@@ -23,6 +23,10 @@ export type StickView = {
   weapon: WeaponId;
   /** True while firing / recently fired — full aim; else low-ready. */
   aimReady: boolean;
+  name?: string;
+  showName?: boolean;
+  vest?: number;
+  deathKind?: string;
   /** Kept for ragdoll/gun fallback shading. */
   tint: number;
   alpha: number;
@@ -56,9 +60,9 @@ type VerletStick = {
   len: number;
 };
 
-const HEAD_DISPLAY = 15;
-const TORSO_W = 14;
-const LIMB_THICK = 7.5;
+const HEAD_DISPLAY = 16;
+const TORSO_W = 15;
+const LIMB_THICK = 8.2;
 
 /** Held weapon display length (px) + grip/fore distances along barrel from pivot. */
 const HOLD_RIFLE = { len: 26, h: 11, grip: 4, fore: 12, originX: 0.28, originY: 0.58 };
@@ -147,6 +151,7 @@ export class StickSoldier {
   /** Smoothed carry/aim angle for less twitchy gun. */
   private holdAim = 0;
   private holdAimInit = false;
+  private readonly nameTag: Phaser.GameObjects.Text;
 
   private static readonly STRIDE_PX = 30;
 
@@ -157,6 +162,16 @@ export class StickSoldier {
     this.gunGfx = scene.add.graphics();
     this.fallbackGfx = scene.add.graphics();
     this.root.add([this.fallbackGfx, this.gunGfx]);
+    this.nameTag = scene.add
+      .text(0, 0, '', {
+        fontFamily: 'ui-monospace, Menlo, monospace',
+        fontSize: '11px',
+        color: '#e8eefc',
+        stroke: '#0b1020',
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(depth + 2);
   }
 
   /** @deprecated use root — kept so callers that referenced gfx still compile if any */
@@ -186,6 +201,7 @@ export class StickSoldier {
     this.footstepFx = false;
     this.ensureSkin(view.skin);
     this.ensureWeapon(view.weapon);
+    this.updateNameTag(view);
 
     if (!view.alive) {
       if (this.wasAlive) {
@@ -221,7 +237,18 @@ export class StickSoldier {
   }
 
   destroy(): void {
+    this.nameTag.destroy();
     this.root.destroy(true);
+  }
+
+  private updateNameTag(view: StickView): void {
+    const label = view.showName && view.name ? view.name : '';
+    this.nameTag.setText(label);
+    this.nameTag.setVisible(!!label);
+    if (!label) return;
+    const lift = view.alive ? (view.prone ? 16 : 28) : 22;
+    this.nameTag.setPosition(view.x, view.y - lift);
+    this.nameTag.setAlpha(view.alive ? 0.92 : 0.45);
   }
 
   private ensureSkin(id: SkinId): void {
@@ -524,6 +551,8 @@ export class StickSoldier {
     parts.torso.setRotation(ang(tdX, tdY) - Math.PI / 2);
     parts.torso.setDisplaySize(TORSO_W + 2, tLen + 2);
     parts.torso.setFlipX(face < 0);
+    if ((view.vest ?? 0) > 12) parts.torso.setTint(0xb8d4ea);
+    else parts.torso.clearTint();
 
     // Arms to grip / foregrip (weapon prop defines hand targets)
     this.placeLimb(parts.offArm, pose.shoulder, pose.offHand, LIMB_THICK - 1, true);
@@ -622,6 +651,15 @@ export class StickSoldier {
       n.px -= view.vx * 0.018 * kick + (Math.random() - 0.5) * 3.5;
       n.py -= view.vy * 0.018 * kick - 2.2 - Math.random() * 3;
     }
+    if (view.deathKind === 'head') {
+      pts[0]!.px -= (Math.random() - 0.5) * 18;
+      pts[0]!.py += 8 + Math.random() * 10;
+    } else if (view.deathKind === 'blast') {
+      for (const n of pts) {
+        n.px -= (Math.random() - 0.5) * 10;
+        n.py += 4 + Math.random() * 8;
+      }
+    }
 
     this.nodes = pts;
     const link = (a: number, b: number): VerletStick => ({
@@ -639,6 +677,9 @@ export class StickSoldier {
       link(2, 6),
       link(6, 8),
     ];
+    if (view.deathKind === 'head') {
+      this.sticks = this.sticks.filter((s) => !(s.a === 0 && s.b === 1));
+    }
 
     this.root.setPosition(0, 0);
     this.root.setScale(1);
@@ -699,12 +740,19 @@ export class StickSoldier {
   private drawRagdoll(view: StickView): void {
     this.gunGfx.clear();
     this.fallbackGfx.clear();
-    if (this.weaponImg) this.weaponImg.setVisible(false);
     this.root.setAlpha(view.alpha);
 
     if (this.nodes.length < 9) return;
     const n = this.nodes;
     const parts = this.parts;
+    const hold = weaponHold(view.weapon);
+    if (this.weaponImg) {
+      this.weaponImg.setVisible(true);
+      this.weaponImg.setPosition(n[3]!.x, n[3]!.y);
+      this.weaponImg.setRotation(ang(n[3]!.x - n[1]!.x, n[3]!.y - n[1]!.y));
+      this.weaponImg.setDisplaySize(hold.len, hold.h);
+      this.weaponImg.setAlpha(0.9);
+    }
 
     if (!parts) {
       const c = view.tint;
@@ -725,9 +773,11 @@ export class StickSoldier {
       limb(6, 8);
       limb(1, 3);
       limb(1, 4, STROKE - 0.5);
-      limb(0, 1, STROKE - 1);
-      this.fallbackGfx.fillStyle(c, 1);
-      this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, 7.4);
+      if (view.deathKind !== 'head') {
+        limb(0, 1, STROKE - 1);
+        this.fallbackGfx.fillStyle(c, 1);
+        this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, 7.4);
+      }
       return;
     }
 
@@ -747,9 +797,10 @@ export class StickSoldier {
     this.placeLimb(parts.offArm, wpt(1), wpt(4), LIMB_THICK - 1, false);
     this.placeLimb(parts.gunArm, wpt(1), wpt(3), LIMB_THICK - 0.5, false);
 
-    parts.head.setVisible(true);
+    parts.head.setVisible(view.deathKind !== 'head');
     parts.head.setPosition(n[0]!.x, n[0]!.y);
     parts.head.setRotation(ang(n[1]!.x - n[0]!.x, n[1]!.y - n[0]!.y) + Math.PI / 2);
     parts.head.setDisplaySize(HEAD_DISPLAY, HEAD_DISPLAY);
+    if (view.deathKind === 'head') parts.head.setVisible(false);
   }
 }
