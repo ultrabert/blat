@@ -95,6 +95,7 @@ export class GameScene extends Phaser.Scene {
   private lastReserve = 0;
   private lastBonus = '';
   private wasRolling = false;
+  private wasDashing = false;
   private aimReadyUntil = 0;
   private spectating = false;
   private camX = GAME_WIDTH / 2;
@@ -504,6 +505,9 @@ export class GameScene extends Phaser.Scene {
         const rolling = local.rollMs > 0;
         if (rolling && !this.wasRolling) sound.roll();
         this.wasRolling = rolling;
+        const dashing = (local.dashMs ?? 0) > 0;
+        if (dashing && !this.wasDashing) sound.dash();
+        this.wasDashing = dashing;
         if (this.fireHeld) this.aimReadyUntil = this.nowMs + 220;
         stick.update(
           {
@@ -1320,7 +1324,7 @@ export class GameScene extends Phaser.Scene {
       duration: 280,
       onComplete: () => ring.destroy(),
     });
-    sound.explode(0.35);
+    sound.pulse();
   }
 
   private drawWeather(): void {

@@ -1,0 +1,21 @@
+Bundled sound effects (all CC0 / public domain). Trimmed and normalized for blat.
+
+Firearms (real recordings)
+  Free Firearm Sound Library
+  https://github.com/buddingmonkey/FreeFirearmsSFXLibrary
+  Authors: Ben Jaszczak, Brian Nelson, Kevin Heras, Matthew Nanney
+  License: CC0 1.0
+  Used (first-shot trims of Prepared SFX mixes):
+    1911 A_34P  -> shoot_pistol
+    AK-47 C_27P -> shoot_rifle
+    PPSh P_22P  -> shoot_smg
+    Mosin Nagant M_26P -> shoot_sniper
+    Mossberg N_30P -> shoot_shotgun
+
+Impacts, footsteps, UI, explosions, jets, melee
+  Kenney.nl CC0 packs (Impact Sounds, RPG Audio, Interface Sounds, Sci-Fi Sounds)
+  https://kenney.nl
+  License: CC0 1.0
+  Served via https://cc0-sounds.exi.software/
+
+Do not replace these with copyrighted Soldat (or other game) samples.

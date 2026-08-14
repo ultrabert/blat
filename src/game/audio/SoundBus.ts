@@ -1,23 +1,21 @@
 /**
- * Sample-based SFX bus (Soldat-ish WAVs in /assets/sfx).
+ * Sample-based SFX bus. Bundled CC0 clips live in /assets/sfx (see CREDITS.txt).
  * Falls back to short procedural synthesis if a buffer isn't loaded yet.
  * Call unlock() from a user gesture (lobby click / first pointer).
  */
 export type ShootKind = string;
 
-function shootBuf(kind: string): BufKey {
-  if (kind === 'barrett' || kind === 'ruger' || kind === 'bow') return 'shoot_sniper';
-  if (kind === 'spas') return 'shoot_shotgun';
-  if (kind === 'm79' || kind === 'law') return 'explode';
-  if (kind === 'flamer') return 'jet_loop';
-  if (kind === 'knife' || kind === 'chainsaw' || kind === 'punch') return 'hit';
-  return 'shoot_rifle';
-}
-
 type BufKey =
+  | 'shoot_pistol'
   | 'shoot_rifle'
+  | 'shoot_smg'
   | 'shoot_sniper'
   | 'shoot_shotgun'
+  | 'shoot_bow'
+  | 'shoot_rocket'
+  | 'shoot_flamer'
+  | 'melee'
+  | 'punch'
   | 'explode'
   | 'grenade'
   | 'land'
@@ -29,30 +27,63 @@ type BufKey =
   | 'pickup'
   | 'cook_tick'
   | 'jet_loop'
-  | 'roll';
+  | 'roll'
+  | 'ricochet'
+  | 'dash'
+  | 'pulse';
 
-const ASSET: Record<BufKey, string> = {
-  shoot_rifle: '/assets/sfx/shoot_rifle.wav',
-  shoot_sniper: '/assets/sfx/shoot_sniper.wav',
-  shoot_shotgun: '/assets/sfx/shoot_shotgun.wav',
-  explode: '/assets/sfx/explode.wav',
-  grenade: '/assets/sfx/grenade.wav',
-  land: '/assets/sfx/land.wav',
-  land_soft: '/assets/sfx/land_soft.wav',
-  footstep: '/assets/sfx/footstep.wav',
-  hit: '/assets/sfx/hit.wav',
-  wet_hit: '/assets/sfx/wet_hit.wav',
-  death: '/assets/sfx/death.wav',
-  pickup: '/assets/sfx/pickup.wav',
-  cook_tick: '/assets/sfx/cook_tick.wav',
-  jet_loop: '/assets/sfx/jet_loop.wav',
-  roll: '/assets/sfx/roll.wav',
+function shootBuf(kind: string): BufKey {
+  if (kind === 'de' || kind === 'socom') return 'shoot_pistol';
+  if (kind === 'mp5' || kind === 'minigun') return 'shoot_smg';
+  if (kind === 'barrett' || kind === 'ruger') return 'shoot_sniper';
+  if (kind === 'spas') return 'shoot_shotgun';
+  if (kind === 'bow') return 'shoot_bow';
+  if (kind === 'm79' || kind === 'law') return 'shoot_rocket';
+  if (kind === 'flamer') return 'shoot_flamer';
+  if (kind === 'knife' || kind === 'chainsaw') return 'melee';
+  if (kind === 'punch') return 'punch';
+  return 'shoot_rifle';
+}
+
+const ASSET: Record<BufKey, readonly string[]> = {
+  shoot_pistol: ['/assets/sfx/shoot_pistol.ogg', '/assets/sfx/shoot_pistol_b.ogg'],
+  shoot_rifle: ['/assets/sfx/shoot_rifle.ogg', '/assets/sfx/shoot_rifle_b.ogg'],
+  shoot_smg: ['/assets/sfx/shoot_smg.ogg', '/assets/sfx/shoot_smg_b.ogg'],
+  shoot_sniper: ['/assets/sfx/shoot_sniper.ogg', '/assets/sfx/shoot_sniper_b.ogg'],
+  shoot_shotgun: ['/assets/sfx/shoot_shotgun.ogg', '/assets/sfx/shoot_shotgun_b.ogg'],
+  shoot_bow: ['/assets/sfx/shoot_bow.ogg', '/assets/sfx/shoot_bow_b.ogg'],
+  shoot_rocket: ['/assets/sfx/shoot_rocket.ogg'],
+  shoot_flamer: ['/assets/sfx/shoot_flamer.ogg'],
+  melee: ['/assets/sfx/melee.ogg', '/assets/sfx/melee_b.ogg'],
+  punch: ['/assets/sfx/punch.ogg'],
+  explode: ['/assets/sfx/explode.ogg', '/assets/sfx/explode_b.ogg'],
+  grenade: ['/assets/sfx/grenade.ogg', '/assets/sfx/grenade_b.ogg'],
+  land: ['/assets/sfx/land.ogg', '/assets/sfx/land_b.ogg'],
+  land_soft: ['/assets/sfx/land_soft.ogg', '/assets/sfx/land_soft_b.ogg'],
+  footstep: [
+    '/assets/sfx/footstep_0.ogg',
+    '/assets/sfx/footstep_1.ogg',
+    '/assets/sfx/footstep_2.ogg',
+    '/assets/sfx/footstep_3.ogg',
+    '/assets/sfx/footstep_4.ogg',
+  ],
+  hit: ['/assets/sfx/hit.ogg', '/assets/sfx/hit_b.ogg'],
+  wet_hit: ['/assets/sfx/wet_hit.ogg', '/assets/sfx/wet_hit_b.ogg'],
+  death: ['/assets/sfx/death.ogg', '/assets/sfx/death_b.ogg'],
+  pickup: ['/assets/sfx/pickup.ogg', '/assets/sfx/pickup_b.ogg'],
+  cook_tick: ['/assets/sfx/cook_tick.ogg'],
+  jet_loop: ['/assets/sfx/jet_loop.ogg'],
+  roll: ['/assets/sfx/roll.ogg', '/assets/sfx/roll_b.ogg'],
+  ricochet: ['/assets/sfx/ricochet.ogg', '/assets/sfx/ricochet_b.ogg', '/assets/sfx/ricochet_c.ogg'],
+  dash: ['/assets/sfx/dash.ogg'],
+  pulse: ['/assets/sfx/pulse.ogg'],
 };
 
 export class SoundBus {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private buffers = new Map<BufKey, AudioBuffer>();
+  private buffers = new Map<BufKey, AudioBuffer[]>();
+  private lastVariant = new Map<BufKey, number>();
   private jetGain: GainNode | null = null;
   private jetSrc: AudioBufferSourceNode | OscillatorNode | null = null;
   private jetting = false;
@@ -69,7 +100,7 @@ export class SoundBus {
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new Ctx();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.62;
+    this.master.gain.value = 0.58;
     this.master.connect(this.ctx.destination);
     this.unlocked = true;
     void this.ctx.resume();
@@ -81,15 +112,18 @@ export class SoundBus {
     if (!ctx) return;
     await Promise.all(
       (Object.keys(ASSET) as BufKey[]).map(async (key) => {
-        try {
-          const res = await fetch(ASSET[key]);
-          if (!res.ok) return;
-          const raw = await res.arrayBuffer();
-          const buf = await ctx.decodeAudioData(raw.slice(0));
-          this.buffers.set(key, buf);
-        } catch {
-          /* keep procedural fallback */
+        const loaded: AudioBuffer[] = [];
+        for (const url of ASSET[key]) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const raw = await res.arrayBuffer();
+            loaded.push(await ctx.decodeAudioData(raw.slice(0)));
+          } catch {
+            /* skip missing variant */
+          }
         }
+        if (loaded.length) this.buffers.set(key, loaded);
       }),
     );
   }
@@ -97,72 +131,83 @@ export class SoundBus {
   shoot(kind: ShootKind = 'de'): void {
     const key = shootBuf(kind);
     const gain =
-      kind === 'barrett' ? 0.95 : kind === 'spas' || kind === 'law' ? 0.9 : kind === 'de' ? 0.82 : 0.74;
+      kind === 'barrett' || kind === 'ruger'
+        ? 0.92
+        : kind === 'spas' || kind === 'law'
+          ? 0.88
+          : kind === 'de' || kind === 'socom'
+            ? 0.8
+            : kind === 'mp5' || kind === 'minigun'
+              ? 0.58
+              : kind === 'flamer'
+                ? 0.48
+                : kind === 'bow'
+                  ? 0.7
+                  : kind === 'punch'
+                    ? 0.78
+                    : kind === 'knife' || kind === 'chainsaw'
+                      ? 0.72
+                      : 0.74;
     const rate =
-      kind === 'mp5' || kind === 'minigun' ? 1.08 + Math.random() * 0.08 : 0.96 + Math.random() * 0.08;
-    if (this.play(key, { gain, rate })) {
-      if (kind === 'knife' || kind === 'chainsaw') this.fallbackTone(900, 400, 0.12, 0.04);
-      return;
-    }
+      kind === 'mp5' || kind === 'minigun'
+        ? 1.02 + Math.random() * 0.1
+        : kind === 'flamer'
+          ? 0.92 + Math.random() * 0.16
+          : 0.97 + Math.random() * 0.06;
+    if (this.play(key, { gain, rate })) return;
     this.fallbackShoot(kind);
   }
 
   grenade(): void {
-    if (this.play('grenade', { gain: 0.7, rate: 0.97 + Math.random() * 0.06 })) return;
+    if (this.play('grenade', { gain: 0.62, rate: 0.97 + Math.random() * 0.06 })) return;
     this.fallbackTone(420, 140, 0.2, 0.14);
   }
 
   explode(distanceScale = 1): void {
-    const vol = 0.95 * Math.max(0.2, Math.min(1, distanceScale));
+    const vol = 0.92 * Math.max(0.2, Math.min(1, distanceScale));
     if (this.play('explode', { gain: vol, rate: 0.94 + Math.random() * 0.08 })) return;
     this.fallbackExplode(vol);
   }
 
   land(heavy = true): void {
     const key: BufKey = heavy ? 'land' : 'land_soft';
-    if (this.play(key, { gain: heavy ? 0.75 : 0.5, rate: 0.95 + Math.random() * 0.1 })) return;
+    if (this.play(key, { gain: heavy ? 0.72 : 0.48, rate: 0.95 + Math.random() * 0.1 })) return;
     this.fallbackTone(heavy ? 110 : 150, 40, heavy ? 0.4 : 0.22, 0.14);
   }
 
   footstep(): void {
-    if (this.play('footstep', { gain: 0.4, rate: 0.9 + Math.random() * 0.2 })) return;
+    if (this.play('footstep', { gain: 0.38, rate: 0.92 + Math.random() * 0.16 })) return;
     this.fallbackNoise(0.04, 280, 0.16);
   }
 
   death(): void {
     this.setJetting(false);
-    if (this.play('death', { gain: 0.65 })) return;
+    if (this.play('death', { gain: 0.7, rate: 0.92 + Math.random() * 0.08 })) return;
     this.fallbackTone(220, 45, 0.22, 0.4);
   }
 
   wetHit(): void {
-    if (this.play('wet_hit', { gain: 0.7, rate: 0.92 + Math.random() * 0.12 })) return;
+    if (this.play('wet_hit', { gain: 0.68, rate: 0.94 + Math.random() * 0.1 })) return;
     this.fallbackNoise(0.1, 400, 0.28);
   }
 
   hit(): void {
-    if (this.play('hit', { gain: 0.55, rate: 0.95 + Math.random() * 0.1 })) return;
+    if (this.play('hit', { gain: 0.52, rate: 0.95 + Math.random() * 0.1 })) return;
     this.fallbackTone(160, 70, 0.12, 0.07);
   }
 
   ricochet(): void {
-    if (this.play('hit', { gain: 0.28, rate: 1.55 + Math.random() * 0.25 })) {
-      this.fallbackTone(2400, 900, 0.12, 0.045);
-      return;
-    }
+    if (this.play('ricochet', { gain: 0.42, rate: 0.95 + Math.random() * 0.2 })) return;
     this.fallbackRicochet();
   }
 
   pain(): void {
-    if (this.play('wet_hit', { gain: 0.38, rate: 0.62 + Math.random() * 0.12 })) {
-      this.fallbackTone(210, 90, 0.16, 0.12);
-      return;
-    }
+    if (this.play('wet_hit', { gain: 0.4, rate: 0.72 + Math.random() * 0.1 })) return;
     this.fallbackPain();
   }
 
   pickup(): void {
-    if (this.play('pickup', { gain: 0.55 })) return;
+    if (this.play('pickup', { gain: 0.5, rate: 0.98 + Math.random() * 0.04 })) return;
     this.fallbackTone(660, 990, 0.2, 0.1);
   }
 
@@ -177,7 +222,17 @@ export class SoundBus {
   }
 
   roll(): void {
-    if (this.play('roll', { gain: 0.45, rate: 0.95 + Math.random() * 0.1 })) return;
+    if (this.play('roll', { gain: 0.48, rate: 0.95 + Math.random() * 0.1 })) return;
+  }
+
+  dash(): void {
+    if (this.play('dash', { gain: 0.55, rate: 0.96 + Math.random() * 0.08 })) return;
+    this.fallbackNoise(0.08, 240, 0.22);
+  }
+
+  pulse(): void {
+    if (this.play('pulse', { gain: 0.5, rate: 0.94 + Math.random() * 0.08 })) return;
+    this.fallbackTone(380, 90, 0.28, 0.18);
   }
 
   setJetting(on: boolean): void {
@@ -206,10 +261,10 @@ export class SoundBus {
     const t = ctx.currentTime;
     this.jetGain = ctx.createGain();
     this.jetGain.gain.setValueAtTime(0.001, t);
-    this.jetGain.gain.exponentialRampToValueAtTime(0.22, t + 0.05);
+    this.jetGain.gain.exponentialRampToValueAtTime(0.26, t + 0.05);
     this.jetGain.connect(this.master);
 
-    const loop = this.buffers.get('jet_loop');
+    const loop = this.pick('jet_loop');
     if (loop) {
       this.jetSrc = ctx.createBufferSource();
       this.jetSrc.buffer = loop;
@@ -219,7 +274,6 @@ export class SoundBus {
       return;
     }
 
-    // Procedural fallback jet
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.value = 55;
@@ -240,12 +294,19 @@ export class SoundBus {
     this.jetSrc = osc;
   }
 
-  private play(
-    key: BufKey,
-    opts: { gain?: number; rate?: number } = {},
-  ): boolean {
+  private pick(key: BufKey): AudioBuffer | null {
+    const list = this.buffers.get(key);
+    if (!list?.length) return null;
+    let idx = Math.floor(Math.random() * list.length);
+    const prev = this.lastVariant.get(key);
+    if (list.length > 1 && idx === prev) idx = (idx + 1) % list.length;
+    this.lastVariant.set(key, idx);
+    return list[idx] ?? null;
+  }
+
+  private play(key: BufKey, opts: { gain?: number; rate?: number } = {}): boolean {
     const ctx = this.ensure();
-    const buf = this.buffers.get(key);
+    const buf = this.pick(key);
     if (!ctx || !this.master || !buf) return false;
     const src = ctx.createBufferSource();
     src.buffer = buf;
