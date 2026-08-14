@@ -28,7 +28,7 @@ export const SPREE = [
   { n: 10, label: 'GODLIKE' },
 ] as const;
 
-export function isBonusId(v: string): v is BonusId {
+export function isBonusId(v: unknown): v is BonusId {
   return v === 'berserk' || v === 'predator' || v === 'flamegod';
 }
 

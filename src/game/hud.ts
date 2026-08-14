@@ -17,14 +17,27 @@ import {
   weaponIconKey,
   WEAPONS,
 } from '../../shared/weapons';
+import { displayLabel } from '../../shared/labels';
 
-function weaponShort(id: string): string {
+/** Schema strings can arrive unset; never paint the word "undefined". */
+function txt(v: unknown, fallback = ''): string {
+  return displayLabel(v, fallback);
+}
+
+function num(v: unknown, fallback = 0): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function weaponShort(id: unknown): string {
   if (isWeaponId(id)) return WEAPONS[id].short;
   if (id === 'frag') return 'FRAG';
   if (id === 'cluster') return 'CLS';
   if (id === 'sting') return 'STG';
   if (id === 'fall') return 'FALL';
-  return id ? id.slice(0, 4).toUpperCase() : '—';
+  if (id === 'blat') return 'PULSE';
+  const s = txt(id);
+  return s ? s.slice(0, 4).toUpperCase() : '—';
 }
 
 function barColor(frac: number, healthy: number, mid: number, low: number): number {
@@ -133,15 +146,15 @@ export class CombatHud {
         : '';
     const bits = [
       frame.spectating ? 'DEMO' : MAP_NAME,
-      MODE_LABEL[mode],
+      MODE_LABEL[mode] || 'Deathmatch',
       state.realistic ? 'REAL' : '',
       scores,
       `${mm}:${ss}`,
       frame.me && isBonusId(frame.me.bonus) ? BONUS_LABEL[frame.me.bonus] : '',
       wind ? `WIND ${wind > 0 ? '+' : ''}${wind}` : '',
-      state.winner ? `WIN ${state.winner}` : '',
+      txt(state.winner) ? `WIN ${txt(state.winner)}` : '',
       frame.me && !frame.me.alive ? 'RESPAWNING' : '',
-      !frame.spectating && frame.roomCode ? frame.roomCode : '',
+      !frame.spectating && txt(frame.roomCode) ? txt(frame.roomCode) : '',
     ].filter(Boolean);
     this.metaText.setText(bits.join('  '));
     this.drawScoreboard(state, frame);
@@ -213,12 +226,12 @@ export class CombatHud {
     const mag =
       isMelee(weaponId) || !isFirearm(weaponId)
         ? '∞'
-        : `${me.ammo} / ${weapon.magSize}   +${me.reserve}`;
+        : `${num(me.ammo)} / ${weapon.magSize}   +${num(me.reserve)}`;
     const rel = me.reloading ? '  REL' : '';
     this.gunText.setText(`${weapon.name}   ${mag}${rel}`);
-    const nade = (me.nadeType || 'frag').toUpperCase();
+    const nade = txt(me.nadeType, 'frag').toUpperCase();
     this.nadeText.setText(
-      `F ${me.frags}   C ${me.clusters}   S ${me.stings}   [${nade}]   E pulse  Shift dash${
+      `F ${num(me.frags)}   C ${num(me.clusters)}   S ${num(me.stings)}   [${nade}]   E pulse  Shift dash${
         (me.blatCd || 0) > 0 ? '' : '  •'
       }`,
     );
@@ -229,11 +242,13 @@ export class CombatHud {
     state.killFeed?.forEach((row: KillFeedEntry) => {
       const w = weaponShort(row.weapon);
       const hs = row.headshot ? ' HS' : '';
-      if (!row.killer) {
-        rows.push(`${row.victim}  [${w}]`);
+      const killer = txt(row.killer);
+      const victim = txt(row.victim, 'Soldier');
+      if (!killer) {
+        rows.push(`${victim}  [${w}]`);
         return;
       }
-      rows.push(`${row.killer}  [${w}${hs}]  ${row.victim}`);
+      rows.push(`${killer}  [${w}${hs}]  ${victim}`);
     });
     this.feedText.setText(rows.slice(0, 8).join('\n'));
   }
@@ -252,7 +267,8 @@ export class CombatHud {
       `${header}                    TAB`,
       '  NAME              T    S   K   D  PING',
       ...players.map((p) => {
-        const name = (p.isBot ? `BOT ${p.name}` : p.name).slice(0, 16).padEnd(16);
+        const raw = txt(p.name, p.isBot ? 'Bot' : 'Soldier');
+        const name = (p.isBot ? `BOT ${raw}` : raw).slice(0, 16).padEnd(16);
         const team = isTeamMode(mode) ? TEAM_NAME[(p.team === 1 || p.team === 2 ? p.team : 0) as 0 | 1 | 2].slice(0, 1).padStart(2) : ' -';
         const s = String(p.score).padStart(3);
         const k = String(p.kills).padStart(3);

@@ -12,7 +12,7 @@ import { ballisticDamage } from './ballistics.js';
 import { PLAYER } from './constants.js';
 import { applyVestDamage, spawnAmmoFor } from './fire.js';
 import { NADE, NADE_KINDS } from './grenades.js';
-import { isMelee, PICKUP_ARM_MS, WEAPONS } from './weapons.js';
+import { isMelee, PICKUP_ARM_MS, WEAPONS, isWeaponId } from './weapons.js';
 
 describe('weapon-arsenal', () => {
   it('barrett-is-slower-and-tighter-than-ak', () => {
@@ -70,6 +70,13 @@ describe('weapon-arsenal', () => {
     assert.ok((WEAPONS.knife.meleeRange ?? 0) > 20);
     assert.equal(WEAPONS.knife.magSize, 0);
     assert.ok(WEAPONS.knife.damage > WEAPONS.ak.damage);
+  });
+
+  it('rejects-unset-weapon-ids', () => {
+    assert.equal(isWeaponId(undefined), false);
+    assert.equal(isWeaponId(''), false);
+    assert.equal(isWeaponId('rifle'), false);
+    assert.equal(isWeaponId('ak'), true);
   });
 });
 

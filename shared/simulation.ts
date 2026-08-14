@@ -31,6 +31,7 @@ import {
   type NadeKind,
 } from './grenades.js';
 import { traceBullet } from './trace.js';
+import { displayLabel } from './labels.js';
 import {
   BulletState,
   ChatEntry,
@@ -352,7 +353,7 @@ export class Simulation {
   addPlayer(id: string, name: string, isBot = false): PlayerState {
     const p = new PlayerState();
     p.id = id;
-    p.name = name;
+    p.name = displayLabel(name, isBot ? 'Bot' : 'Soldier').slice(0, 16);
     p.isBot = isBot;
     p.team = this.assignTeam();
     const spawn = this.pickSpawn(id, p.team);
@@ -465,7 +466,7 @@ export class Simulation {
     const clean = sanitizeChat(text);
     if (!clean) return;
     const row = new ChatEntry();
-    row.name = (name || 'Soldier').slice(0, 16);
+    row.name = displayLabel(name, 'Soldier').slice(0, 16);
     row.text = clean;
     row.kind = kind === 'taunt' ? 'taunt' : kind === 'spree' ? 'spree' : 'chat';
     this.state.chat.unshift(row);
@@ -1629,9 +1630,9 @@ export class Simulation {
     headshot: boolean,
   ): void {
     const row = new KillFeedEntry();
-    row.killer = killer && killer !== victim ? killer.state.name : '';
-    row.victim = victim.state.name;
-    row.weapon = weapon || (killer ? killer.state.weapon : 'fall');
+    row.killer = killer && killer !== victim ? displayLabel(killer.state.name, 'Soldier') : '';
+    row.victim = displayLabel(victim.state.name, 'Soldier');
+    row.weapon = displayLabel(weapon || (killer ? killer.state.weapon : 'fall'), 'fall');
     row.headshot = headshot;
     this.state.killFeed.unshift(row);
     while (this.state.killFeed.length > KILL_FEED_MAX) this.state.killFeed.pop();
@@ -1911,7 +1912,7 @@ export class Simulation {
       for (const s of this.soldiers.values()) {
         if (!best || s.state.score > best.state.score) best = s;
       }
-      if (best && best.state.score >= limit) this.state.winner = best.state.name;
+      if (best && best.state.score >= limit) this.state.winner = displayLabel(best.state.name, 'Soldier');
     } else if (this.state.alphaScore >= limit) {
       this.state.winner = 'Alpha';
     } else if (this.state.bravoScore >= limit) {
@@ -1923,7 +1924,7 @@ export class Simulation {
         for (const s of this.soldiers.values()) {
           if (!best || s.state.score > best.state.score) best = s;
         }
-        this.state.winner = best?.state.name || 'draw';
+        this.state.winner = displayLabel(best?.state.name, 'draw');
       } else if (this.state.alphaScore === this.state.bravoScore) {
         this.state.winner = 'draw';
       } else {

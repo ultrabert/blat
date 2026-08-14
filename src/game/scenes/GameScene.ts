@@ -34,6 +34,7 @@ import { CombatHud } from '../hud';
 import { MiniMap } from '../minimap';
 import { MATCH, OBJECTIVES, parseMode, sameTeam } from '../../../shared/match';
 import { BONUS } from '../../../shared/bonuses';
+import { displayLabel } from '../../../shared/labels';
 import { PredictionController } from '../net/PredictionController';
 import { ProjectilePredictor } from '../net/ProjectilePredictor';
 
@@ -530,7 +531,7 @@ export class GameScene extends Phaser.Scene {
             skin,
             weapon: isWeaponId(this.localWeapon) ? this.localWeapon : weapon,
             aimReady: this.fireHeld || this.nowMs < this.aimReadyUntil,
-            name: player.name,
+            name: displayLabel(player.name, player.isBot ? 'Bot' : 'Soldier'),
             showName: false,
             vest: player.vest,
             deathKind: player.deathKind,
@@ -573,7 +574,7 @@ export class GameScene extends Phaser.Scene {
             skin,
             weapon,
             aimReady: true,
-            name: player.isBot ? player.name : player.name,
+            name: displayLabel(player.name, player.isBot ? 'Bot' : 'Soldier'),
             showName: !hidden,
             vest: player.vest,
             deathKind: player.deathKind,
@@ -772,7 +773,7 @@ export class GameScene extends Phaser.Scene {
                           ? 'P'
                           : 'G'
                       : isWeaponId(item)
-                        ? WEAPONS[item].short
+                        ? (WEAPONS[item]?.short ?? '?')
                         : '?';
           parts.push(
             this.add
@@ -1277,7 +1278,7 @@ export class GameScene extends Phaser.Scene {
     const rows: string[] = [];
     this.room.state.chat?.forEach((c) => {
       const mark = c.kind === 'taunt' ? '!' : c.kind === 'spree' ? '*' : '>';
-      rows.push(`${mark} ${c.name}: ${c.text}`);
+      rows.push(`${mark} ${displayLabel(c.name, 'Soldier')}: ${displayLabel(c.text)}`);
     });
     const next = rows.slice(0, 6).join('\n');
     if (next.length === this.lastChatLen && log.childElementCount) return;

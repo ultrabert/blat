@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PLATFORMS } from '../../shared/constants';
 import { DEFAULT_WEAPON, weaponIconKey, type WeaponId } from '../../shared/weapons';
+import { displayLabel } from '../../shared/labels';
 import { SKINS, skinPartKeys, type SkinId, DEFAULT_SKIN } from './skins';
 
 export type StickView = {
@@ -243,7 +244,7 @@ export class StickSoldier {
   }
 
   private updateNameTag(view: StickView): void {
-    const label = view.showName && view.name ? view.name : '';
+    const label = view.showName ? displayLabel(view.name) : '';
     this.nameTag.setText(label);
     this.nameTag.setVisible(!!label);
     if (!label) return;

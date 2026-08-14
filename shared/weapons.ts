@@ -357,15 +357,15 @@ export const DEFAULT_MELEE: WeaponId = 'knife';
 
 const IDS = new Set<string>(Object.keys(WEAPONS));
 
-export function isWeaponId(v: string): v is WeaponId {
-  return IDS.has(v);
+export function isWeaponId(v: unknown): v is WeaponId {
+  return typeof v === 'string' && IDS.has(v);
 }
 
-export function isMelee(id: string): boolean {
+export function isMelee(id: unknown): boolean {
   return id === 'knife' || id === 'chainsaw' || id === 'punch';
 }
 
-export function isFirearm(id: string): boolean {
+export function isFirearm(id: unknown): boolean {
   return isWeaponId(id) && !isMelee(id);
 }
 
