@@ -7,12 +7,14 @@ import {
   MAP_NAME,
   PLAYER,
   PLATFORMS,
+  RAMPS,
   WAYPOINTS,
   playerHalfExtents,
   type PlayerInput,
 } from './constants.js';
 import { bodyDamageMult } from './accuracy.js';
 import { fellOutOfWorld, stepMovement, type MoveBody } from './physics.js';
+import { terrainBandsAt } from './terrain.js';
 import { ballisticDamage, stepBallistic } from './ballistics.js';
 import {
   applyVestDamage,
@@ -1269,6 +1271,38 @@ export class Simulation {
 
     for (const plat of PLATFORMS) bounceOn(plat.x, plat.y, plat.w, plat.h);
     for (const cover of COVERS) bounceOn(cover.x, cover.y, cover.w, cover.h);
+    for (const r of RAMPS) {
+      const lo = Math.min(r.ax, r.bx);
+      const hi = Math.max(r.ax, r.bx);
+      if (g.x < lo || g.x > hi) continue;
+      const span = r.bx - r.ax || 1;
+      const surfaceY = r.ay + ((g.x - r.ax) / span) * (r.by - r.ay);
+      if (g.vy > 0 && g.y >= surfaceY - 12 && g.y <= surfaceY + 16) {
+        g.y = surfaceY - 8;
+        g.vy *= -GRENADE.bounce;
+        g.vx *= GRENADE.bounceFriction;
+      }
+    }
+    for (const band of terrainBandsAt(g.x)) {
+      if (g.y > band.top + 4 && g.y < band.bottom - 4) {
+        if (g.y - band.top <= band.bottom - g.y) {
+          g.y = band.top - 8;
+          if (g.vy > 0) g.vy *= -GRENADE.bounce;
+        } else {
+          g.y = band.bottom + 8;
+          if (g.vy < 0) g.vy *= -GRENADE.bounce;
+        }
+        g.vx *= GRENADE.bounceFriction;
+      } else if (g.vy > 0 && g.y >= band.top - 12 && g.y <= band.top + 18) {
+        g.y = band.top - 8;
+        g.vy *= -GRENADE.bounce;
+        g.vx *= GRENADE.bounceFriction;
+      } else if (g.vy < 0 && g.y <= band.bottom + 12 && g.y >= band.bottom - 18) {
+        g.y = band.bottom + 8;
+        g.vy *= -GRENADE.bounce;
+        g.vx *= GRENADE.bounceFriction;
+      }
+    }
 
     if (this.now >= grenade.explodeAt) {
       this.explodeGrenade(grenade);

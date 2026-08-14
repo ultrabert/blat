@@ -17,11 +17,11 @@ import {
   PLAYER,
   PLATFORMS,
   RAMPS,
-  TICK_MS,
   playerHalfExtents,
 } from './constants.js';
 import { BONUS } from './bonuses.js';
 import { recoverRecoil } from './accuracy.js';
+import { surfaceIsCeiling, terrainBandsAt } from './terrain.js';
 
 export type MoveBody = {
   x: number;
@@ -90,6 +90,18 @@ function snapFeetToGround(body: MoveBody): void {
     const right = plat.x + plat.w / 2;
     const top = plat.y - plat.h / 2;
     if (body.x + halfW <= left || body.x - halfW >= right) continue;
+    const feet = body.y + searchH;
+    if (feet >= top - 6 && feet <= top + 24) {
+      if (bestTop === null || top < bestTop) bestTop = top;
+    }
+  }
+  for (const r of RAMPS) {
+    const lo = Math.min(r.ax, r.bx);
+    const hi = Math.max(r.ax, r.bx);
+    if (body.x < lo || body.x > hi) continue;
+    const span = r.bx - r.ax || 1;
+    const top = r.ay + ((body.x - r.ax) / span) * (r.by - r.ay);
+    if (surfaceIsCeiling(body.x, top)) continue;
     const feet = body.y + searchH;
     if (feet >= top - 6 && feet <= top + 24) {
       if (bestTop === null || top < bestTop) bestTop = top;
@@ -385,7 +397,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
 
   body.x += body.vx * dt;
   body.y += body.vy * dt;
-  collideBody(body);
+  collideBody(body, dt);
 
   if (body.onGround) {
     if (!wasGrounded) body.landGraceMs = PLAYER.bunnyWindowMs;
@@ -400,7 +412,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
   }
 }
 
-function collideBody(body: MoveBody): void {
+function collideBody(body: MoveBody, dt: number): void {
   const { halfW, halfH } = playerHalfExtents(body.crouching, body.prone);
   const wasGrounded = body.onGround;
   body.onGround = false;
@@ -455,7 +467,8 @@ function collideBody(body: MoveBody): void {
     }
   }
 
-  collideRamps(body, wasGrounded);
+  collideTerrain(body, wasGrounded, dt);
+  collideRamps(body, wasGrounded, dt);
 
   // Map sky — hang and strafe under the world ceiling
   const sky = halfH + 8;
@@ -526,20 +539,80 @@ function resolveSolid(
   }
 }
 
-function collideRamps(body: MoveBody, wasGrounded: boolean): void {
+function collideTerrain(body: MoveBody, wasGrounded: boolean, dt: number): void {
+  const { halfW, halfH } = playerHalfExtents(body.crouching, body.prone);
+  const feetY = body.y + halfH;
+  const headY = body.y - halfH;
+  const rising = body.vy < -12;
+  const climbing = body.jetting && rising;
+  for (const band of terrainBandsAt(body.x)) {
+    const overlap = feetY > band.top + 2 && headY < band.bottom - 2;
+    if (!overlap) {
+      const prevFeet = feetY - body.vy * dt;
+      const crossedTop =
+        prevFeet <= band.top + 2 && feetY >= band.top - 4 && body.vy >= -8;
+      const followDown =
+        wasGrounded && !climbing && feetY <= band.top && band.top - feetY < 18;
+      if ((crossedTop || followDown) && !climbing) {
+        seatOnY(body, band.top, halfH, dt);
+      }
+      const prevHead = headY - body.vy * dt;
+      const crossedBot =
+        rising && prevHead >= band.bottom - 2 && headY <= band.bottom + 4;
+      if (crossedBot) {
+        body.y = band.bottom + halfH;
+        if (body.vy < 0) body.vy = 0;
+      }
+      continue;
+    }
+    const distTop = feetY - band.top;
+    const distBot = band.bottom - headY;
+    const distLeft = body.x - band.left;
+    const distRight = band.right - body.x;
+    const distX = Math.min(distLeft, distRight);
+    if (distX < distTop && distX < distBot && distX < 28) {
+      if (distLeft < distRight) body.x = band.left - halfW;
+      else body.x = band.right + halfW;
+      body.vx = 0;
+      continue;
+    }
+    // Cave roof only when rising into it. Falling / walking ejects to the hill top
+    // so the pit edge cannot dump you through the wedge into the cave.
+    if (rising && distBot <= distTop) {
+      body.y = band.bottom + halfH;
+      if (body.vy < 0) body.vy = 0;
+      continue;
+    }
+    if (climbing && distTop < 22) continue;
+    seatOnY(body, band.top, halfH, dt);
+  }
+}
+
+function seatOnY(body: MoveBody, surfaceY: number, halfH: number, dt: number): void {
+  body.y = surfaceY - halfH;
+  body.vy = 0;
+  body.onGround = true;
+  if (body.jetting) return;
+  for (const r of RAMPS) {
+    const lo = Math.min(r.ax, r.bx);
+    const hi = Math.max(r.ax, r.bx);
+    if (body.x < lo || body.x > hi) continue;
+    const span = r.bx - r.ax || 1;
+    const y = r.ay + ((body.x - r.ax) / span) * (r.by - r.ay);
+    if (Math.abs(y - surfaceY) > 8) continue;
+    body.vx += GRAVITY * ((r.by - r.ay) / span) * dt * 0.85;
+    break;
+  }
+}
+
+function collideRamps(body: MoveBody, wasGrounded: boolean, dt: number): void {
   const { halfH } = playerHalfExtents(body.crouching, body.prone);
   const feetX = body.x;
   const feetY = body.y + halfH;
-  const dt = TICK_MS / 1000;
-  // Hover/climb must not glue to a nearby slope (that reads as hopping).
-  // Jetting only seats when actually falling onto the surface.
-  if (body.jetting && body.vy < 20) return;
-  const canLand =
-    wasGrounded ||
-    body.vy >= 20 ||
-    body.rollMs > 0 ||
-    body.cannonballMs > 0;
-  if (!canLand) return;
+  const prevFeet = feetY - body.vy * dt;
+  const climbing = body.jetting && body.vy < -8;
+  const travel = Math.abs(body.vy) * dt + Math.abs(body.vx) * dt * 0.6;
+  const slop = (wasGrounded ? 22 : 10) + travel;
 
   let bestY = 0;
   let bestSlope = 0;
@@ -550,10 +623,14 @@ function collideRamps(body: MoveBody, wasGrounded: boolean): void {
     const t = (feetX - r.ax) / span;
     if (t < 0 || t > 1) continue;
     const surfaceY = r.ay + t * (r.by - r.ay);
+    if (surfaceIsCeiling(feetX, surfaceY)) continue;
     const pen = feetY - surfaceY;
-    const slop = wasGrounded ? 16 : 12;
-    if (pen <= -4 || pen >= slop) continue;
-    if (Math.abs(pen) < bestPen) {
+    const crossed = prevFeet <= surfaceY + 2 && feetY >= surfaceY - 4;
+    const near = pen > -(wasGrounded ? 18 : 6) && pen < slop;
+    if (climbing && pen < slop) continue;
+    const canLand = wasGrounded || body.vy >= 0 || body.rollMs > 0 || body.cannonballMs > 0;
+    if (!crossed && !(near && canLand)) continue;
+    if (Math.abs(pen) < bestPen || crossed) {
       bestPen = Math.abs(pen);
       bestY = surfaceY;
       bestSlope = (r.by - r.ay) / span;

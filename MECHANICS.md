@@ -35,9 +35,9 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Arcade `RAMPS` are line segments (Soldat slopes without Box2D); bullets hit them. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50. A ramp seats only the nearest segment, and only if you were already grounded, are falling (`vy >= 20`), rolling, or cannonballing. Hover/climb jet does not glue — that was snapping players onto overlapping bowl/cave/span slopes.  
-**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; jet near a ramp does not snap on.  
-**Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/simulation.ts`
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Buried bodies eject to the hill top unless they are rising into a cave roof. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
+**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; slow falls land; dirt ejects to the surface; jet near a ramp does not snap on.  
+**Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/terrain.ts`, `shared/simulation.ts`
 
 ## Mechanic: ballistic-projectiles
 
@@ -65,7 +65,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 6  
 **Tags:** `@mechanic throwable-grenades`  
-**Description:** Hold RMB/G to cook; release to throw with remaining fuse (`fuseMs − cook`). Max cook detonates in hand. Arcs, bounces on platforms/covers, blast damage + knockback.  
+**Description:** Hold RMB/G to cook; release to throw with remaining fuse (`fuseMs − cook`). Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill, blast damage + knockback.  
 **Trade-offs:**
 - Blast radius vs crouch-cover — grenades are the intended flush  
 - Cook-vs-safety — longer cook = less flight time, risk of self-blast  
@@ -247,7 +247,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C1  
 **Tags:** `@mechanic arena-map`  
-**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (visual); ramps are the walkable/shootable edges.  
+**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (solid dirt, same shape the client paints). Caves are air under a poly's bottom edge and under the rim decks (`x<400` / `x>2160`) — loft pads and cave spawns must not sit inside the fill.  
 **Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit in the pit. Not a vertex-perfect Arena port — layout and slopes, not the original texture set.  
 **Tests:** `shared/world.test.ts` (`arena-map`)  
 **Files:** `shared/constants.ts`, `src/game/scenes/GameScene.ts`

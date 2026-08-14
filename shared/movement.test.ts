@@ -57,14 +57,14 @@ describe('advanced-movement', () => {
   });
 
   it('bunny-hop-boosts-in-land-grace', () => {
+    const { halfH } = playerHalfExtents(false);
     const b = body({
+      x: 1280,
       vx: 280,
       onGround: true,
       landGraceMs: PLAYER.bunnyWindowMs,
-      y: 640, // near floor platform
+      y: 850 - halfH,
     });
-    // Seat on floor
-    b.y = 680 - 11 - PLAYER.height / 2;
     stepMovement(b, input({ move: 1, jet: true }), DT);
     assert.equal(b.onGround, false);
     assert.ok(Math.abs(b.vx) > 280 * 1.05, `expected bunny boost, got ${b.vx}`);
@@ -138,6 +138,72 @@ describe('ground-inertia-and-slopes', () => {
       Math.abs(b.y + halfH - surfaceNow) < 22,
       `feet near ramp, y=${b.y} surface=${surfaceNow}`,
     );
+  });
+
+  it('slow-fall-still-lands-on-ramp', () => {
+    const ramp = RAMPS[0]!;
+    const x = (ramp.ax + ramp.bx) / 2;
+    const t = (x - ramp.ax) / (ramp.bx - ramp.ax);
+    const surfaceY = ramp.ay + t * (ramp.by - ramp.ay);
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x,
+      y: surfaceY - halfH - 10,
+      vx: 20,
+      vy: 8,
+      onGround: false,
+    });
+    for (let i = 0; i < 24; i++) stepMovement(b, input({}), DT);
+    assert.equal(b.onGround, true);
+    const tNow = (b.x - ramp.ax) / (ramp.bx - ramp.ax || 1);
+    const surfaceNow = ramp.ay + tNow * (ramp.by - ramp.ay);
+    assert.ok(
+      Math.abs(b.y + halfH - surfaceNow) < 28,
+      `seated, feet=${b.y + halfH} surface=${surfaceNow}`,
+    );
+  });
+
+  it('dirt-inside-bowl-ejects-to-surface', () => {
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x: 800,
+      y: 720,
+      vx: 0,
+      vy: 40,
+      onGround: false,
+    });
+    for (let i = 0; i < 8; i++) stepMovement(b, input({}), DT);
+    assert.ok(b.y + halfH < 650, `should not stay buried, y=${b.y}`);
+    assert.equal(b.onGround, true);
+  });
+
+  it('walking-into-bowl-from-pit-stays-on-surface', () => {
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x: 980,
+      y: 850 - halfH,
+      vx: -90,
+      vy: 30,
+      onGround: true,
+    });
+    for (let i = 0; i < 36; i++) stepMovement(b, input({ move: -1 }), DT);
+    assert.ok(b.y + halfH < 900, `must not dump through the hill, feet=${b.y + halfH}`);
+    assert.equal(b.onGround, true);
+  });
+
+  it('cave-under-rim-is-open-air', () => {
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x: 220,
+      y: 700,
+      vx: 0,
+      vy: 80,
+      onGround: false,
+    });
+    for (let i = 0; i < 40; i++) stepMovement(b, input({}), DT);
+    assert.ok(b.y > 900, `should fall through the loft into the cave, y=${b.y}`);
+    assert.ok(b.y + halfH < 1165, `should land on the cave floor, feet=${b.y + halfH}`);
+    assert.equal(b.onGround, true);
   });
 
   it('jet-does-not-glue-to-nearby-ramp', () => {

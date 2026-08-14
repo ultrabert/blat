@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { GRAVITY, PLAYER } from './constants.js';
+import { GRAVITY, PLAYER, playerHalfExtents } from './constants.js';
 import {
   blatImpulse,
   inRadius,
@@ -93,7 +93,14 @@ describe('realistic-mode', () => {
   });
 
   it('realistic-still-jumps-from-ground', () => {
-    const b = body({ onGround: true, y: 800, realistic: true, vy: 0 });
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      onGround: true,
+      x: 1280,
+      y: 850 - halfH,
+      realistic: true,
+      vy: 0,
+    });
     stepMovement(b, input({ jet: true }), 1 / 30);
     assert.ok(b.vy < 0, `jump vy=${b.vy}`);
     assert.equal(b.onGround, false);

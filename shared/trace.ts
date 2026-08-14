@@ -2,7 +2,15 @@
  * @mechanic ballistic-projectiles
  * @mechanic crouch-cover
  */
-import { COVERS, GAME_HEIGHT, GAME_WIDTH, PLATFORMS, RAMPS, playerHalfExtents } from './constants.js';
+import {
+  COVERS,
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  PLATFORMS,
+  RAMPS,
+  TERRAIN_POLYS,
+  playerHalfExtents,
+} from './constants.js';
 import { bodyPartAtHit } from './accuracy.js';
 
 export type BulletTraceHit =
@@ -120,6 +128,18 @@ export function traceBullet(
     const t = segmentHitSegment(x0, y0, dx, dy, ramp.ax, ramp.ay, ramp.bx, ramp.by);
     if (t !== null) {
       consider({ kind: 'platform', t, x: x0 + dx * t, y: y0 + dy * t });
+    }
+  }
+
+  for (const poly of TERRAIN_POLYS) {
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i]!;
+      const b = poly[(i + 1) % poly.length]!;
+      if (a.x === b.x && a.y === b.y) continue;
+      const t = segmentHitSegment(x0, y0, dx, dy, a.x, a.y, b.x, b.y);
+      if (t !== null) {
+        consider({ kind: 'platform', t, x: x0 + dx * t, y: y0 + dy * t });
+      }
     }
   }
 

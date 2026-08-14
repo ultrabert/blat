@@ -118,6 +118,8 @@ export type PlatformSpec = { x: number; y: number; w: number; h: number };
  * sky pads, and side caves under the bowl. Center floor at y=850 (x=1280)
  * stays solid so cover/prone tests hold. Platforms are walkable tops
  * (pass-through from below). RAMPS are the Soldat-style angled surfaces.
+ * TERRAIN_POLYS are solid dirt (same fill the client paints); caves are the
+ * air under a poly's bottom edge and under the rim decks (x<400 / x>2160).
  */
 export const PLATFORMS: PlatformSpec[] = [
   // Pit floor — top at y=850 (prone tests at x=1280)
@@ -125,8 +127,8 @@ export const PLATFORMS: PlatformSpec[] = [
   // Left / right cave floors
   { x: 300, y: 1160, w: 600, h: 36 },
   { x: 2260, y: 1160, w: 600, h: 36 },
-  { x: 560, y: 1020, w: 180, h: 18 },
-  { x: 2000, y: 1020, w: 180, h: 18 },
+  { x: 560, y: 1119, w: 180, h: 18 },
+  { x: 2000, y: 1119, w: 180, h: 18 },
   { x: 160, y: 1040, w: 140, h: 18 },
   { x: 2400, y: 1040, w: 140, h: 18 },
   // Rim decks + lofts (flag stands)
@@ -178,13 +180,12 @@ export const RAMPS: RampSpec[] = [
   { ax: 1860, ay: 1000, bx: 2160, by: 1142 },
 ];
 
-/** Filled Soldat-style terrain (visual; walkable collision is RAMPS + PLATFORMS). */
+/** Filled Soldat-style hills — solid dirt, not a visual-only overlay. */
 export type TerrainPoly = { x: number; y: number }[];
 
 export const TERRAIN_POLYS: TerrainPoly[] = [
-  // Left bowl mass
+  // Left bowl mass — starts at the rim so the loft/cave under x<400 stays air
   [
-    { x: 0, y: 309 },
     { x: 400, y: 309 },
     { x: 640, y: 470 },
     { x: 880, y: 640 },
@@ -192,11 +193,9 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
     { x: 920, y: 849 },
     { x: 700, y: 1000 },
     { x: 400, y: 1142 },
-    { x: 0, y: 1142 },
   ],
-  // Right bowl mass
+  // Right bowl mass — cave/loft air for x>2160
   [
-    { x: GAME_WIDTH, y: 309 },
     { x: 2160, y: 309 },
     { x: 1920, y: 470 },
     { x: 1680, y: 640 },
@@ -204,7 +203,6 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
     { x: 1640, y: 849 },
     { x: 1860, y: 1000 },
     { x: 2160, y: 1142 },
-    { x: GAME_WIDTH, y: 1142 },
   ],
   // Pit bed
   [
@@ -213,7 +211,7 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
     { x: 1660, y: GAME_HEIGHT },
     { x: 900, y: GAME_HEIGHT },
   ],
-  // Cave slabs
+  // Cave floor slabs (dirt below the walkable cave decks)
   [
     { x: 0, y: 1142 },
     { x: 600, y: 1142 },
@@ -256,8 +254,8 @@ export const COVERS: CoverSpec[] = [
   // Cave rooms
   { x: 200, y: 1132, w: 56, h: 40, mat: 'sand' },
   { x: 2360, y: 1132, w: 56, h: 40, mat: 'sand' },
-  { x: 560, y: 992, w: 48, h: 34, mat: 'sand' },
-  { x: 2000, y: 992, w: 48, h: 34, mat: 'sand' },
+  { x: 560, y: 1093, w: 48, h: 34, mat: 'sand' },
+  { x: 2000, y: 1093, w: 48, h: 34, mat: 'sand' },
 ];
 
 export const SPAWNS = [
@@ -286,8 +284,8 @@ export const WAYPOINTS = [
   { x: 1280, y: 140 },
   { x: 1080, y: 260 },
   { x: 1480, y: 260 },
-  { x: 560, y: 1000 },
-  { x: 2000, y: 1000 },
+  { x: 560, y: 1092 },
+  { x: 2000, y: 1092 },
   { x: 220, y: 300 },
   { x: 2340, y: 300 },
 ];

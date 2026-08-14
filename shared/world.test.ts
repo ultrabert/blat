@@ -18,6 +18,8 @@ import {
 } from './constants.js';
 import { pickAntiCampSpawn } from './spawns.js';
 import { traceBullet } from './trace.js';
+import { pointInTerrain } from './terrain.js';
+import { MAP_PICKUPS } from './weapons.js';
 
 describe('arena-map', () => {
   it('map-is-taller-than-the-viewport-and-has-sky-and-caves', () => {
@@ -109,5 +111,24 @@ describe('arena-map', () => {
     assert.ok(hit, 'shot through the slope should hit');
     assert.equal(hit!.kind, 'platform');
     assert.ok(Math.abs(hit!.y - y) < 4, `hit y=${hit!.y} ramp y=${y}`);
+  });
+
+  it('spawns-and-pickups-are-not-inside-dirt', () => {
+    for (const spawn of SPAWNS) {
+      assert.ok(
+        !pointInTerrain(spawn.x, spawn.y),
+        `spawn ${spawn.x},${spawn.y} is inside the hill fill`,
+      );
+    }
+    for (const pad of MAP_PICKUPS) {
+      assert.ok(
+        !pointInTerrain(pad.x, pad.y),
+        `pickup ${pad.id} at ${pad.x},${pad.y} is inside the hill fill`,
+      );
+    }
+    assert.ok(!pointInTerrain(300, 800), 'cave under the left rim should be air');
+    assert.ok(!pointInTerrain(360, 560), 'inner loft ledge should be air');
+    assert.ok(!pointInTerrain(2200, 560), 'right loft ledge should be air');
+    assert.ok(pointInTerrain(800, 720), 'bowl mass should stay solid dirt');
   });
 });

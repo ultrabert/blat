@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { BONUS, isBonusId, multiKillLabel, MULTI_WINDOW_MS, spreeLabel } from './bonuses.js';
-import { PLAYER, type PlayerInput } from './constants.js';
+import { PLAYER, playerHalfExtents, type PlayerInput } from './constants.js';
 import { OBJECTIVES, TEAM } from './match.js';
 import { stepMovement, type MoveBody, type MoveInput } from './physics.js';
 import { GameState, type PlayerState } from './schema.js';
@@ -82,9 +82,10 @@ describe('soldat-bonuses', () => {
   });
 
   it('berserk-walks-faster', () => {
-    const plain = body({ onGround: true, x: 360, y: 292, berserk: false });
-    const hot = body({ onGround: true, x: 360, y: 292, berserk: true });
-    for (let i = 0; i < 12; i++) {
+    const { halfH } = playerHalfExtents(false);
+    const plain = body({ onGround: true, x: 1230, y: 850 - halfH, berserk: false });
+    const hot = body({ onGround: true, x: 1230, y: 850 - halfH, berserk: true });
+    for (let i = 0; i < 8; i++) {
       stepMovement(plain, input({ move: 1 }), 1 / 30);
       stepMovement(hot, input({ move: 1 }), 1 / 30);
     }
@@ -149,7 +150,15 @@ describe('air-dash', () => {
     const air = body({ onGround: false, realistic: true, fuel: 80, vx: 0 });
     stepMovement(air, input({ dash: true, move: 1 }), 1 / 30);
     assert.ok(air.vx < 80, `air dash blocked vx=${air.vx}`);
-    const ground = body({ onGround: true, y: 800, realistic: true, fuel: 80, vx: 0 });
+    const { halfH } = playerHalfExtents(false);
+    const ground = body({
+      onGround: true,
+      x: 1280,
+      y: 850 - halfH,
+      realistic: true,
+      fuel: 80,
+      vx: 0,
+    });
     stepMovement(ground, input({ dash: true, move: 1 }), 1 / 30);
     assert.ok(ground.vx > 200, `ground dash vx=${ground.vx}`);
   });
