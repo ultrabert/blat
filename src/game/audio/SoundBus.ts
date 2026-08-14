@@ -1,3 +1,5 @@
+import type { ImpactSurface } from './surfaces';
+
 /**
  * Sample-based SFX bus. Bundled CC0 clips live in /assets/sfx (see CREDITS.txt).
  * Falls back to short procedural synthesis if a buffer isn't loaded yet.
@@ -28,7 +30,10 @@ type BufKey =
   | 'cook_tick'
   | 'jet_loop'
   | 'roll'
-  | 'ricochet'
+  | 'impact_dirt'
+  | 'impact_sand'
+  | 'impact_wood'
+  | 'impact_stone'
   | 'dash'
   | 'pulse';
 
@@ -74,7 +79,20 @@ const ASSET: Record<BufKey, readonly string[]> = {
   cook_tick: ['/assets/sfx/cook_tick.ogg'],
   jet_loop: ['/assets/sfx/jet_loop.ogg'],
   roll: ['/assets/sfx/roll.ogg', '/assets/sfx/roll_b.ogg'],
-  ricochet: ['/assets/sfx/ricochet.ogg', '/assets/sfx/ricochet_b.ogg', '/assets/sfx/ricochet_c.ogg'],
+  impact_dirt: [
+    '/assets/sfx/impact_dirt.ogg',
+    '/assets/sfx/impact_dirt_b.ogg',
+    '/assets/sfx/impact_dirt_c.ogg',
+    '/assets/sfx/impact_dirt_d.ogg',
+  ],
+  impact_sand: ['/assets/sfx/impact_sand.ogg', '/assets/sfx/impact_sand_b.ogg', '/assets/sfx/impact_sand_c.ogg'],
+  impact_wood: [
+    '/assets/sfx/impact_wood.ogg',
+    '/assets/sfx/impact_wood_b.ogg',
+    '/assets/sfx/impact_wood_c.ogg',
+    '/assets/sfx/impact_wood_d.ogg',
+  ],
+  impact_stone: ['/assets/sfx/impact_stone.ogg', '/assets/sfx/impact_stone_b.ogg', '/assets/sfx/impact_stone_c.ogg'],
   dash: ['/assets/sfx/dash.ogg'],
   pulse: ['/assets/sfx/pulse.ogg'],
 };
@@ -196,9 +214,18 @@ export class SoundBus {
     this.fallbackTone(160, 70, 0.12, 0.07);
   }
 
-  ricochet(): void {
-    if (this.play('ricochet', { gain: 0.42, rate: 0.95 + Math.random() * 0.2 })) return;
-    this.fallbackRicochet();
+  impact(surface: ImpactSurface = 'dirt'): void {
+    const key: BufKey =
+      surface === 'sand'
+        ? 'impact_sand'
+        : surface === 'wood'
+          ? 'impact_wood'
+          : surface === 'stone'
+            ? 'impact_stone'
+            : 'impact_dirt';
+    const gain = surface === 'wood' ? 0.52 : surface === 'stone' ? 0.5 : surface === 'sand' ? 0.44 : 0.48;
+    if (this.play(key, { gain, rate: 0.94 + Math.random() * 0.12 })) return;
+    this.fallbackImpact(surface);
   }
 
   pain(): void {
@@ -404,22 +431,10 @@ export class SoundBus {
     noise.stop(t + dur + 0.01);
   }
 
-  private fallbackRicochet(): void {
-    const ctx = this.ensure();
-    if (!ctx || !this.master) return;
-    const t = ctx.currentTime;
-    const ping = ctx.createOscillator();
-    const pg = ctx.createGain();
-    ping.type = 'triangle';
-    ping.frequency.setValueAtTime(2600 + Math.random() * 400, t);
-    ping.frequency.exponentialRampToValueAtTime(700, t + 0.07);
-    pg.gain.setValueAtTime(0.18, t);
-    pg.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    ping.connect(pg);
-    pg.connect(this.master);
-    ping.start(t);
-    ping.stop(t + 0.09);
-    this.fallbackNoise(0.035, 3200, 0.12);
+  private fallbackImpact(surface: ImpactSurface): void {
+    const hz = surface === 'wood' ? 420 : surface === 'stone' ? 280 : surface === 'sand' ? 220 : 180;
+    this.fallbackNoise(0.05, hz, 0.16);
+    this.fallbackTone(hz * 0.7, hz * 0.25, 0.1, 0.06);
   }
 
   private fallbackPain(): void {

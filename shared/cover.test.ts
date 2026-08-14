@@ -64,4 +64,12 @@ describe('crouch-cover', () => {
     assert.ok(crouch.halfH < stand.halfH);
     assert.ok(PLAYER.crouchHeight < PLAYER.height);
   });
+
+  it('cover-materials-match-props', () => {
+    assert.equal(cover.mat, 'sand');
+    const crate = COVERS.find((c) => c.x === 160 && c.y === 292);
+    assert.equal(crate?.mat, 'wood');
+    const cliff = COVERS.find((c) => c.x === 40 && c.y === 560);
+    assert.equal(cliff?.mat, 'stone');
+  });
 });

@@ -28,6 +28,7 @@ import { StickSoldier } from '../StickSoldier';
 import { skinForId, SKINS } from '../skins';
 import { SCENERY } from '../scenery';
 import { sound } from '../audio/SoundBus';
+import { impactSurface } from '../audio/surfaces';
 import { VisceraFx } from '../fx/VisceraFx';
 import { CombatHud } from '../hud';
 import { MiniMap } from '../minimap';
@@ -678,7 +679,7 @@ export class GameScene extends Phaser.Scene {
         sound.wetHit();
       } else {
         this.fx.wallSpark(hit.x, hit.y);
-        sound.ricochet();
+        sound.impact(impactSurface(hit.kind, hit.x, hit.y));
       }
     }
 
@@ -1125,8 +1126,13 @@ export class GameScene extends Phaser.Scene {
   private drawCovers(): void {
     const bags = this.textures.exists('prop_sandbags');
     const ruin = this.textures.exists('prop_ruin');
+    const crate = this.textures.exists('prop_crate');
     for (const c of COVERS) {
-      if (c.h > 80 && ruin) {
+      if (c.mat === 'wood' && crate) {
+        const img = this.add.image(c.x, c.y, 'prop_crate');
+        img.setDisplaySize(c.w * 1.25, c.h * 1.15);
+        img.setDepth(2);
+      } else if (c.mat === 'stone' && ruin) {
         const img = this.add.image(c.x, c.y, 'prop_ruin');
         img.setDisplaySize(c.w * 1.35, c.h * 1.15);
         img.setDepth(2);
@@ -1139,7 +1145,7 @@ export class GameScene extends Phaser.Scene {
         const cover = this.add.image(c.x, c.y, 'cover');
         cover.setDisplaySize(c.w, c.h);
         cover.setDepth(2);
-        cover.setTint(c.h > 80 ? 0x5a6a82 : 0x8b9cb3);
+        cover.setTint(c.mat === 'stone' ? 0x5a6a82 : c.mat === 'wood' ? 0x8b6914 : 0x8b9cb3);
       }
     }
   }

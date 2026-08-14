@@ -216,43 +216,44 @@ export const TERRAIN_FILLS: TerrainFill[] = [
 ];
 
 /** Waist-high cover + cliff faces (full AABB collision). */
-export type CoverSpec = { x: number; y: number; w: number; h: number };
+export type CoverMaterial = 'sand' | 'wood' | 'stone';
+export type CoverSpec = { x: number; y: number; w: number; h: number; mat: CoverMaterial };
 
 export const COVERS: CoverSpec[] = [
   // Mid bunker (peek tests use x=1280)
-  { x: 1280, y: 492, w: 70, h: 36 },
-  { x: 1210, y: 492, w: 48, h: 32 },
-  { x: 1350, y: 492, w: 48, h: 32 },
+  { x: 1280, y: 492, w: 70, h: 36, mat: 'sand' },
+  { x: 1210, y: 492, w: 48, h: 32, mat: 'sand' },
+  { x: 1350, y: 492, w: 48, h: 32, mat: 'sand' },
   // Valley floor sandbags
-  { x: 1180, y: 752, w: 56, h: 36 },
-  { x: 1380, y: 752, w: 56, h: 36 },
+  { x: 1180, y: 752, w: 56, h: 36, mat: 'sand' },
+  { x: 1380, y: 752, w: 56, h: 36, mat: 'sand' },
   // Left base crates
-  { x: 160, y: 292, w: 52, h: 34 },
-  { x: 280, y: 292, w: 52, h: 34 },
+  { x: 160, y: 292, w: 52, h: 34, mat: 'wood' },
+  { x: 280, y: 292, w: 52, h: 34, mat: 'wood' },
   // Right base crates
-  { x: 2280, y: 292, w: 52, h: 34 },
-  { x: 2400, y: 292, w: 52, h: 34 },
+  { x: 2280, y: 292, w: 52, h: 34, mat: 'wood' },
+  { x: 2400, y: 292, w: 52, h: 34, mat: 'wood' },
   // Cliff faces (block horizontal)
-  { x: 40, y: 560, w: 48, h: 280 },
-  { x: 2520, y: 560, w: 48, h: 280 },
-  { x: 900, y: 700, w: 40, h: 120 },
-  { x: 1660, y: 700, w: 40, h: 120 },
+  { x: 40, y: 560, w: 48, h: 280, mat: 'stone' },
+  { x: 2520, y: 560, w: 48, h: 280, mat: 'stone' },
+  { x: 900, y: 700, w: 40, h: 120, mat: 'stone' },
+  { x: 1660, y: 700, w: 40, h: 120, mat: 'stone' },
   // Hill bunkers
-  { x: 680, y: 452, w: 52, h: 34 },
-  { x: 1880, y: 452, w: 52, h: 34 },
+  { x: 680, y: 452, w: 52, h: 34, mat: 'sand' },
+  { x: 1880, y: 452, w: 52, h: 34, mat: 'sand' },
   // Base interiors
-  { x: 24, y: 250, w: 32, h: 160 },
-  { x: 340, y: 268, w: 22, h: 90 },
-  { x: 2536, y: 250, w: 32, h: 160 },
-  { x: 2220, y: 268, w: 22, h: 90 },
+  { x: 24, y: 250, w: 32, h: 160, mat: 'stone' },
+  { x: 340, y: 268, w: 22, h: 90, mat: 'stone' },
+  { x: 2536, y: 250, w: 32, h: 160, mat: 'stone' },
+  { x: 2220, y: 268, w: 22, h: 90, mat: 'stone' },
   // Sky bags
-  { x: 400, y: 54, w: 44, h: 28 },
-  { x: 2160, y: 54, w: 44, h: 28 },
+  { x: 400, y: 54, w: 44, h: 28, mat: 'sand' },
+  { x: 2160, y: 54, w: 44, h: 28, mat: 'sand' },
   // Cave rooms
-  { x: 200, y: 1132, w: 56, h: 40 },
-  { x: 2360, y: 1132, w: 56, h: 40 },
-  { x: 560, y: 992, w: 48, h: 34 },
-  { x: 2000, y: 992, w: 48, h: 34 },
+  { x: 200, y: 1132, w: 56, h: 40, mat: 'sand' },
+  { x: 2360, y: 1132, w: 56, h: 40, mat: 'sand' },
+  { x: 560, y: 992, w: 48, h: 34, mat: 'sand' },
+  { x: 2000, y: 992, w: 48, h: 34, mat: 'sand' },
 ];
 
 export const SPAWNS = [

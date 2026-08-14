@@ -17,5 +17,10 @@ Impacts, footsteps, UI, explosions, jets, melee
   https://kenney.nl
   License: CC0 1.0
   Served via https://cc0-sounds.exi.software/
+  Environment hits:
+    impactSoft / impactGeneric -> dirt platforms
+    cloth -> sandbags
+    impactWood -> crates
+    impactMining -> stone cliffs / bunker walls
 
 Do not replace these with copyrighted Soldat (or other game) samples.
