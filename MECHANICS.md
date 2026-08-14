@@ -244,8 +244,8 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C1  
 **Tags:** `@mechanic arena-map`  
-**Description:** Ridge is a vertical Soldat-style layout: twin bunkers, hill ramps, sky pads, and side caves under broken bedrock. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not polygon rigid bodies.  
-**Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit on the valley floor.  
+**Description:** Ridge is a vertical Soldat-style layout: twin bunkers, hill ramps, sky pads, and side caves under broken bedrock. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not polygon rigid bodies. Solids stay sparse: protected pockets and hillside chokes, with walk lanes around every cover so players do not spawn inside crates or wedge on battlements.  
+**Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit on the valley floor. Cover is thinner than a packed Soldat poly so jet-runs stay readable.  
 **Tests:** `shared/world.test.ts` (`arena-map`)  
 **Files:** `shared/constants.ts`, `src/game/scenes/GameScene.ts`
 

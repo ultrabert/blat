@@ -116,7 +116,8 @@ export type PlatformSpec = { x: number; y: number; w: number; h: number };
 /**
  * Soldat-style arena: twin bunkers, hill ramps into a valley, sky pads,
  * and side caves under a broken bedrock (center floor stays solid for tests).
- * Platforms are walkable tops (pass-through from below).
+ * Platforms are walkable tops (pass-through from below). Covers are sparse on
+ * purpose — protected pockets and chokes, with walk lanes around every solid.
  */
 export const PLATFORMS: PlatformSpec[] = [
   // Center bedrock — top at y=850 (prone tests at x=1280)
@@ -158,12 +159,10 @@ export const PLATFORMS: PlatformSpec[] = [
   { x: 1080, y: 280, w: 160, h: 22 },
   { x: 1480, y: 280, w: 160, h: 22 },
   { x: 1280, y: 160, w: 220, h: 22 },
-  // Sky nest (ceiling-slide test still uses y=160)
+  // Sky nest (ceiling-slide test still uses y=160). Tiny side nests omitted so the sky stays readable.
   { x: 400, y: 72, w: 130, h: 18 },
   { x: 2160, y: 72, w: 130, h: 18 },
   { x: 1280, y: 48, w: 150, h: 16 },
-  { x: 880, y: 100, w: 110, h: 16 },
-  { x: 1680, y: 100, w: 110, h: 16 },
   // Inner cliff ledges
   { x: 360, y: 560, w: 120, h: 22 },
   { x: 2200, y: 560, w: 120, h: 22 },
@@ -220,35 +219,31 @@ export type CoverMaterial = 'sand' | 'wood' | 'stone';
 export type CoverSpec = { x: number; y: number; w: number; h: number; mat: CoverMaterial };
 
 export const COVERS: CoverSpec[] = [
-  // Mid bunker (peek tests use x=1280)
+  // Mid bunker — one peek bag; roof walk lanes on both sides (peek tests use x=1280)
   { x: 1280, y: 492, w: 70, h: 36, mat: 'sand' },
-  { x: 1210, y: 492, w: 48, h: 32, mat: 'sand' },
-  { x: 1350, y: 492, w: 48, h: 32, mat: 'sand' },
-  // Valley floor sandbags
+  // Valley floor sandbags (open middle, covered flanks)
   { x: 1180, y: 752, w: 56, h: 36, mat: 'sand' },
   { x: 1380, y: 752, w: 56, h: 36, mat: 'sand' },
-  // Left base crates
-  { x: 160, y: 292, w: 52, h: 34, mat: 'wood' },
+  // Left base crates (kept off the loft spawn/flag at 180,280)
+  { x: 96, y: 292, w: 52, h: 34, mat: 'wood' },
   { x: 280, y: 292, w: 52, h: 34, mat: 'wood' },
-  // Right base crates
+  // Right base crates (kept off the loft spawn/flag at 2380,280)
   { x: 2280, y: 292, w: 52, h: 34, mat: 'wood' },
-  { x: 2400, y: 292, w: 52, h: 34, mat: 'wood' },
-  // Cliff faces (block horizontal)
+  { x: 2464, y: 292, w: 52, h: 34, mat: 'wood' },
+  // Map-edge cliff faces + hillside chokes (ramp/jet to cross)
   { x: 40, y: 560, w: 48, h: 280, mat: 'stone' },
   { x: 2520, y: 560, w: 48, h: 280, mat: 'stone' },
-  { x: 900, y: 700, w: 40, h: 120, mat: 'stone' },
-  { x: 1660, y: 700, w: 40, h: 120, mat: 'stone' },
+  { x: 900, y: 700, w: 28, h: 90, mat: 'stone' },
+  { x: 1660, y: 700, w: 28, h: 90, mat: 'stone' },
   // Hill bunkers
   { x: 680, y: 452, w: 52, h: 34, mat: 'sand' },
   { x: 1880, y: 452, w: 52, h: 34, mat: 'sand' },
-  // Base interiors
+  // Base outer walls (no interior pillars — those blocked the battlement)
   { x: 24, y: 250, w: 32, h: 160, mat: 'stone' },
-  { x: 340, y: 268, w: 22, h: 90, mat: 'stone' },
   { x: 2536, y: 250, w: 32, h: 160, mat: 'stone' },
-  { x: 2220, y: 268, w: 22, h: 90, mat: 'stone' },
-  // Sky bags
-  { x: 400, y: 54, w: 44, h: 28, mat: 'sand' },
-  { x: 2160, y: 54, w: 44, h: 28, mat: 'sand' },
+  // Sky bags offset from pad-center spawns
+  { x: 348, y: 54, w: 36, h: 22, mat: 'sand' },
+  { x: 2212, y: 54, w: 36, h: 22, mat: 'sand' },
   // Cave rooms
   { x: 200, y: 1132, w: 56, h: 40, mat: 'sand' },
   { x: 2360, y: 1132, w: 56, h: 40, mat: 'sand' },
@@ -261,7 +256,7 @@ export const SPAWNS = [
   { x: 2380, y: 280 },
   { x: 200, y: 180 },
   { x: 2360, y: 180 },
-  { x: 1280, y: 480 },
+  { x: 1172, y: 480 },
   { x: 1000, y: 600 },
   { x: 1560, y: 600 },
   { x: 640, y: 200 },
@@ -280,8 +275,8 @@ export const SPAWNS = [
 export const WAYPOINTS = [
   ...SPAWNS,
   { x: 1280, y: 140 },
-  { x: 880, y: 80 },
-  { x: 1680, y: 80 },
+  { x: 1080, y: 260 },
+  { x: 1480, y: 260 },
   { x: 560, y: 1000 },
   { x: 2000, y: 1000 },
   { x: 220, y: 300 },
