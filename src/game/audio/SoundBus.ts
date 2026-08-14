@@ -104,7 +104,7 @@ export class SoundBus {
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    this.ctx = new Ctx();
+    this.ctx = new Ctx({ latencyHint: 'interactive' });
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.58;
     this.master.connect(this.ctx.destination);

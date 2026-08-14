@@ -160,7 +160,10 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       sound.unlock();
       if (pointer.rightButtonDown() || pointer.button === 2) this.grenadeHeld = true;
-      else this.fireHeld = true;
+      else {
+        this.fireHeld = true;
+        if (!this.chatFocused()) this.prediction.latchFire();
+      }
     });
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
       if (pointer.button === 0) this.fireHeld = false;
@@ -204,7 +207,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    this.cameras.main.setRoundPixels(true);
+    this.cameras.main.setRoundPixels(false);
     if (this.spectating) this.cameras.main.setZoom(1.08);
   }
 
@@ -232,7 +235,6 @@ export class GameScene extends Phaser.Scene {
     const serverMe = this.room.state.players.get(this.sessionId);
     if (!chatting) this.handleWeaponKeys(serverMe);
 
-    if (!chatting && this.fireHeld) this.prediction.latchFire();
     if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyR)) this.prediction.latchReload();
     if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyQ)) this.prediction.latchDrop();
     if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyV)) this.prediction.latchNadeCycle();
@@ -287,6 +289,7 @@ export class GameScene extends Phaser.Scene {
         crouch: !chatting && (this.cursors.down.isDown || this.keyS.isDown),
         aimX: aim.x,
         aimY: aim.y,
+        fireHeld: !chatting && this.fireHeld,
       },
       serverMe,
     );
@@ -315,13 +318,15 @@ export class GameScene extends Phaser.Scene {
     const bulletTargets: TraceTarget[] = [];
     this.room.state.players?.forEach((p, id) => {
       if (id === this.sessionId) return;
+      this.prediction.pushRemote(id, p, this.nowMs);
+      const s = this.prediction.sampleRemote(id, this.nowMs);
       bulletTargets.push({
         id,
-        x: p.x,
-        y: p.y,
-        alive: p.alive,
-        crouching: !!p.crouching || !!p.rolling || !!p.cannonball,
-        prone: !!p.prone,
+        x: s?.x ?? p.x,
+        y: s?.y ?? p.y,
+        alive: s?.alive ?? p.alive,
+        crouching: !!(s?.crouching ?? p.crouching) || !!(s?.rolling ?? p.rolling) || !!(s?.cannonball ?? p.cannonball),
+        prone: !!(s?.prone ?? p.prone),
       });
     });
     this.projectiles.step(delta / 1000, this.nowMs, bulletTargets, this.sessionId);
@@ -331,8 +336,9 @@ export class GameScene extends Phaser.Scene {
     this.syncPickups();
     this.tickPing();
     this.updateHud(serverMe);
-    this.drawCrosshair(serverMe);
     this.updateCamera(serverMe);
+    this.input.activePointer.updateWorldPoint(this.cameras.main);
+    this.drawCrosshair(serverMe);
     this.drawObjectives();
     this.miniMap.draw(this.room.state, this.sessionId, parseMode(this.room.state.mode));
     this.syncChat();
@@ -439,8 +445,8 @@ export class GameScene extends Phaser.Scene {
     const lead = 0.42;
     const tx = x + lx * lead;
     const ty = y + ly * lead;
-    this.camX += (tx - this.camX) * 0.22;
-    this.camY += (ty - this.camY) * 0.22;
+    this.camX += (tx - this.camX) * 0.5;
+    this.camY += (ty - this.camY) * 0.5;
     this.centerCam();
   }
 
@@ -531,6 +537,7 @@ export class GameScene extends Phaser.Scene {
             skin,
             weapon: isWeaponId(this.localWeapon) ? this.localWeapon : weapon,
             aimReady: this.fireHeld || this.nowMs < this.aimReadyUntil,
+            local: true,
             name: displayLabel(player.name, player.isBot ? 'Bot' : 'Soldier'),
             showName: false,
             vest: player.vest,

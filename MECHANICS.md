@@ -85,7 +85,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** netcode  
 **Tags:** `@mechanic client-prediction`  
-**Description:** Local movement + projectiles predict; server reconciles via sequenced inputs.  
+**Description:** Local movement + projectiles predict; server reconciles via sequenced inputs. Held fire is true on every sim tick while the button is down (autos don’t skip a cooldown window on a hitch).  
 **Trade-offs:** Any sim divergence → rubber-banding / ghost shots. Shared math is mandatory.  
 **Files:** `src/game/net/PredictionController.ts`, `ProjectilePredictor.ts`, `shared/simulation.ts`
 
@@ -237,7 +237,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** A3  
 **Tags:** `@mechanic mouse-lead-camera`  
-**Description:** Local camera lerps toward the player plus a capped pull toward the cursor (lead 0.42, max 240px). Spectator camera still follows the fight cluster.  
+**Description:** Local camera follows the player plus a capped pull toward the cursor (lead 0.42, max 240px) at 0.5/frame so the world stays under you. Spectator camera still eases toward the fight cluster.  
 **Files:** `src/game/scenes/GameScene.ts`
 
 ## Mechanic: arena-map
@@ -282,7 +282,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C6  
 **Tags:** `@mechanic soldier-read`  
-**Description:** Painted kits with a thin dark edge so figures read on dirt. Held guns are blued-steel vector props with a small brass muzzle that tracks true aim; idle only dips a few degrees. Vest is a cool shade, not a pale wash. Cosmetic only — hitboxes stay on the sim capsule.  
+**Description:** Painted kits with a thin dark edge so figures read on dirt. Held guns are blued-steel vector props with a small brass muzzle. Local barrel snaps to the cursor; remotes ease slightly. Vest is a cool shade, not a pale wash. Cosmetic only — hitboxes stay on the sim capsule.  
 **Files:** `src/game/StickSoldier.ts`, `src/game/skins.ts`
 
 ## Mechanic: scenery-parallax

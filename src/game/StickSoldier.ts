@@ -24,6 +24,8 @@ export type StickView = {
   weapon: WeaponId;
   /** True while firing / recently fired — full aim; else low-ready. */
   aimReady: boolean;
+  /** Local player: barrel snaps to the cursor (no ease). */
+  local?: boolean;
   name?: string;
   showName?: boolean;
   vest?: number;
@@ -352,13 +354,17 @@ export class StickSoldier {
     this.root.setDepth(this.depth);
   }
 
-  /** Carry angle tracks true aim; idle only dips a few degrees. */
+  /** Local barrel snaps to the cursor; remotes ease a little so they don't twitch. */
   private resolveHoldAim(view: StickView, dtMs: number): number {
     const aimL = len2(view.aimX, view.aimY);
     const raw = ang(view.aimX / aimL, view.aimY / aimL);
+    if (view.local) {
+      this.holdAim = raw;
+      this.holdAimInit = true;
+      return raw;
+    }
     const face = view.aimX >= 0 ? 1 : -1;
     const low = face >= 0 ? 0.48 : Math.PI - 0.48;
-    // Idle: ~12% toward low-ready so the barrel still reads as the cursor.
     const target = view.aimReady ? raw : lerpAngle(raw, low, 0.12);
     if (!this.holdAimInit) {
       this.holdAim = target;

@@ -121,7 +121,7 @@ export class PredictionController {
     sample: Omit<
       PlayerInput,
       'seq' | 'fire' | 'grenade' | 'reload' | 'drop' | 'nadeCycle' | 'blat' | 'dash' | 'tossFlag'
-    >,
+    > & { fireHeld?: boolean },
     serverMe: PlayerState | undefined,
   ): PlayerInput[] {
     const sent: PlayerInput[] = [];
@@ -145,7 +145,7 @@ export class PredictionController {
         crouch: sample.crouch,
         aimX: sample.aimX,
         aimY: sample.aimY,
-        fire: this.fireLatch,
+        fire: this.fireLatch || !!sample.fireHeld,
         grenade: this.grenadeHeld,
         reload: this.reloadLatch,
         drop: this.dropLatch,
