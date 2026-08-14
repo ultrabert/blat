@@ -31,7 +31,23 @@ One human → bots fill slots. Second human → bots leave.
 | W / ↑ / Space | Jump (grounded) or jet (air) |
 | Mouse | Aim |
 | Left click | Shoot |
-| Right click or G | Throw grenade |
+| 1 / 2 / 3 | Equip Rifle / Sniper / Shotgun (if unlocked) |
+| Hold Right click or G | Cook grenade (release to throw; max cook = boom in hand) |
+
+## Play live
+
+**https://blat.fly.dev/** — hard-refresh after a deploy. Lobby password is the Fly secret `BLAT_PASSWORD`.
+
+Prompt in Cursor (desktop or iPhone) → agent ships → you play there. One human in a room gets bots; a second human makes the bots leave.
+
+iPhone Cursor is for **prompts**. Play in Safari (or a computer) — the game needs a keyboard + mouse.
+
+### Ship
+
+```bash
+npm run ship          # tests + fly deploy (desktop agent / this machine)
+git push origin main  # GitHub Action also deploys on push to main
+```
 
 ## Deploy (Fly.io)
 
@@ -43,7 +59,7 @@ fly secrets set BLAT_PASSWORD='your-shared-password'
 fly deploy
 ```
 
-Then open `https://<your-app>.fly.dev`. Same origin — no extra `VITE_COLYSEUS_URL` needed.
+Then open `https://blat.fly.dev`. Same origin — no extra `VITE_COLYSEUS_URL` needed.
 
 Keep **one machine** in a nearby region (`sin` by default). Colyseus rooms live in memory; two machines will break create/join without Redis.
 

@@ -1,0 +1,14 @@
+---
+description: Respect MECHANICS.md when changing gameplay systems
+alwaysApply: true
+---
+
+# Mechanics stability
+
+Before changing files or functions tagged with `@mechanic` (or combat/movement/physics under `shared/`, `src/game/net/`):
+
+1. Read the matching section in [`MECHANICS.md`](mdc:MECHANICS.md).
+2. Confirm dependencies; note any new trade-offs in `MECHANICS.md` if behavior changes.
+3. Keep shared sim math identical on client and server (prediction).
+4. Run / update related tests (`npm test`). Do not silently break listed test cases.
+5. Do not migrate to Matter/Box2D without an explicit netcode redesign discussion.

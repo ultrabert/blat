@@ -8,8 +8,10 @@
     "dev:client": "vite",
     "dev:server": "tsx watch --tsconfig server/tsconfig.json server/index.ts",
     "build": "tsc && vite build",
+    "test": "tsx --test shared/*.test.ts",
     "start": "tsx --tsconfig server/tsconfig.json server/index.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "ship": "npm test && fly deploy --yes"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

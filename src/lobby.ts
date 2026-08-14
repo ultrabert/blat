@@ -6,6 +6,7 @@ import {
 } from '../shared/roomCode';
 import type { GameState } from '../shared/schema';
 import { startGame } from './game/startGame';
+import { sound } from './game/audio/SoundBus';
 
 const COLYSEUS_URL =
   import.meta.env.VITE_COLYSEUS_URL ??
@@ -167,6 +168,7 @@ async function joinRoom(rawCode: string): Promise<void> {
 }
 
 function enterGame(room: Room<GameState>, code: string): void {
+  sound.unlock();
   setRoomInUrl(code);
   roomBarCode.textContent = `ROOM ${code}`;
   lobby.hidden = true;
@@ -177,6 +179,7 @@ function enterGame(room: Room<GameState>, code: string): void {
 }
 
 btnCopy.addEventListener('click', async () => {
+  sound.unlock();
   const code = normalizeRoomCode(roomBarCode.textContent?.replace(/^ROOM\s+/i, '') || '');
   if (!code) return;
   const url = roomUrl(code);
@@ -192,10 +195,12 @@ btnCopy.addEventListener('click', async () => {
 });
 
 btnCreate.addEventListener('click', () => {
+  sound.unlock();
   void createRoom();
 });
 
 btnJoin.addEventListener('click', () => {
+  sound.unlock();
   void joinRoom(codeInput.value);
 });
 

@@ -1,12 +1,18 @@
 import {
+  COVERS,
   GAME_HEIGHT,
   GAME_WIDTH,
   GRAVITY,
   PLAYER,
   PLATFORMS,
 } from '../../../shared/constants';
+import { fireDirection, shotgunBlastDirections } from '../../../shared/accuracy';
+import { BALLISTICS, muzzleVelocity, stepBallistic } from '../../../shared/ballistics';
+import { GRENADE } from '../../../shared/grenades';
 import type { MoveBody } from '../../../shared/physics';
 import type { BulletState, GrenadeState } from '../../../shared/schema';
+import { DEFAULT_WEAPON, isWeaponId, WEAPONS } from '../../../shared/weapons';
+import { traceBullet, type TraceTarget } from '../../../shared/trace';
 
 type PredBullet = {
   id: string;
@@ -14,7 +20,12 @@ type PredBullet = {
   y: number;
   vx: number;
   vy: number;
+  power: number;
   bornAt: number;
+  weapon: string;
+  /** Muzzle origin — used for sniper fade streaks. */
+  ox: number;
+  oy: number;
   serverId: string | null;
 };
 
@@ -25,11 +36,11 @@ type PredGrenade = {
   vx: number;
   vy: number;
   bornAt: number;
+  fuseMs: number;
   serverId: string | null;
 };
 
-const BULLET_LIFE_MS = 1400;
-const GRENADE_LIFE_MS = 1600;
+const BULLET_LIFE_MS = BALLISTICS.lifeMs;
 /** Drop ghost shots if the server never confirms. */
 const MATCH_TIMEOUT_MS = 700;
 
@@ -47,12 +58,30 @@ export class ProjectilePredictor {
   private nextId = 1;
   private explosions: { x: number; y: number }[] = [];
 
+  private impacts: {
+    x: number;
+    y: number;
+    kind: string;
+    weapon: string;
+    ox: number;
+    oy: number;
+  }[] = [];
+  private muzzleFlashes: {
+    x: number;
+    y: number;
+    aimX: number;
+    aimY: number;
+    weapon: string;
+  }[] = [];
+
   clear(): void {
     this.bullets = [];
     this.grenades = [];
     this.hiddenBullets.clear();
     this.hiddenGrenades.clear();
     this.explosions = [];
+    this.impacts = [];
+    this.muzzleFlashes = [];
   }
 
   /** Pending local throws not yet reflected in server grenade count. */
@@ -60,29 +89,125 @@ export class ProjectilePredictor {
     return this.grenades.filter((g) => !g.serverId).length;
   }
 
-  tryFire(body: MoveBody, now: number): boolean {
+  /**
+   * @mechanic ballistic-projectiles
+   * @mechanic client-prediction
+   * @mechanic state-accuracy
+   * @mechanic recoil
+   * @mechanic weapon-arsenal
+   */
+  tryFire(body: MoveBody, now: number, seed: number, weaponId: string = 'rifle'): boolean {
     if (!body.alive) return false;
-    if (now < this.lastFireAt + PLAYER.fireCooldownMs) return false;
+    const weapon = WEAPONS[isWeaponId(weaponId) ? weaponId : DEFAULT_WEAPON];
+    if (now < this.lastFireAt + weapon.fireCooldownMs) return false;
     this.lastFireAt = now;
 
-    const len = aimLen(body.aimX, body.aimY);
-    const ax = body.aimX / len;
-    const ay = body.aimY / len;
-    this.bullets.push({
-      id: `pb_${this.nextId++}`,
-      x: body.x + ax * 20,
-      y: body.y + ay * 12 - 4,
-      vx: ax * PLAYER.bulletSpeed,
-      vy: ay * PLAYER.bulletSpeed,
-      bornAt: now,
-      serverId: null,
-    });
+    const stance = {
+      vx: body.vx,
+      vy: body.vy,
+      onGround: body.onGround,
+      jetting: body.jetting,
+      crouching: body.crouching,
+      rolling: body.rollMs > 0,
+      cannonball: body.cannonballMs > 0,
+    };
+
+    const crouch = body.crouching || body.rollMs > 0;
+    const muzzleY = (dirY: number) => body.y + dirY * (crouch ? 6 : 12) - (crouch ? 2 : 4);
+
+    if (weapon.id === 'shotgun') {
+      const blast = shotgunBlastDirections(body.aimX, body.aimY, stance, body.recoil, seed, {
+        pellets: weapon.pellets,
+        spreadMult: weapon.spreadMult,
+        pelletSpread: weapon.pelletSpread,
+        recoilKick: weapon.recoilKick,
+        recoilMax: weapon.recoilMax,
+      });
+      body.recoil = blast.recoil;
+      const center = blast.dirs[Math.floor(blast.dirs.length / 2)] ?? {
+        aimX: body.aimX,
+        aimY: body.aimY,
+      };
+      const base = muzzleVelocity(center.aimX, center.aimY, body.vx, body.vy, weapon.muzzleSpeed);
+      const speed = Math.hypot(base.vx, base.vy);
+      const ox = body.x + center.aimX * 18;
+      const oy = muzzleY(center.aimY);
+      this.muzzleFlashes.push({
+        x: ox,
+        y: oy,
+        aimX: center.aimX,
+        aimY: center.aimY,
+        weapon: weapon.id,
+      });
+      for (const dir of blast.dirs) {
+        this.bullets.push({
+          id: `pb_${this.nextId++}`,
+          x: body.x + dir.aimX * 18,
+          y: muzzleY(dir.aimY),
+          vx: dir.aimX * speed,
+          vy: dir.aimY * speed,
+          power: base.power,
+          bornAt: now,
+          weapon: weapon.id,
+          ox,
+          oy,
+          serverId: null,
+        });
+      }
+      return true;
+    }
+
+    for (let i = 0; i < weapon.pellets; i++) {
+      const fired = fireDirection(body.aimX, body.aimY, stance, body.recoil, seed + i * 97, {
+        spreadMult: weapon.spreadMult,
+        pelletSpread: weapon.pelletSpread,
+        recoilKick: weapon.recoilKick,
+        recoilMax: weapon.recoilMax,
+        applyRecoil: i === 0,
+      });
+      if (i === 0) body.recoil = fired.recoil;
+
+      const muzzle = muzzleVelocity(
+        fired.aimX,
+        fired.aimY,
+        body.vx,
+        body.vy,
+        weapon.muzzleSpeed,
+      );
+      const ox = body.x + fired.aimX * 20;
+      const oy = muzzleY(fired.aimY);
+      this.bullets.push({
+        id: `pb_${this.nextId++}`,
+        x: ox,
+        y: oy,
+        vx: muzzle.vx,
+        vy: muzzle.vy,
+        power: muzzle.power,
+        bornAt: now,
+        weapon: weapon.id,
+        ox,
+        oy,
+        serverId: null,
+      });
+    }
     return true;
   }
 
-  tryGrenade(body: MoveBody, serverGrenades: number, now: number): boolean {
+  /**
+   * @mechanic throwable-grenades
+   * @mechanic client-prediction
+   */
+  tryGrenade(
+    body: MoveBody,
+    serverGrenades: number,
+    now: number,
+    fuseMs: number,
+    opts: { inventoryReserved?: boolean } = {},
+  ): boolean {
     if (!body.alive) return false;
-    if (serverGrenades - this.pendingGrenades() <= 0) return false;
+    if (!opts.inventoryReserved) {
+      if (serverGrenades - this.pendingGrenades() <= 0) return false;
+    }
     if (now < this.lastGrenadeAt + PLAYER.grenadeCooldownMs) return false;
     this.lastGrenadeAt = now;
 
@@ -93,20 +218,35 @@ export class ProjectilePredictor {
       id: `pg_${this.nextId++}`,
       x: body.x + ax * 16,
       y: body.y - 8,
-      vx: ax * PLAYER.grenadeSpeed,
-      vy: ay * PLAYER.grenadeSpeed - 180,
+      vx: ax * GRENADE.throwSpeed + body.vx * 0.35,
+      vy: ay * GRENADE.throwSpeed - 180 + body.vy * 0.2,
       bornAt: now,
+      fuseMs: Math.max(GRENADE.minFuseMs, fuseMs),
       serverId: null,
     });
     return true;
   }
 
-  step(dt: number, now: number): void {
-    // Bullets keep local integration after match so the shot never rewinds.
+  step(dt: number, now: number, targets: TraceTarget[] = [], ownerId = ''): void {
+    const kept: PredBullet[] = [];
     for (const b of this.bullets) {
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      const { x0, y0, x1, y1 } = stepBallistic(b, dt);
+      const hit = traceBullet(x0, y0, x1, y1, targets, ownerId);
+      if (hit) {
+        this.impacts.push({
+          x: hit.x,
+          y: hit.y,
+          kind: hit.kind,
+          weapon: b.weapon,
+          ox: b.ox,
+          oy: b.oy,
+        });
+        continue;
+      }
+      // stepBallistic already wrote x/y
+      kept.push(b);
     }
+    this.bullets = kept;
 
     // Unmatched grenades simulate locally; matched ones follow server in match().
     for (const g of this.grenades) {
@@ -130,7 +270,7 @@ export class ProjectilePredictor {
     this.grenades = this.grenades.filter((g) => {
       if (g.serverId) return true;
       if (now - g.bornAt > MATCH_TIMEOUT_MS) return false;
-      if (now - g.bornAt > GRENADE_LIFE_MS) {
+      if (now - g.bornAt > g.fuseMs) {
         this.explosions.push({ x: g.x, y: g.y });
         return false;
       }
@@ -223,16 +363,53 @@ export class ProjectilePredictor {
     return out;
   }
 
+  takeImpacts(): {
+    x: number;
+    y: number;
+    kind: string;
+    weapon: string;
+    ox: number;
+    oy: number;
+  }[] {
+    const out = this.impacts;
+    this.impacts = [];
+    return out;
+  }
+
+  takeMuzzleFlashes(): {
+    x: number;
+    y: number;
+    aimX: number;
+    aimY: number;
+    weapon: string;
+  }[] {
+    const out = this.muzzleFlashes;
+    this.muzzleFlashes = [];
+    return out;
+  }
+
   private bounceGrenade(g: PredGrenade): void {
-    for (const plat of PLATFORMS) {
-      const left = plat.x - plat.w / 2;
-      const right = plat.x + plat.w / 2;
-      const top = plat.y - plat.h / 2;
-      if (g.x >= left && g.x <= right && g.y >= top - 8 && g.y <= top + 12 && g.vy > 0) {
+    const bounceOn = (cx: number, cy: number, w: number, h: number) => {
+      const left = cx - w / 2;
+      const right = cx + w / 2;
+      const top = cy - h / 2;
+      const bottom = cy + h / 2;
+      if (g.x < left || g.x > right || g.y < top - 10 || g.y > bottom + 4) return;
+      if (g.vy > 0 && g.y <= top + 14) {
         g.y = top - 8;
-        g.vy *= -0.45;
-        g.vx *= 0.85;
+        g.vy *= -GRENADE.bounce;
+        g.vx *= GRENADE.bounceFriction;
+        return;
       }
-    }
+      if (g.x < cx) {
+        g.x = left - 2;
+        g.vx = -Math.abs(g.vx) * GRENADE.bounce;
+      } else {
+        g.x = right + 2;
+        g.vx = Math.abs(g.vx) * GRENADE.bounce;
+      }
+    };
+    for (const plat of PLATFORMS) bounceOn(plat.x, plat.y, plat.w, plat.h);
+    for (const cover of COVERS) bounceOn(cover.x, cover.y, cover.w, cover.h);
   }
 }

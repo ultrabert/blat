@@ -1,36 +1,77 @@
 import Phaser from 'phaser';
 import type { Room } from 'colyseus.js';
+import { stanceSpreadRad } from '../../../shared/accuracy';
 import {
   COLORS,
+  COVERS,
   GAME_HEIGHT,
   GAME_WIDTH,
   PLATFORMS,
   PLAYER,
+  TERRAIN_FILLS,
+  VIEW_HEIGHT,
+  VIEW_WIDTH,
 } from '../../../shared/constants';
+import { GRENADE, remainingFuse } from '../../../shared/grenades';
 import type { GameState, PlayerState } from '../../../shared/schema';
+import type { TraceTarget } from '../../../shared/trace';
+import {
+  DEFAULT_WEAPON,
+  isWeaponId,
+  WEAPONS,
+  weaponBySlot,
+  type WeaponId,
+} from '../../../shared/weapons';
+import { StickSoldier } from '../StickSoldier';
+import { skinForId, SKINS } from '../skins';
+import { SCENERY } from '../scenery';
+import { sound } from '../audio/SoundBus';
+import { VisceraFx } from '../fx/VisceraFx';
 import { PredictionController } from '../net/PredictionController';
 import { ProjectilePredictor } from '../net/ProjectilePredictor';
-
-type SoldierSprite = Phaser.GameObjects.Image;
 
 export class GameScene extends Phaser.Scene {
   private room!: Room<GameState>;
   private roomCode = '';
   private sessionId = '';
-  private soldiers = new Map<string, SoldierSprite>();
-  private bullets = new Map<string, Phaser.GameObjects.Image>();
+  private soldiers = new Map<string, StickSoldier>();
+  private tracerGfx!: Phaser.GameObjects.Graphics;
+  /** Recent positions for Soldat-style tracer streams. */
+  private bulletTrails = new Map<string, { x: number; y: number }[]>();
   private grenades = new Map<string, Phaser.GameObjects.Image>();
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyA!: Phaser.Input.Keyboard.Key;
   private keyD!: Phaser.Input.Keyboard.Key;
   private keyW!: Phaser.Input.Keyboard.Key;
+  private keyS!: Phaser.Input.Keyboard.Key;
   private keySpace!: Phaser.Input.Keyboard.Key;
   private keyG!: Phaser.Input.Keyboard.Key;
+  private key1!: Phaser.Input.Keyboard.Key;
+  private key2!: Phaser.Input.Keyboard.Key;
+  private key3!: Phaser.Input.Keyboard.Key;
   private hud!: Phaser.GameObjects.Text;
+  private crosshair!: Phaser.GameObjects.Graphics;
+  private pickupSprites = new Map<string, Phaser.GameObjects.Container>();
+  private localWeapon: WeaponId = DEFAULT_WEAPON;
   private fireHeld = false;
+  private grenadeHeld = false;
+  private cookStartedAt = 0;
+  private wasGrenadeHeld = false;
+  private localCooking = false;
   private prediction = new PredictionController();
   private projectiles = new ProjectilePredictor();
+  private fx!: VisceraFx;
   private nowMs = 0;
+  private lastDelta = 16;
+  private lastLocalHealth: number = PLAYER.maxHealth;
+  private lastHealth = new Map<string, number>();
+  private lastAlive = new Map<string, boolean>();
+  private pendingBlast: { x: number; y: number; at: number } | null = null;
+  private wasOwnedSniper = false;
+  private wasOwnedShotgun = false;
+  private wasRolling = false;
+  private ownershipPrimed = false;
+  private aimReadyUntil = 0;
 
   constructor() {
     super('Game');
@@ -42,24 +83,41 @@ export class GameScene extends Phaser.Scene {
     this.sessionId = this.room.sessionId;
 
     this.drawBackground();
+    this.drawTerrain();
     this.drawPlatforms();
+    this.drawCovers();
+    this.drawScenery();
+    this.tracerGfx = this.add.graphics().setDepth(8);
+    this.fx = new VisceraFx(this);
 
     const keyboard = this.input.keyboard!;
     this.cursors = keyboard.createCursorKeys();
     this.keyA = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
     this.keyD = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
     this.keyW = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    this.keyS = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S);
     this.keySpace = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
     this.keyG = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
+    this.key1 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+    this.key2 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+    this.key3 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (pointer.rightButtonDown() || pointer.button === 2) this.prediction.latchGrenade();
+      sound.unlock();
+      if (pointer.rightButtonDown() || pointer.button === 2) this.grenadeHeld = true;
       else this.fireHeld = true;
     });
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
       if (pointer.button === 0) this.fireHeld = false;
+      if (pointer.button === 2) this.grenadeHeld = false;
     });
+    // RMB release can come through buttons state
+    this.input.on('pointerup', () => {
+      if (!this.input.activePointer.rightButtonDown()) this.grenadeHeld = false;
+    });
+    this.input.keyboard?.on('keydown', () => sound.unlock());
     this.input.mouse?.disableContextMenu();
+    sound.unlock();
 
     this.hud = this.add
       .text(16, 12, '', {
@@ -70,11 +128,14 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
+    this.crosshair = this.add.graphics().setDepth(90);
+    this.input.setDefaultCursor('none');
+
     this.add
       .text(
         16,
-        GAME_HEIGHT - 52,
-        'A/D move · W/Space jump/jet · mouse aim · LMB shoot · RMB/G grenade',
+        VIEW_HEIGHT - 52,
+        '1/2/3 weapons · A/D · W/Space jet · S crouch/roll · hold RMB/G cook · LMB',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '13px',
@@ -85,28 +146,59 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100);
 
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    this.cameras.main.setRoundPixels(true);
   }
 
   update(_time: number, delta: number): void {
     if (!this.room?.state?.players) return;
     this.nowMs += delta;
-
-    if (this.fireHeld) this.prediction.latchFire();
-    if (Phaser.Input.Keyboard.JustDown(this.keyG)) this.prediction.latchGrenade();
+    this.lastDelta = delta;
 
     const serverMe = this.room.state.players.get(this.sessionId);
+    this.handleWeaponKeys(serverMe);
+
+    if (this.fireHeld) this.prediction.latchFire();
+    if (this.keyG.isDown) this.grenadeHeld = true;
+    if (Phaser.Input.Keyboard.JustUp(this.keyG) && !this.input.activePointer.rightButtonDown()) {
+      this.grenadeHeld = false;
+    }
+    const canCook = !!(serverMe?.alive && (serverMe.grenades > 0 || this.localCooking || serverMe.cooking));
+    this.prediction.setGrenadeHeld(this.grenadeHeld && canCook);
+    this.updateGrenadeCookPredict(serverMe);
+
     const aim = this.aimFromPointer(serverMe);
     let move = 0;
     if (this.cursors.left.isDown || this.keyA.isDown) move -= 1;
     if (this.cursors.right.isDown || this.keyD.isDown) move += 1;
 
-    if (serverMe && !serverMe.alive) this.projectiles.clear();
+    if (serverMe && !serverMe.alive) {
+      this.projectiles.clear();
+      this.localCooking = false;
+      this.grenadeHeld = false;
+    }
+
+    if (serverMe) {
+      if (serverMe.health < this.lastLocalHealth && serverMe.alive) {
+        sound.hit();
+        sound.wetHit();
+        // Adopt server knockback onto predicted body
+        if (this.prediction.predicted) {
+          this.prediction.predicted.vx = serverMe.vx;
+          this.prediction.predicted.vy = serverMe.vy;
+        }
+      }
+      if (serverMe.alive) this.lastLocalHealth = serverMe.health;
+      else this.lastLocalHealth = PLAYER.maxHealth;
+    }
+
+    this.watchWounds();
 
     const packets = this.prediction.tick(
       delta,
       {
         move,
         jet: this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown,
+        crouch: this.cursors.down.isDown || this.keyS.isDown,
         aimX: aim.x,
         aimY: aim.y,
       },
@@ -115,17 +207,101 @@ export class GameScene extends Phaser.Scene {
     for (const packet of packets) {
       this.room.send('input', packet);
       const body = this.prediction.predicted;
-      if (body && packet.fire) this.projectiles.tryFire(body, this.nowMs);
-      if (body && packet.grenade) {
-        this.projectiles.tryGrenade(body, serverMe?.grenades ?? 0, this.nowMs);
+      if (body && packet.fire) {
+        const w = serverMe?.weapon ?? this.localWeapon;
+        if (this.projectiles.tryFire(body, this.nowMs, packet.seq, w)) {
+          sound.shoot(isWeaponId(w) ? w : 'rifle');
+          this.aimReadyUntil = this.nowMs + 220;
+        }
       }
     }
 
-    this.projectiles.step(delta / 1000, this.nowMs);
+    const localJet = !!(this.prediction.predicted?.jetting && this.prediction.predicted?.alive);
+    sound.setJetting(localJet);
+
+    const bulletTargets: TraceTarget[] = [];
+    this.room.state.players?.forEach((p, id) => {
+      if (id === this.sessionId) return;
+      bulletTargets.push({
+        id,
+        x: p.x,
+        y: p.y,
+        alive: p.alive,
+        crouching: !!p.crouching || !!p.rolling || !!p.cannonball,
+      });
+    });
+    this.projectiles.step(delta / 1000, this.nowMs, bulletTargets, this.sessionId);
     this.projectiles.match(this.room.state.bullets, this.room.state.grenades, this.sessionId);
 
     this.syncEntities();
+    this.syncPickups();
     this.updateHud(serverMe);
+    this.drawCrosshair(serverMe);
+    this.updateCamera(serverMe);
+  }
+
+  private handleWeaponKeys(serverMe: PlayerState | undefined): void {
+    if (!serverMe?.alive) return;
+    const trySlot = (slot: number) => {
+      const id = weaponBySlot(slot);
+      if (!id) return;
+      if (id === 'sniper' && !serverMe.ownedSniper) return;
+      if (id === 'shotgun' && !serverMe.ownedShotgun) return;
+      this.localWeapon = id;
+      this.room.send('weapon', { weapon: id });
+    };
+    if (Phaser.Input.Keyboard.JustDown(this.key1)) trySlot(1);
+    if (Phaser.Input.Keyboard.JustDown(this.key2)) trySlot(2);
+    if (Phaser.Input.Keyboard.JustDown(this.key3)) trySlot(3);
+    if (isWeaponId(serverMe.weapon)) this.localWeapon = serverMe.weapon;
+  }
+
+  /** Local cook timer + predicted throw on release. */
+  private updateGrenadeCookPredict(serverMe: PlayerState | undefined): void {
+    const holding = this.grenadeHeld && !!serverMe?.alive;
+    const nades = serverMe?.grenades ?? 0;
+
+    if (!this.wasGrenadeHeld && holding && (nades > 0 || serverMe?.cooking)) {
+      this.localCooking = true;
+      this.cookStartedAt = this.nowMs;
+      sound.grenade();
+    }
+
+    if (this.localCooking && holding) {
+      const cooked = this.nowMs - this.cookStartedAt;
+      // Tick faster as fuse runs down
+      const urgency = cooked / GRENADE.fuseMs;
+      if (urgency > 0.08) sound.cookTick(urgency);
+      if (cooked >= GRENADE.fuseMs) {
+        // Self-blast predicted — server will confirm
+        const body = this.prediction.predicted;
+        if (body) this.detonate(body.x, body.y);
+        this.localCooking = false;
+      }
+    }
+
+    if (this.wasGrenadeHeld && !holding && this.localCooking) {
+      const body = this.prediction.predicted;
+      const fuse = remainingFuse(this.nowMs - this.cookStartedAt);
+      if (body) {
+        this.projectiles.tryGrenade(body, nades, this.nowMs, fuse, {
+          inventoryReserved: true,
+        });
+      }
+      this.localCooking = false;
+    }
+
+    if (!holding) this.localCooking = this.localCooking && !!serverMe?.cooking;
+    this.wasGrenadeHeld = holding;
+  }
+
+  private updateCamera(serverMe: PlayerState | undefined): void {
+    const x =
+      this.prediction.predicted?.x ?? serverMe?.x ?? GAME_WIDTH / 2;
+    const y =
+      this.prediction.predicted?.y ?? serverMe?.y ?? GAME_HEIGHT / 2;
+    // centerOn + setBounds clamps so the arena stays in view near edges
+    this.cameras.main.centerOn(x, y);
   }
 
   private aimFromPointer(serverMe: PlayerState | undefined): { x: number; y: number } {
@@ -143,73 +319,136 @@ export class GameScene extends Phaser.Scene {
     const seenSoldiers = new Set<string>();
     const seenBullets = new Set<string>();
     const seenGrenades = new Set<string>();
+    const dt = this.lastDelta;
 
     this.room.state.players.forEach((player, id) => {
       seenSoldiers.add(id);
-      let sprite = this.soldiers.get(id);
-      if (!sprite) {
-        sprite = this.add.image(player.x, player.y, 'soldier');
-        sprite.setDepth(10);
-        this.soldiers.set(id, sprite);
+      let stick = this.soldiers.get(id);
+      if (!stick) {
+        stick = new StickSoldier(this, 10);
+        this.soldiers.set(id, stick);
       }
+
+      const skin = skinForId(id, !!player.isBot, id === this.sessionId);
+      const tint = SKINS[skin].tint;
+      const weapon: WeaponId = isWeaponId(player.weapon) ? player.weapon : DEFAULT_WEAPON;
 
       if (id === this.sessionId && this.prediction.predicted) {
         const local = this.prediction.predicted;
-        sprite.setPosition(local.x, local.y);
-        sprite.setFlipX(local.facing < 0);
-        sprite.setAlpha(local.alive ? 1 : 0.45);
-        sprite.setTint(COLORS.player);
+        const rolling = local.rollMs > 0;
+        if (rolling && !this.wasRolling) sound.roll();
+        this.wasRolling = rolling;
+        if (this.fireHeld) this.aimReadyUntil = this.nowMs + 220;
+        stick.update(
+          {
+            x: local.x,
+            y: local.y,
+            vx: local.vx,
+            vy: local.vy,
+            aimX: local.aimX,
+            aimY: local.aimY,
+            facing: local.facing,
+            onGround: local.onGround,
+            jetting: local.jetting,
+            crouching: local.crouching,
+            rolling: local.rollMs > 0,
+            cannonball: local.cannonballMs > 0,
+            backflip: local.backflipMs > 0,
+            alive: local.alive,
+            skin,
+            weapon: isWeaponId(this.localWeapon) ? this.localWeapon : weapon,
+            aimReady: this.fireHeld || this.nowMs < this.aimReadyUntil,
+            tint,
+            alpha: local.alive ? 1 : 0.9,
+          },
+          dt,
+        );
         if (local.jetting && local.alive) this.emitJet(local.x, local.y);
       } else {
         this.prediction.pushRemote(id, player, this.nowMs);
         const sample = this.prediction.sampleRemote(id, this.nowMs);
-        if (sample) {
-          sprite.setPosition(sample.x, sample.y);
-          sprite.setFlipX(sample.facing < 0);
-          sprite.setAlpha(sample.alpha);
-          sprite.setTint(this.tintFor(player, id));
-          if (sample.jetting && sample.alive) this.emitJet(sample.x, sample.y);
-        } else {
-          sprite.setPosition(player.x, player.y);
-          sprite.setFlipX(player.facing < 0);
-          sprite.setAlpha(player.alive ? 1 : 0.45);
-          sprite.setTint(this.tintFor(player, id));
-        }
+        const view = sample ?? {
+          x: player.x,
+          y: player.y,
+          vx: player.vx,
+          vy: player.vy,
+          aimX: player.aimX,
+          aimY: player.aimY,
+          facing: player.facing,
+          onGround: !!player.onGround,
+          jetting: player.jetting,
+          crouching: !!player.crouching,
+          rolling: !!player.rolling,
+          cannonball: !!player.cannonball,
+          backflip: !!player.backflip,
+          alive: player.alive,
+          alpha: player.alive ? 1 : 0.9,
+        };
+        stick.update(
+          {
+            ...view,
+            crouching: view.crouching,
+            rolling: view.rolling,
+            cannonball: view.cannonball,
+            backflip: view.backflip,
+            skin,
+            weapon,
+            aimReady: true,
+            tint,
+            alpha: view.alive ? view.alpha : 0.9,
+          },
+          dt,
+        );
+        if (view.jetting && view.alive) this.emitJet(view.x, view.y);
       }
+
+      const land = stick.consumeLandFx();
+      if (land) {
+        this.emitLandDust(land.x, land.y);
+        sound.land(id === this.sessionId);
+      }
+      if (stick.consumeDeathFx()) sound.death();
+      if (id === this.sessionId && stick.consumeFootstep()) sound.footstep();
     });
 
     this.prediction.pruneRemotes(seenSoldiers);
 
+    type Tracer = {
+      id: string;
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      weapon: string;
+    };
+    const tracers: Tracer[] = [];
+
     this.room.state.bullets?.forEach((bullet, id) => {
-      if (this.projectiles.shouldHideServerBullet(id)) {
-        const existing = this.bullets.get(id);
-        if (existing) {
-          existing.destroy();
-          this.bullets.delete(id);
-        }
-        return;
-      }
+      if (this.projectiles.shouldHideServerBullet(id)) return;
       seenBullets.add(id);
-      let sprite = this.bullets.get(id);
-      if (!sprite) {
-        sprite = this.add.image(bullet.x, bullet.y, 'bullet');
-        sprite.setDepth(8);
-        this.bullets.set(id, sprite);
-      }
-      sprite.setPosition(bullet.x, bullet.y);
+      tracers.push({
+        id,
+        x: bullet.x,
+        y: bullet.y,
+        vx: bullet.vx,
+        vy: bullet.vy,
+        weapon: bullet.weapon || 'rifle',
+      });
     });
 
     for (const pred of this.projectiles.visibleBullets()) {
-      const id = pred.id;
-      seenBullets.add(id);
-      let sprite = this.bullets.get(id);
-      if (!sprite) {
-        sprite = this.add.image(pred.x, pred.y, 'bullet');
-        sprite.setDepth(8);
-        this.bullets.set(id, sprite);
-      }
-      sprite.setPosition(pred.x, pred.y);
+      seenBullets.add(pred.id);
+      tracers.push({
+        id: pred.id,
+        x: pred.x,
+        y: pred.y,
+        vx: pred.vx,
+        vy: pred.vy,
+        weapon: pred.weapon || 'rifle',
+      });
     }
+
+    this.drawTracers(tracers, seenBullets);
 
     this.room.state.grenades?.forEach((grenade, id) => {
       if (this.projectiles.shouldHideServerGrenade(id)) {
@@ -243,35 +482,184 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const boom of this.projectiles.takeExplosions()) {
-      this.spawnExplosion(boom.x, boom.y);
+      this.detonate(boom.x, boom.y);
     }
-
-    for (const [id, sprite] of this.soldiers) {
-      if (!seenSoldiers.has(id)) {
-        sprite.destroy();
-        this.soldiers.delete(id);
+    for (const flash of this.projectiles.takeMuzzleFlashes()) {
+      if (flash.weapon === 'shotgun') {
+        this.fx.shotgunMuzzle(flash.x, flash.y, flash.aimX, flash.aimY);
       }
     }
-    for (const [id, sprite] of this.bullets) {
-      if (!seenBullets.has(id)) {
-        sprite.destroy();
-        this.bullets.delete(id);
+    for (const hit of this.projectiles.takeImpacts()) {
+      if (hit.kind === 'player') {
+        this.fx.bulletWound(hit.x, hit.y);
+        sound.wetHit();
+      } else {
+        this.fx.wallSpark(hit.x, hit.y);
+      }
+    }
+
+    for (const [id, stick] of this.soldiers) {
+      if (!seenSoldiers.has(id)) {
+        stick.destroy();
+        this.soldiers.delete(id);
       }
     }
     for (const [id, sprite] of this.grenades) {
       if (!seenGrenades.has(id)) {
         // Server-despawned grenades we were rendering (others / unmatched)
-        if (!id.startsWith('pg_')) this.spawnExplosion(sprite.x, sprite.y);
+        if (!id.startsWith('pg_')) {
+          this.detonate(sprite.x, sprite.y);
+        }
         sprite.destroy();
         this.grenades.delete(id);
       }
     }
   }
 
-  private tintFor(player: PlayerState, id: string): number {
-    if (id === this.sessionId) return COLORS.player;
-    if (player.isBot) return COLORS.bot;
-    return COLORS.other;
+  private syncPickups(): void {
+    const me = this.room.state.players?.get(this.sessionId);
+    if (me) {
+      if (!this.ownershipPrimed) {
+        this.wasOwnedSniper = !!me.ownedSniper;
+        this.wasOwnedShotgun = !!me.ownedShotgun;
+        this.ownershipPrimed = true;
+      } else if (
+        (!!me.ownedSniper && !this.wasOwnedSniper) ||
+        (!!me.ownedShotgun && !this.wasOwnedShotgun)
+      ) {
+        sound.pickup();
+      }
+      this.wasOwnedSniper = !!me.ownedSniper;
+      this.wasOwnedShotgun = !!me.ownedShotgun;
+    }
+
+    const seen = new Set<string>();
+    this.room.state.pickups?.forEach((p, id) => {
+      seen.add(id);
+      let box = this.pickupSprites.get(id);
+      if (!box) {
+        const iconKey =
+          p.weapon === 'sniper'
+            ? 'icon_sniper'
+            : p.weapon === 'shotgun'
+              ? 'icon_shotgun'
+              : 'icon_rifle';
+        const hasIcon = this.textures.exists(iconKey);
+        const parts: Phaser.GameObjects.GameObject[] = [];
+        const pad = this.add.graphics();
+        pad.fillStyle(0x0b1020, 0.55);
+        pad.fillRoundedRect(-22, -18, 44, 36, 6);
+        pad.lineStyle(2, 0xe8eefc, 0.35);
+        pad.strokeRoundedRect(-22, -18, 44, 36, 6);
+        parts.push(pad);
+        if (hasIcon) {
+          const icon = this.add.image(0, -2, iconKey).setDisplaySize(36, 36);
+          parts.push(icon);
+        } else {
+          parts.push(
+            this.add
+              .text(0, 0, p.weapon === 'sniper' ? 'SR' : p.weapon === 'shotgun' ? 'SG' : 'AR', {
+                fontFamily: 'ui-monospace, Menlo, monospace',
+                fontSize: '11px',
+                color: '#e8eefc',
+              })
+              .setOrigin(0.5),
+          );
+        }
+        box = this.add.container(p.x, p.y, parts).setDepth(4);
+        this.pickupSprites.set(id, box);
+      }
+      box.setPosition(p.x, p.y - 8);
+      box.setVisible(!!p.active);
+      box.setAlpha(0.8 + Math.sin(this.nowMs / 280) * 0.15);
+      box.y = p.y - 8 + Math.sin(this.nowMs / 400) * 3;
+    });
+    for (const [id, box] of this.pickupSprites) {
+      if (!seen.has(id)) {
+        box.destroy();
+        this.pickupSprites.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Rifle: streaming tracers. Shotgun: short cone pellets.
+   * Sniper: long fast streak + brief persistence-of-vision trail (no beam).
+   */
+  private drawTracers(
+    tracers: { id: string; x: number; y: number; vx: number; vy: number; weapon: string }[],
+    seen: Set<string>,
+  ): void {
+    const g = this.tracerGfx;
+    g.clear();
+
+    for (const t of tracers) {
+      const isShot = t.weapon === 'shotgun';
+      const isSniper = t.weapon === 'sniper';
+      const trailLen = isShot ? 3 : isSniper ? 8 : 5;
+
+      let trail = this.bulletTrails.get(t.id);
+      if (!trail) {
+        trail = [];
+        this.bulletTrails.set(t.id, trail);
+      }
+      const last = trail[trail.length - 1];
+      const minStep = isSniper ? 6 : 2;
+      if (!last || Math.hypot(last.x - t.x, last.y - t.y) > minStep) {
+        trail.push({ x: t.x, y: t.y });
+        if (trail.length > trailLen) trail.shift();
+      }
+
+      const speed = Math.hypot(t.vx, t.vy) || 1;
+      const ux = t.vx / speed;
+      const uy = t.vy / speed;
+      const streak = Math.min(
+        isSniper ? 72 : isShot ? 16 : 40,
+        Math.max(isSniper ? 36 : isShot ? 8 : 18, speed * (isSniper ? 0.055 : isShot ? 0.018 : 0.036)),
+      );
+      const x1 = t.x;
+      const y1 = t.y;
+      const x0 = x1 - ux * streak;
+      const y0 = y1 - uy * streak;
+
+      const glow = isSniper ? 0xa5f3fc : isShot ? 0xfb923c : 0xfbbf24;
+      const core = isSniper ? 0xecfeff : isShot ? 0xffedd5 : 0xfff7c2;
+      g.lineStyle(isShot ? 2.6 : isSniper ? 2.4 : 3.4, glow, isShot ? 0.4 : isSniper ? 0.22 : 0.28);
+      g.beginPath();
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+      g.strokePath();
+      g.lineStyle(isShot ? 1.35 : isSniper ? 1.15 : 1.55, core, isSniper ? 0.85 : 0.95);
+      g.beginPath();
+      g.moveTo(
+        x0 + ux * streak * (isShot ? 0.15 : isSniper ? 0.45 : 0.32),
+        y0 + uy * streak * (isShot ? 0.15 : isSniper ? 0.45 : 0.32),
+      );
+      g.lineTo(x1, y1);
+      g.strokePath();
+      g.fillStyle(0xfffbeb, isSniper ? 0.75 : 1);
+      g.fillCircle(x1, y1, isShot ? 1.6 : isSniper ? 1.1 : 1.35);
+
+      // Persistence-of-vision ghost (stronger / longer for sniper)
+      if (!isShot && trail.length > 1) {
+        for (let i = 1; i < trail.length; i++) {
+          const a = trail[i - 1]!;
+          const b = trail[i]!;
+          const alpha = isSniper
+            ? 0.04 + (i / trail.length) * 0.18
+            : 0.08 + (i / trail.length) * 0.22;
+          g.lineStyle(isSniper ? 1.0 : 1.2, glow, alpha);
+          g.beginPath();
+          g.moveTo(a.x, a.y);
+          g.lineTo(b.x, b.y);
+          g.strokePath();
+        }
+      }
+    }
+
+    for (const id of [...this.bulletTrails.keys()]) {
+      if (!seen.has(id)) this.bulletTrails.delete(id);
+    }
   }
 
   private updateHud(serverMe: PlayerState | undefined): void {
@@ -282,6 +670,10 @@ export class GameScene extends Phaser.Scene {
 
     const fuel = this.prediction.predicted?.fuel ?? serverMe.fuel;
     const nades = Math.max(0, serverMe.grenades - this.projectiles.pendingGrenades());
+    const cooking = this.localCooking || !!serverMe.cooking;
+    const cookFrac = cooking
+      ? Math.min(1, (this.nowMs - this.cookStartedAt) / GRENADE.fuseMs)
+      : 0;
     const others = [...this.room.state.players.entries()]
       .filter(([id]) => id !== this.sessionId)
       .map(
@@ -289,11 +681,26 @@ export class GameScene extends Phaser.Scene {
           `${p.isBot ? 'BOT' : p.name} ${p.alive ? `${Math.ceil(p.health)}HP` : 'DEAD'}`,
       );
 
+    const weaponId = isWeaponId(serverMe.weapon) ? serverMe.weapon : DEFAULT_WEAPON;
+    const weapon = WEAPONS[weaponId];
+    const slots = [
+      `1:${WEAPONS.rifle.name}${weaponId === 'rifle' ? '«' : ''}`,
+      serverMe.ownedSniper
+        ? `2:${WEAPONS.sniper.name}${weaponId === 'sniper' ? '«' : ''}`
+        : '2:—',
+      serverMe.ownedShotgun
+        ? `3:${WEAPONS.shotgun.name}${weaponId === 'shotgun' ? '«' : ''}`
+        : '3:—',
+    ].join('  ');
+
     this.hud.setText(
       [
         `HP ${this.bar(serverMe.health, PLAYER.maxHealth, 10)} ${Math.ceil(serverMe.health)}`,
         `FUEL ${this.bar(fuel, PLAYER.maxFuel, 10)} ${Math.ceil(fuel)}`,
+        `GUN ${weapon.name}`,
+        slots,
         `NADES ${nades}/${PLAYER.maxGrenades}`,
+        cooking ? `COOK ${this.bar(cookFrac * GRENADE.fuseMs, GRENADE.fuseMs, 10)}` : '',
         `KILLS ${serverMe.kills}`,
         ...others,
         serverMe.alive ? '' : 'RESPAWNING…',
@@ -304,9 +711,143 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  private drawCrosshair(serverMe?: PlayerState): void {
+    const g = this.crosshair;
+    g.clear();
+    const body = this.prediction.predicted;
+    if (!body?.alive) return;
+
+    const pointer = this.input.activePointer;
+    const px = pointer.worldX;
+    const py = pointer.worldY;
+    const weaponId = isWeaponId(serverMe?.weapon ?? this.localWeapon)
+      ? ((serverMe?.weapon as WeaponId) ?? this.localWeapon)
+      : DEFAULT_WEAPON;
+    const weapon = WEAPONS[weaponId];
+    const spread =
+      stanceSpreadRad({
+        vx: body.vx,
+        vy: body.vy,
+        onGround: body.onGround,
+        jetting: body.jetting,
+        crouching: body.crouching,
+        rolling: body.rollMs > 0,
+        cannonball: body.cannonballMs > 0,
+      }) *
+        weapon.spreadMult +
+      weapon.pelletSpread;
+    const cone = Math.min(56, 10 + spread * 220 + body.recoil * 90);
+
+    g.lineStyle(1.5, 0xe8e4dc, 0.85);
+    g.strokeCircle(px, py, cone);
+    g.lineStyle(1, 0xe8e4dc, 0.55);
+    g.beginPath();
+    g.moveTo(px - cone - 4, py);
+    g.lineTo(px - 3, py);
+    g.moveTo(px + 3, py);
+    g.lineTo(px + cone + 4, py);
+    g.moveTo(px, py - cone - 4);
+    g.lineTo(px, py - 3);
+    g.moveTo(px, py + 3);
+    g.lineTo(px, py + cone + 4);
+    g.strokePath();
+    g.fillStyle(0xe8e4dc, 0.9);
+    g.fillCircle(px, py, 1.5);
+  }
+
   private bar(value: number, max: number, width: number): string {
     const filled = Math.round((value / max) * width);
     return '█'.repeat(Math.max(0, filled)) + '░'.repeat(Math.max(0, width - filled));
+  }
+
+  private watchWounds(): void {
+    if (!this.room.state.players) return;
+    const seen = new Set<string>();
+    this.room.state.players.forEach((p, id) => {
+      seen.add(id);
+      const prevH = this.lastHealth.get(id);
+      const prevAlive = this.lastAlive.get(id);
+
+      if (prevH !== undefined && p.health < prevH && p.alive) {
+        const sample =
+          id === this.sessionId && this.prediction.predicted
+            ? this.prediction.predicted
+            : p;
+        // Prefer blast wound if a grenade just went off nearby
+        if (
+          this.pendingBlast &&
+          this.nowMs - this.pendingBlast.at < 120 &&
+          Math.hypot(sample.x - this.pendingBlast.x, sample.y - this.pendingBlast.y) <
+            PLAYER.grenadeBlastRadius + 20
+        ) {
+          this.fx.blastWound(
+            sample.x,
+            sample.y,
+            this.pendingBlast.x,
+            this.pendingBlast.y,
+            prevH - p.health,
+          );
+        } else if (id !== this.sessionId || prevH - p.health >= PLAYER.bulletDamage - 1) {
+          // Local predicted bulletWound already fired on impact; still spray for remotes
+          if (id !== this.sessionId) {
+            this.fx.bulletWound(sample.x, sample.y, -p.aimX, -p.aimY);
+            sound.wetHit();
+          }
+        }
+      }
+
+      if (prevAlive === true && !p.alive) {
+        const sample =
+          id === this.sessionId && this.prediction.predicted
+            ? this.prediction.predicted
+            : p;
+        this.fx.deathGibs(sample.x, sample.y, sample.vx, sample.vy);
+        sound.wetHit();
+      }
+
+      this.lastHealth.set(id, p.health);
+      this.lastAlive.set(id, p.alive);
+    });
+
+    for (const id of this.lastHealth.keys()) {
+      if (!seen.has(id)) {
+        this.lastHealth.delete(id);
+        this.lastAlive.delete(id);
+      }
+    }
+  }
+
+  private detonate(x: number, y: number): void {
+    this.fx.explosion(x, y);
+    sound.explode(1);
+    this.pendingBlast = { x, y, at: this.nowMs };
+    // Gib anyone standing in the blast (visual; damage comes from server)
+    this.room.state.players?.forEach((p) => {
+      if (!p.alive) return;
+      const dist = Math.hypot(p.x - x, p.y - y);
+      if (dist <= PLAYER.grenadeBlastRadius) {
+        this.fx.blastWound(p.x, p.y, x, y, PLAYER.grenadeDamage * (1 - dist / PLAYER.grenadeBlastRadius));
+      }
+    });
+  }
+
+  private emitLandDust(x: number, y: number): void {
+    for (let i = 0; i < 6; i++) {
+      const p = this.add.image(x, y, 'particle');
+      p.setTint(0x94a3b8);
+      p.setAlpha(0.7);
+      p.setDepth(6);
+      const dir = i % 2 === 0 ? -1 : 1;
+      this.tweens.add({
+        targets: p,
+        x: x + dir * Phaser.Math.Between(8, 28),
+        y: y - Phaser.Math.Between(2, 12),
+        alpha: 0,
+        scale: 0.25,
+        duration: 220 + i * 20,
+        onComplete: () => p.destroy(),
+      });
+    }
   }
 
   private emitJet(x: number, y: number): void {
@@ -325,50 +866,106 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private spawnExplosion(x: number, y: number, tint = 0xfbbf24): void {
-    for (let i = 0; i < 10; i++) {
-      const p = this.add.image(x, y, 'particle');
-      p.setTint(tint);
-      p.setDepth(20);
-      this.tweens.add({
-        targets: p,
-        x: x + Phaser.Math.Between(-40, 40),
-        y: y + Phaser.Math.Between(-40, 40),
-        alpha: 0,
-        scale: 0.2,
-        duration: 220,
-        onComplete: () => p.destroy(),
-      });
+  private drawPlatforms(): void {
+    const useArt = this.textures.exists('terrain_dirt') && this.textures.exists('terrain_edge');
+    for (const p of PLATFORMS) {
+      if (useArt) {
+        // Fill body with tiled dirt
+        const fillH = Math.max(p.h, p.w > 800 ? 48 : 28);
+        const body = this.add.tileSprite(p.x, p.y + 4, p.w, fillH, 'terrain_dirt');
+        body.setDepth(1);
+        body.setTint(0xc4a574);
+        // Cap edge on top
+        const edge = this.add.image(p.x, p.y - fillH / 2 + 6, 'terrain_edge');
+        edge.setDisplaySize(p.w + 4, Math.min(22, 14 + p.h * 0.2));
+        edge.setDepth(1.1);
+        // Dark outline for Soldat readability
+        const outline = this.add.graphics().setDepth(0.9);
+        outline.lineStyle(2, 0x1a1208, 0.65);
+        outline.strokeRect(p.x - p.w / 2, p.y - fillH / 2 + 4, p.w, fillH);
+      } else {
+        const plat = this.add.image(p.x, p.y, 'platform');
+        plat.setDisplaySize(p.w, p.h);
+        plat.setDepth(1);
+      }
     }
   }
 
-  private drawPlatforms(): void {
-    for (const p of PLATFORMS) {
-      const plat = this.add.image(p.x, p.y, 'platform');
-      plat.setDisplaySize(p.w, p.h);
-      plat.setDepth(1);
+  private drawCovers(): void {
+    const bags = this.textures.exists('prop_sandbags');
+    const ruin = this.textures.exists('prop_ruin');
+    for (const c of COVERS) {
+      if (c.h > 80 && ruin) {
+        const img = this.add.image(c.x, c.y, 'prop_ruin');
+        img.setDisplaySize(c.w * 1.35, c.h * 1.15);
+        img.setDepth(2);
+        img.setTint(0x9aa8b8);
+      } else if (bags) {
+        const img = this.add.image(c.x, c.y, 'prop_sandbags');
+        img.setDisplaySize(c.w * 1.4, c.h * 1.25);
+        img.setDepth(2);
+      } else {
+        const cover = this.add.image(c.x, c.y, 'cover');
+        cover.setDisplaySize(c.w, c.h);
+        cover.setDepth(2);
+        cover.setTint(c.h > 80 ? 0x5a6a82 : 0x8b9cb3);
+      }
+    }
+  }
+
+  private drawScenery(): void {
+    for (const s of SCENERY) {
+      if (!this.textures.exists(s.key)) continue;
+      const img = this.add.image(s.x, s.y, s.key);
+      img.setScale(s.scale);
+      img.setDepth(s.depth ?? 0);
+      img.setScrollFactor(s.scroll ?? 1);
+      if (s.flipX) img.setFlipX(true);
+      if (s.alpha !== undefined) img.setAlpha(s.alpha);
+    }
+  }
+
+  private drawTerrain(): void {
+    const g = this.add.graphics().setDepth(-5);
+    const useDirt = this.textures.exists('terrain_dirt');
+    for (const t of TERRAIN_FILLS) {
+      if (useDirt && t.w > 100) {
+        const tile = this.add.tileSprite(t.x, t.y, t.w, t.h, 'terrain_dirt');
+        tile.setDepth(-5);
+        tile.setTint(0x8b6914);
+        tile.setAlpha(0.85);
+      } else {
+        g.fillStyle(0x152238, 1);
+        g.fillRect(t.x - t.w / 2, t.y - t.h / 2, t.w, t.h);
+        g.fillStyle(0x1e314c, 0.55);
+        g.fillRect(t.x - t.w / 2, t.y - t.h / 2, t.w, Math.min(28, t.h * 0.12));
+      }
     }
   }
 
   private drawBackground(): void {
     const g = this.add.graphics();
-    g.fillStyle(COLORS.bgTop, 1);
+    // Cool distant sky → warmer near-horizon (Soldat-ish depth)
+    g.fillStyle(0x152238, 1);
     g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    g.fillStyle(COLORS.bgBottom, 0.85);
+    g.fillStyle(0x243656, 1);
+    g.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT * 0.42);
+    g.fillStyle(0x3d2a1a, 0.35);
     g.fillRect(0, GAME_HEIGHT * 0.55, GAME_WIDTH, GAME_HEIGHT * 0.45);
-    g.lineStyle(1, 0xffffff, 0.04);
-    for (let x = 0; x < GAME_WIDTH; x += 40) g.lineBetween(x, 0, x, GAME_HEIGHT);
-    for (let y = 0; y < GAME_HEIGHT; y += 40) g.lineBetween(0, y, GAME_WIDTH, y);
+    g.lineStyle(1, 0xffffff, 0.03);
+    for (let x = 0; x < GAME_WIDTH; x += 64) g.lineBetween(x, 0, x, GAME_HEIGHT);
+    for (let y = 0; y < GAME_HEIGHT; y += 64) g.lineBetween(0, y, GAME_WIDTH, y);
     g.setDepth(-10);
 
     this.add
-      .text(GAME_WIDTH / 2, 28, 'BLAT', {
+      .text(VIEW_WIDTH / 2, 28, 'BLAT', {
         fontFamily: "Georgia, 'Times New Roman', serif",
         fontSize: '28px',
         color: '#e8eefc',
       })
       .setOrigin(0.5)
-      .setAlpha(0.35)
-      .setDepth(0);
+      .setScrollFactor(0)
+      .setAlpha(0.28)
+      .setDepth(100);
   }
 }

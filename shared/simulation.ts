@@ -1,5 +1,6 @@
 import {
   BOT,
+  COVERS,
   GAME_HEIGHT,
   GAME_WIDTH,
   GRAVITY,
@@ -8,13 +9,27 @@ import {
   SPAWNS,
   type PlayerInput,
 } from './constants.js';
+import { bodyDamageMult, fireDirection, shotgunBlastDirections } from './accuracy.js';
 import { fellOutOfWorld, stepMovement, type MoveBody } from './physics.js';
+import { ballisticDamage, BALLISTICS, muzzleVelocity, stepBallistic } from './ballistics.js';
+import { blastImpulse, bulletImpulse, GRENADE, remainingFuse } from './grenades.js';
+import { traceBullet } from './trace.js';
 import {
   BulletState,
   GameState,
   GrenadeState,
+  PickupState,
   PlayerState,
 } from './schema.js';
+import {
+  DEFAULT_WEAPON,
+  isWeaponId,
+  PICKUP_RADIUS,
+  PICKUP_RESPAWN_MS,
+  WEAPON_PICKUPS,
+  WEAPONS,
+  type WeaponId,
+} from './weapons.js';
 
 const MAX_INPUT_QUEUE = 48;
 /** When buffered, drain extra steps so seqs aren't dropped. */
@@ -25,6 +40,18 @@ type InternalSoldier = {
   input: PlayerInput;
   inputQueue: PlayerInput[];
   onGround: boolean;
+  rollMs: number;
+  rollCdMs: number;
+  rollDir: number;
+  holdCrouch: boolean;
+  holdJet: boolean;
+  recoil: number;
+  landGraceMs: number;
+  cannonballMs: number;
+  backflipMs: number;
+  /** Pin pulled — fuse ticks until throw or self-blast. */
+  cooking: boolean;
+  cookStartedAt: number;
   lastFireAt: number;
   lastGrenadeAt: number;
   respawnAt: number;
@@ -35,11 +62,19 @@ type InternalSoldier = {
 type InternalBullet = {
   state: BulletState;
   bornAt: number;
+  power: number;
+  baseDamage: number;
+  weapon: WeaponId;
 };
 
 type InternalGrenade = {
   state: GrenadeState;
   explodeAt: number;
+};
+
+type InternalPickup = {
+  state: PickupState;
+  respawnAt: number;
 };
 
 function clamp(v: number, min: number, max: number): number {
@@ -69,6 +104,16 @@ function toMoveBody(soldier: InternalSoldier): MoveBody {
     jetting: p.jetting,
     alive: p.alive,
     onGround: soldier.onGround,
+    crouching: p.crouching,
+    rollMs: soldier.rollMs,
+    rollCdMs: soldier.rollCdMs,
+    rollDir: soldier.rollDir,
+    holdCrouch: soldier.holdCrouch,
+    holdJet: soldier.holdJet,
+    recoil: soldier.recoil,
+    landGraceMs: soldier.landGraceMs,
+    cannonballMs: soldier.cannonballMs,
+    backflipMs: soldier.backflipMs,
   };
 }
 
@@ -84,7 +129,21 @@ function fromMoveBody(soldier: InternalSoldier, body: MoveBody): void {
   p.aimY = body.aimY;
   p.jetting = body.jetting;
   p.onGround = body.onGround;
+  p.crouching = body.crouching;
+  p.rolling = body.rollMs > 0;
+  p.rollMs = body.rollMs;
+  p.cannonball = body.cannonballMs > 0;
+  p.backflip = body.backflipMs > 0;
   soldier.onGround = body.onGround;
+  soldier.rollMs = body.rollMs;
+  soldier.rollCdMs = body.rollCdMs;
+  soldier.rollDir = body.rollDir;
+  soldier.holdCrouch = body.holdCrouch;
+  soldier.holdJet = body.holdJet;
+  soldier.recoil = body.recoil;
+  soldier.landGraceMs = body.landGraceMs;
+  soldier.cannonballMs = body.cannonballMs;
+  soldier.backflipMs = body.backflipMs;
 }
 
 function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
@@ -92,6 +151,7 @@ function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
     seq,
     move: clamp(Math.round(input.move), -1, 1),
     jet: !!input.jet,
+    crouch: !!input.crouch,
     aimX: input.aimX,
     aimY: input.aimY,
     fire: !!input.fire,
@@ -104,6 +164,7 @@ function idleInput(seq = 0): PlayerInput {
     seq,
     move: 0,
     jet: false,
+    crouch: false,
     aimX: 1,
     aimY: 0,
     fire: false,
@@ -115,9 +176,25 @@ export class Simulation {
   readonly soldiers = new Map<string, InternalSoldier>();
   private bullets = new Map<string, InternalBullet>();
   private grenades = new Map<string, InternalGrenade>();
+  private pickups = new Map<string, InternalPickup>();
   private now = 0;
 
-  constructor(private readonly state: GameState) {}
+  constructor(private readonly state: GameState) {
+    this.initPickups();
+  }
+
+  private initPickups(): void {
+    for (const spec of WEAPON_PICKUPS) {
+      const p = new PickupState();
+      p.id = spec.id;
+      p.weapon = spec.weapon;
+      p.x = spec.x;
+      p.y = spec.y;
+      p.active = true;
+      this.state.pickups.set(spec.id, p);
+      this.pickups.set(spec.id, { state: p, respawnAt: 0 });
+    }
+  }
 
   addPlayer(id: string, name: string, isBot = false): PlayerState {
     const spawn = randomSpawn();
@@ -132,6 +209,11 @@ export class Simulation {
     p.grenades = PLAYER.maxGrenades;
     p.alive = true;
     p.onGround = false;
+    p.crouching = false;
+    p.rolling = false;
+    p.weapon = DEFAULT_WEAPON;
+    p.ownedSniper = false;
+    p.ownedShotgun = false;
     p.lastProcessedInput = 0;
     this.state.players.set(id, p);
     this.soldiers.set(id, {
@@ -139,6 +221,17 @@ export class Simulation {
       input: idleInput(0),
       inputQueue: [],
       onGround: false,
+      rollMs: 0,
+      rollCdMs: 0,
+      rollDir: 0,
+      holdCrouch: false,
+      holdJet: false,
+      recoil: 0,
+      landGraceMs: 0,
+      cannonballMs: 0,
+      backflipMs: 0,
+      cooking: false,
+      cookStartedAt: 0,
       lastFireAt: 0,
       lastGrenadeAt: 0,
       respawnAt: 0,
@@ -169,6 +262,28 @@ export class Simulation {
 
     s.lastQueuedSeq = seq;
     s.inputQueue.push(normalizeInput(input, seq));
+  }
+
+  /** Equip a owned weapon (client keys 1–3). */
+  setWeapon(id: string, weaponRaw: string): void {
+    const s = this.soldiers.get(id);
+    if (!s || !s.state.alive || s.state.isBot) return;
+    if (!isWeaponId(weaponRaw)) return;
+    if (!this.ownsWeapon(s, weaponRaw)) return;
+    s.state.weapon = weaponRaw;
+  }
+
+  private ownsWeapon(s: InternalSoldier, weapon: WeaponId): boolean {
+    if (weapon === 'rifle') return true;
+    if (weapon === 'sniper') return s.state.ownedSniper;
+    if (weapon === 'shotgun') return s.state.ownedShotgun;
+    return false;
+  }
+
+  private grantWeapon(s: InternalSoldier, weapon: WeaponId): void {
+    if (weapon === 'sniper') s.state.ownedSniper = true;
+    if (weapon === 'shotgun') s.state.ownedShotgun = true;
+    s.state.weapon = weapon;
   }
 
   ensureBots(desired: number): void {
@@ -213,6 +328,8 @@ export class Simulation {
     for (const grenade of [...this.grenades.values()]) {
       this.stepGrenade(grenade, dt);
     }
+
+    this.stepPickups();
   }
 
   /** Pop next queued input, or hold last (with fire/grenade cleared). */
@@ -223,11 +340,10 @@ export class Simulation {
       soldier.state.lastProcessedInput = next.seq;
       return;
     }
-    // Hold movement/aim, but don't re-fire on empty ticks
+    // Hold movement/aim/grenade (cook), but don't re-fire on empty ticks
     soldier.input = {
       ...soldier.input,
       fire: false,
-      grenade: false,
     };
   }
 
@@ -256,10 +372,23 @@ export class Simulation {
     const dist = Math.hypot(dx, dy);
     bot.input.move = Math.abs(dx) > 18 ? Math.sign(dx) : 0;
     bot.input.jet = dy < -40 || (!bot.onGround && dy < 20);
+    bot.input.crouch = false;
     bot.input.aimX = dx + (Math.random() * 60 - 30);
     bot.input.aimY = dy + (Math.random() * 30 - 20);
     bot.input.fire = dist < BOT.fireRange && Math.random() > 0.45;
-    bot.input.grenade = dist < 260 && bot.state.grenades > 0 && Math.random() > 0.92;
+    bot.input.grenade = false;
+
+    // Distance-based loadout (unlock all for bots)
+    bot.state.ownedSniper = true;
+    bot.state.ownedShotgun = true;
+    if (dist > 420) bot.state.weapon = 'sniper';
+    else if (dist < 180) bot.state.weapon = 'shotgun';
+    else bot.state.weapon = 'rifle';
+
+    // Bots skip cooking — instant full-fuse lob
+    if (dist < 280 && bot.state.grenades > 0 && Math.random() > 0.94) {
+      this.throwGrenade(bot, GRENADE.fuseMs, { consumeInventory: true });
+    }
   }
 
   private stepSoldier(soldier: InternalSoldier, dt: number): void {
@@ -285,72 +414,245 @@ export class Simulation {
     }
 
     if (soldier.input.fire) this.tryFire(soldier);
-    if (soldier.input.grenade) this.tryGrenade(soldier);
+    this.updateGrenadeCook(soldier);
 
     soldier.input.fire = false;
-    soldier.input.grenade = false;
   }
 
-  private tryFire(soldier: InternalSoldier): void {
+  /**
+   * @mechanic throwable-grenades
+   * Hold grenade to cook; release to throw with remaining fuse.
+   * Max cook → explode in hand.
+   */
+  private updateGrenadeCook(soldier: InternalSoldier): void {
     const p = soldier.state;
-    if (this.now < soldier.lastFireAt + PLAYER.fireCooldownMs) return;
-    soldier.lastFireAt = this.now;
+    const holding = !!soldier.input.grenade;
 
-    const id = eid('b');
-    const b = new BulletState();
-    b.id = id;
-    b.ownerId = p.id;
-    b.x = p.x + p.aimX * 20;
-    b.y = p.y + p.aimY * 12 - 4;
-    b.vx = p.aimX * PLAYER.bulletSpeed;
-    b.vy = p.aimY * PLAYER.bulletSpeed;
-    this.state.bullets.set(id, b);
-    this.bullets.set(id, { state: b, bornAt: this.now });
+    if (!soldier.cooking) {
+      if (
+        holding &&
+        p.grenades > 0 &&
+        this.now >= soldier.lastGrenadeAt + PLAYER.grenadeCooldownMs
+      ) {
+        soldier.cooking = true;
+        soldier.cookStartedAt = this.now;
+        p.cooking = true;
+        p.grenades -= 1;
+      }
+      return;
+    }
+
+    const cooked = this.now - soldier.cookStartedAt;
+    if (cooked >= GRENADE.fuseMs) {
+      // Cooked off in hand
+      soldier.cooking = false;
+      p.cooking = false;
+      soldier.lastGrenadeAt = this.now;
+      this.blastAt(p.x, p.y, soldier);
+      return;
+    }
+
+    if (!holding) {
+      soldier.cooking = false;
+      p.cooking = false;
+      soldier.lastGrenadeAt = this.now;
+      this.throwGrenade(soldier, remainingFuse(cooked));
+    }
   }
 
-  private tryGrenade(soldier: InternalSoldier): void {
+  private throwGrenade(
+    soldier: InternalSoldier,
+    fuseMs: number,
+    opts: { consumeInventory: boolean } = { consumeInventory: false },
+  ): void {
     const p = soldier.state;
-    if (p.grenades <= 0) return;
-    if (this.now < soldier.lastGrenadeAt + PLAYER.grenadeCooldownMs) return;
-    soldier.lastGrenadeAt = this.now;
-    p.grenades -= 1;
+    if (opts.consumeInventory) {
+      if (p.grenades <= 0) return;
+      if (this.now < soldier.lastGrenadeAt + PLAYER.grenadeCooldownMs) return;
+      p.grenades -= 1;
+      soldier.lastGrenadeAt = this.now;
+    }
 
+    const len = Math.hypot(p.aimX, p.aimY) || 1;
+    const ax = p.aimX / len;
+    const ay = p.aimY / len;
     const id = eid('g');
     const g = new GrenadeState();
     g.id = id;
     g.ownerId = p.id;
-    g.x = p.x + p.aimX * 16;
+    g.x = p.x + ax * 16;
     g.y = p.y - 8;
-    g.vx = p.aimX * PLAYER.grenadeSpeed;
-    g.vy = p.aimY * PLAYER.grenadeSpeed - 180;
+    g.vx = ax * GRENADE.throwSpeed + p.vx * 0.35;
+    g.vy = ay * GRENADE.throwSpeed - 180 + p.vy * 0.2;
     this.state.grenades.set(id, g);
-    this.grenades.set(id, { state: g, explodeAt: this.now + 1600 });
+    this.grenades.set(id, {
+      state: g,
+      explodeAt: this.now + Math.max(GRENADE.minFuseMs, fuseMs),
+    });
   }
 
+  /**
+   * @mechanic ballistic-projectiles
+   * @mechanic state-accuracy
+   * @mechanic recoil
+   * @mechanic weapon-arsenal
+   * Spawn with weapon stats; shotgun fires multiple pellets.
+   */
+  private tryFire(soldier: InternalSoldier): void {
+    const p = soldier.state;
+    const weaponId = isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON;
+    const weapon = WEAPONS[weaponId];
+    if (this.now < soldier.lastFireAt + weapon.fireCooldownMs) return;
+    soldier.lastFireAt = this.now;
+
+    const stance = {
+      vx: p.vx,
+      vy: p.vy,
+      onGround: soldier.onGround,
+      jetting: p.jetting,
+      crouching: p.crouching,
+      rolling: soldier.rollMs > 0,
+      cannonball: soldier.cannonballMs > 0,
+    };
+    const baseSeed = soldier.input.seq > 0 ? soldier.input.seq : Math.floor(this.now);
+    const crouch = p.crouching;
+
+    if (weaponId === 'shotgun') {
+      const blast = shotgunBlastDirections(p.aimX, p.aimY, stance, soldier.recoil, baseSeed, {
+        pellets: weapon.pellets,
+        spreadMult: weapon.spreadMult,
+        pelletSpread: weapon.pelletSpread,
+        recoilKick: weapon.recoilKick,
+        recoilMax: weapon.recoilMax,
+      });
+      soldier.recoil = blast.recoil;
+      // Shared speed so the cone doesn't smear into different ranges.
+      const center = blast.dirs[Math.floor(blast.dirs.length / 2)] ?? {
+        aimX: p.aimX,
+        aimY: p.aimY,
+      };
+      const base = muzzleVelocity(center.aimX, center.aimY, p.vx, p.vy, weapon.muzzleSpeed);
+      const speed = Math.hypot(base.vx, base.vy);
+      for (const dir of blast.dirs) {
+        const id = eid('b');
+        const b = new BulletState();
+        b.id = id;
+        b.ownerId = p.id;
+        b.weapon = weaponId;
+        b.x = p.x + dir.aimX * 18;
+        b.y = p.y + dir.aimY * (crouch ? 6 : 12) - (crouch ? 2 : 4);
+        b.vx = dir.aimX * speed;
+        b.vy = dir.aimY * speed;
+        this.state.bullets.set(id, b);
+        this.bullets.set(id, {
+          state: b,
+          bornAt: this.now,
+          power: base.power,
+          baseDamage: weapon.damage,
+          weapon: weaponId,
+        });
+      }
+      return;
+    }
+
+    for (let i = 0; i < weapon.pellets; i++) {
+      const fired = fireDirection(p.aimX, p.aimY, stance, soldier.recoil, baseSeed + i * 97, {
+        spreadMult: weapon.spreadMult,
+        pelletSpread: weapon.pelletSpread,
+        recoilKick: weapon.recoilKick,
+        recoilMax: weapon.recoilMax,
+        applyRecoil: i === 0,
+      });
+      if (i === 0) soldier.recoil = fired.recoil;
+
+      const id = eid('b');
+      const b = new BulletState();
+      b.id = id;
+      b.ownerId = p.id;
+      b.weapon = weaponId;
+      b.x = p.x + fired.aimX * 20;
+      b.y = p.y + fired.aimY * (crouch ? 6 : 12) - (crouch ? 2 : 4);
+      const muzzle = muzzleVelocity(
+        fired.aimX,
+        fired.aimY,
+        p.vx,
+        p.vy,
+        weapon.muzzleSpeed,
+      );
+      b.vx = muzzle.vx;
+      b.vy = muzzle.vy;
+      this.state.bullets.set(id, b);
+      this.bullets.set(id, {
+        state: b,
+        bornAt: this.now,
+        power: muzzle.power,
+        baseDamage: weapon.damage,
+        weapon: weaponId,
+      });
+    }
+  }
+
+  /**
+   * @mechanic ballistic-projectiles
+   * Gravity + drag, then swept hit test; damage scales with power.
+   * @mechanic knockback
+   */
   private stepBullet(bullet: InternalBullet, dt: number): void {
     const b = bullet.state;
-    b.x += b.vx * dt;
-    b.y += b.vy * dt;
+
+    if (this.now - bullet.bornAt > BALLISTICS.lifeMs) {
+      this.removeBullet(b.id);
+      return;
+    }
+
+    const body = { x: b.x, y: b.y, vx: b.vx, vy: b.vy, power: bullet.power };
+    const { x0, y0, x1, y1 } = stepBallistic(body, dt);
+    b.vx = body.vx;
+    b.vy = body.vy;
+    bullet.power = body.power;
+
+    const targets = [...this.soldiers.values()].map((s) => ({
+      id: s.state.id,
+      x: s.state.x,
+      y: s.state.y,
+      alive: s.state.alive,
+      crouching: s.state.crouching || s.rollMs > 0 || s.cannonballMs > 0,
+    }));
+    const hit = traceBullet(x0, y0, x1, y1, targets, b.ownerId);
+
+    if (hit) {
+      b.x = hit.x;
+      b.y = hit.y;
+      if (hit.kind === 'player') {
+        const victim = this.soldiers.get(hit.playerId);
+        const killer = this.soldiers.get(b.ownerId);
+        if (victim) {
+          // Sniper headshot is always lethal (Soldat-style reward for precision).
+          const dmg =
+            bullet.weapon === 'sniper' && hit.bodyPart === 'head'
+              ? PLAYER.maxHealth
+              : Math.round(
+                  ballisticDamage(bullet.power, bullet.baseDamage) *
+                    bodyDamageMult(hit.bodyPart),
+                );
+          const impulse = bulletImpulse(b.vx, b.vy, dmg);
+          this.damage(victim, dmg, killer, impulse);
+        }
+      }
+      this.removeBullet(b.id);
+      return;
+    }
+
+    b.x = x1;
+    b.y = y1;
 
     if (
       b.x < -40 ||
       b.x > GAME_WIDTH + 40 ||
       b.y < -40 ||
-      b.y > GAME_HEIGHT + 40 ||
-      this.now - bullet.bornAt > 1400
+      b.y > GAME_HEIGHT + 40
     ) {
       this.removeBullet(b.id);
-      return;
-    }
-
-    for (const soldier of this.soldiers.values()) {
-      if (!soldier.state.alive || soldier.state.id === b.ownerId) continue;
-      if (Math.abs(b.x - soldier.state.x) < 16 && Math.abs(b.y - soldier.state.y) < 22) {
-        const killer = this.soldiers.get(b.ownerId);
-        this.damage(soldier, PLAYER.bulletDamage, killer);
-        this.removeBullet(b.id);
-        return;
-      }
     }
   }
 
@@ -361,16 +663,31 @@ export class Simulation {
     g.x += g.vx * dt;
     g.y += g.vy * dt;
 
-    for (const plat of PLATFORMS) {
-      const left = plat.x - plat.w / 2;
-      const right = plat.x + plat.w / 2;
-      const top = plat.y - plat.h / 2;
-      if (g.x >= left && g.x <= right && g.y >= top - 8 && g.y <= top + 12 && g.vy > 0) {
+    const bounceOn = (cx: number, cy: number, w: number, h: number) => {
+      const left = cx - w / 2;
+      const right = cx + w / 2;
+      const top = cy - h / 2;
+      const bottom = cy + h / 2;
+      if (g.x < left || g.x > right || g.y < top - 10 || g.y > bottom + 4) return;
+      // Prefer top bounce when falling onto the surface
+      if (g.vy > 0 && g.y <= top + 14) {
         g.y = top - 8;
-        g.vy *= -0.45;
-        g.vx *= 0.85;
+        g.vy *= -GRENADE.bounce;
+        g.vx *= GRENADE.bounceFriction;
+        return;
       }
-    }
+      // Side bump
+      if (g.x < cx) {
+        g.x = left - 2;
+        g.vx = -Math.abs(g.vx) * GRENADE.bounce;
+      } else {
+        g.x = right + 2;
+        g.vx = Math.abs(g.vx) * GRENADE.bounce;
+      }
+    };
+
+    for (const plat of PLATFORMS) bounceOn(plat.x, plat.y, plat.w, plat.h);
+    for (const cover of COVERS) bounceOn(cover.x, cover.y, cover.w, cover.h);
 
     if (this.now >= grenade.explodeAt) {
       this.explodeGrenade(grenade);
@@ -379,24 +696,49 @@ export class Simulation {
 
   private explodeGrenade(grenade: InternalGrenade): void {
     const g = grenade.state;
-    const killer = this.soldiers.get(g.ownerId);
-    for (const soldier of this.soldiers.values()) {
-      if (!soldier.state.alive) continue;
-      const dist = Math.hypot(soldier.state.x - g.x, soldier.state.y - g.y);
-      if (dist <= PLAYER.grenadeBlastRadius) {
-        const falloff = 1 - dist / PLAYER.grenadeBlastRadius;
-        this.damage(
-          soldier,
-          Math.round(PLAYER.grenadeDamage * (0.45 + 0.55 * falloff)),
-          killer,
-        );
-        const angle = Math.atan2(soldier.state.y - g.y, soldier.state.x - g.x);
-        soldier.state.vx += Math.cos(angle) * 280 * falloff;
-        soldier.state.vy += Math.sin(angle) * 280 * falloff - 80;
-      }
-    }
+    this.blastAt(g.x, g.y, this.soldiers.get(g.ownerId));
     this.grenades.delete(g.id);
     this.state.grenades.delete(g.id);
+  }
+
+  /** @mechanic knockback @mechanic throwable-grenades */
+  private blastAt(x: number, y: number, killer?: InternalSoldier): void {
+    for (const soldier of this.soldiers.values()) {
+      if (!soldier.state.alive) continue;
+      const dist = Math.hypot(soldier.state.x - x, soldier.state.y - y);
+      if (dist > GRENADE.blastRadius) continue;
+      const falloff = 1 - dist / GRENADE.blastRadius;
+      const impulse = blastImpulse(x, y, soldier.state.x, soldier.state.y, falloff);
+      this.damage(
+        soldier,
+        Math.round(GRENADE.blastDamage * (0.45 + 0.55 * falloff)),
+        killer,
+        impulse,
+      );
+    }
+  }
+
+  private stepPickups(): void {
+    for (const pickup of this.pickups.values()) {
+      const ps = pickup.state;
+      if (!ps.active) {
+        if (pickup.respawnAt && this.now >= pickup.respawnAt) {
+          ps.active = true;
+          pickup.respawnAt = 0;
+        }
+        continue;
+      }
+      for (const soldier of this.soldiers.values()) {
+        if (!soldier.state.alive) continue;
+        const dist = Math.hypot(soldier.state.x - ps.x, soldier.state.y - ps.y);
+        if (dist > PICKUP_RADIUS) continue;
+        if (!isWeaponId(ps.weapon)) continue;
+        this.grantWeapon(soldier, ps.weapon);
+        ps.active = false;
+        pickup.respawnAt = this.now + PICKUP_RESPAWN_MS;
+        break;
+      }
+    }
   }
 
   private removeBullet(id: string): void {
@@ -404,8 +746,17 @@ export class Simulation {
     this.state.bullets.delete(id);
   }
 
-  private damage(soldier: InternalSoldier, amount: number, killer?: InternalSoldier): void {
+  private damage(
+    soldier: InternalSoldier,
+    amount: number,
+    killer?: InternalSoldier,
+    impulse?: { vx: number; vy: number },
+  ): void {
     if (!soldier.state.alive) return;
+    if (impulse) {
+      soldier.state.vx += impulse.vx;
+      soldier.state.vy += impulse.vy;
+    }
     soldier.state.health = Math.max(0, soldier.state.health - amount);
     if (soldier.state.health <= 0) this.kill(soldier, killer);
   }
@@ -415,8 +766,16 @@ export class Simulation {
     soldier.state.alive = false;
     soldier.state.health = 0;
     soldier.state.jetting = false;
-    soldier.state.vx = Math.random() * 360 - 180;
-    soldier.state.vy = -220;
+    soldier.cooking = false;
+    soldier.state.cooking = false;
+    // Keep knockback velocity; add a death pop if barely moving
+    const speed = Math.hypot(soldier.state.vx, soldier.state.vy);
+    if (speed < 90) {
+      soldier.state.vx += Math.random() * 240 - 120;
+      soldier.state.vy -= 240;
+    } else {
+      soldier.state.vy -= 70;
+    }
     if (killer && killer !== soldier) killer.state.kills += 1;
     soldier.respawnAt = this.now + PLAYER.respawnDelayMs;
     this.clearInputQueue(soldier);
@@ -434,8 +793,29 @@ export class Simulation {
     p.vx = 0;
     p.vy = 0;
     p.onGround = false;
+    p.crouching = false;
+    p.rolling = false;
+    p.rollMs = 0;
+    p.cannonball = false;
+    p.backflip = false;
+    // Keep weapon unlocks across death; stay on current if still owned
+    if (!this.ownsWeapon(soldier, isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON)) {
+      p.weapon = DEFAULT_WEAPON;
+    }
     soldier.respawnAt = 0;
     soldier.onGround = false;
+    soldier.rollMs = 0;
+    soldier.rollCdMs = 0;
+    soldier.rollDir = 0;
+    soldier.holdCrouch = false;
+    soldier.holdJet = false;
+    soldier.recoil = 0;
+    soldier.landGraceMs = 0;
+    soldier.cannonballMs = 0;
+    soldier.backflipMs = 0;
+    soldier.cooking = false;
+    soldier.cookStartedAt = 0;
+    p.cooking = false;
     this.clearInputQueue(soldier);
   }
 

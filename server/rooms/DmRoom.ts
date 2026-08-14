@@ -40,6 +40,9 @@ export class DmRoom extends Room<GameState> {
     this.onMessage('input', (client, message: PlayerInput) => {
       this.sim.setInput(client.sessionId, message);
     });
+    this.onMessage('weapon', (client, message: { weapon?: string }) => {
+      if (message?.weapon) this.sim.setWeapon(client.sessionId, String(message.weapon));
+    });
 
     this.setPatchRate(TICK_MS);
     this.setSimulationInterval((deltaTime) => {
