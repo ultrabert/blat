@@ -4,24 +4,35 @@ export const VIEW_HEIGHT = 720;
 export const GAME_WIDTH = 2560;
 export const GAME_HEIGHT = 900;
 export const GRAVITY = 1600;
-export const TICK_MS = 33; // ~30 Hz sim + state patches
-export const INTERP_DELAY_MS = 100;
+export const TICK_MS = 16; // ~62 Hz sim + state patches
+export const INTERP_DELAY_MS = 50;
 export const RECONCILE_SNAP_DIST = 48;
 
 export const PLAYER = {
   speed: 210,
   crouchSpeed: 115,
+  proneSpeed: 52,
+  proneHeight: 11,
+  /** Hold crouch still this long to go prone. */
+  proneHoldMs: 240,
   jumpVelocity: -410,
-  /** Weaker than hover — burst lift, not flight. */
-  jetAcceleration: -620,
-  /** Soft ceiling on upward speed while jetting (px/s). */
-  jetMaxAscent: 300,
+  /**
+   * Stronger than gravity so a held jet climbs; feather (~70% duty) hovers.
+   * @mechanic limited-jetpack
+   */
+  jetAcceleration: -2200,
+  /** Soft cap on climb speed while jetting (px/s). Fuel is the real limit. */
+  jetMaxAscent: 520,
+  /** Extra air steer while jetting (on top of airAccel). */
+  jetStrafeAccel: 640,
   maxFuel: 100,
-  fuelBurnRate: 55,
-  fuelRegenRate: 16,
-  /** Air regen multiplier vs ground (jets recover mostly on ground). */
-  fuelRegenAirMult: 0.32,
+  /** ~5s continuous burn — long enough to cross the arena. */
+  fuelBurnRate: 20,
+  fuelRegenRate: 24,
+  /** Gliding still recovers; jetting does not. */
+  fuelRegenAirMult: 0.5,
   maxHealth: 100,
+  maxVest: 100,
   width: 22,
   height: 36,
   crouchHeight: 20,
@@ -36,7 +47,10 @@ export const PLAYER = {
   maxGrenades: 3,
   maxVelocityX: 520,
   maxVelocityY: 780,
-  dragX: 1100,
+  dragX: 900,
+  /** Accelerate toward walk speed instead of snapping (Soldat inertia). */
+  groundAccel: 2600,
+  groundBrake: 3800,
   rollSpeed: 400,
   rollDurationMs: 320,
   rollCooldownMs: 480,
@@ -129,6 +143,21 @@ export const PLATFORMS: PlatformSpec[] = [
   { x: 2200, y: 560, w: 120, h: 22 },
 ];
 
+/** Walkable slopes (line segments, y = surface). Arcade stand-in for Soldat polys. */
+export type RampSpec = { ax: number; ay: number; bx: number; by: number };
+
+export const RAMPS: RampSpec[] = [
+  // Left hill
+  { ax: 420, ay: 309, bx: 900, by: 629 },
+  { ax: 900, ay: 629, bx: 1020, by: 769 },
+  // Right hill
+  { ax: 1540, ay: 769, bx: 1660, by: 629 },
+  { ax: 1660, ay: 629, bx: 2140, by: 309 },
+  // Valley inner ramps
+  { ax: 1160, ay: 709, bx: 1280, by: 509 },
+  { ax: 1280, ay: 509, bx: 1400, by: 709 },
+];
+
 /** Visual hill/cliff masses (cosmetic; collision uses PLATFORMS + COVERS). */
 export type TerrainFill = { x: number; y: number; w: number; h: number };
 
@@ -197,11 +226,17 @@ export type PlayerInput = {
   aimY: number;
   fire: boolean;
   grenade: boolean;
+  reload: boolean;
+  drop: boolean;
+  nadeCycle: boolean;
 };
 
-export function playerHalfExtents(crouching: boolean): { halfW: number; halfH: number } {
+export function playerHalfExtents(
+  crouching: boolean,
+  prone = false,
+): { halfW: number; halfH: number } {
   const halfW = (PLAYER.width - 4) / 2;
-  const h = crouching ? PLAYER.crouchHeight : PLAYER.height;
+  const h = prone ? PLAYER.proneHeight : crouching ? PLAYER.crouchHeight : PLAYER.height;
   const halfH = (h - 2) / 2;
   return { halfW, halfH };
 }

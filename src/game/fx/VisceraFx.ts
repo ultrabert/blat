@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER } from '../../../shared/constants';
+import { PLAYER, PLATFORMS, VIEW_HEIGHT, VIEW_WIDTH } from '../../../shared/constants';
 
 const BLOOD = [0x8b0000, 0xb91c1c, 0x7f1d1d, 0xdc2626, 0x4a0e0e];
 const FLESH = [0xc45c5c, 0x9a3412, 0xa16207, 0x7c2d12, 0x881337];
@@ -10,6 +10,9 @@ const SMOKE = [0x64748b, 0x475569, 0x334155, 0x1e293b];
  * Soldat-ish viscera + blast FX (client cosmetic only).
  */
 export class VisceraFx {
+  private readonly decals: Phaser.GameObjects.GameObject[] = [];
+  private static readonly MAX_DECALS = 90;
+
   constructor(private readonly scene: Phaser.Scene) {}
 
   /** Small blood mist + droplets from a gunshot. */
@@ -103,6 +106,104 @@ export class VisceraFx {
         onComplete: () => p.destroy(),
       });
     }
+  }
+
+  /** Screen-space blood on the lens after taking damage. */
+  lensBlood(amount: number): void {
+    const n = Math.min(10, 2 + Math.floor(amount / 7));
+    for (let i = 0; i < n; i++) {
+      const edge = Math.random();
+      const x =
+        edge < 0.5
+          ? 20 + Math.random() * 220
+          : VIEW_WIDTH - 20 - Math.random() * 220;
+      const y = 16 + Math.random() * (VIEW_HEIGHT - 32);
+      const tex = this.scene.textures.exists('fx_blood') ? 'fx_blood' : 'particle';
+      const p = this.scene.add.image(x, y, tex);
+      p.setScrollFactor(0);
+      p.setDepth(70);
+      p.setTint(BLOOD[Math.floor(Math.random() * BLOOD.length)]!);
+      p.setRotation(Math.random() * Math.PI * 2);
+      p.setScale(tex === 'fx_blood' ? 0.18 + Math.random() * 0.28 : 1.4 + Math.random() * 2.2);
+      p.setAlpha(0.55 + Math.min(0.35, amount / 80));
+      this.scene.tweens.add({
+        targets: p,
+        alpha: 0,
+        scale: p.scale * 1.15,
+        duration: 420 + Math.random() * 380,
+        ease: 'Quad.easeOut',
+        onComplete: () => p.destroy(),
+      });
+    }
+  }
+
+  /** Long-lived blood on world geometry (bullet impact). */
+  wallSplat(x: number, y: number): void {
+    let sx = x;
+    let sy = y;
+    let best = 18;
+    for (const plat of PLATFORMS) {
+      const left = plat.x - plat.w / 2;
+      const right = plat.x + plat.w / 2;
+      const top = plat.y - plat.h / 2;
+      if (x >= left - 8 && x <= right + 8) {
+        const d = Math.abs(y - top);
+        if (d < best) {
+          best = d;
+          sx = x;
+          sy = top - 1;
+        }
+      }
+    }
+    const count = 3 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < count; i++) {
+      this.placeDecal(
+        sx + (Math.random() - 0.5) * 14,
+        sy + (Math.random() - 0.5) * 8,
+        0.35 + Math.random() * 0.7,
+        9000 + Math.random() * 8000,
+      );
+    }
+  }
+
+  /** Corpse stain that lingers after a kill. */
+  bloodPool(x: number, y: number): void {
+    this.placeDecal(x, y, 1.6, 16000);
+    this.placeDecal(x + 8, y + 3, 1.1, 14000);
+    this.placeDecal(x - 7, y + 2, 0.9, 14000);
+    for (let i = 0; i < 6; i++) {
+      this.placeDecal(
+        x + (Math.random() - 0.5) * 28,
+        y + (Math.random() - 0.5) * 10,
+        0.4 + Math.random() * 0.5,
+        11000 + Math.random() * 5000,
+      );
+    }
+  }
+
+  private placeDecal(x: number, y: number, scale: number, life: number): void {
+    while (this.decals.length >= VisceraFx.MAX_DECALS) {
+      this.decals.shift()?.destroy();
+    }
+    const tex = this.scene.textures.exists('fx_blood') ? 'fx_blood' : 'particle';
+    const p = this.scene.add.image(x, y, tex);
+    p.setDepth(3);
+    p.setTint(BLOOD[Math.floor(Math.random() * BLOOD.length)]!);
+    p.setRotation(Math.random() * Math.PI);
+    p.setScale(tex === 'fx_blood' ? scale * 0.16 : scale * 1.4);
+    p.setAlpha(0.72);
+    this.decals.push(p);
+    this.scene.tweens.add({
+      targets: p,
+      alpha: 0,
+      delay: Math.max(400, life - 2200),
+      duration: 2200,
+      onComplete: () => {
+        const i = this.decals.indexOf(p);
+        if (i >= 0) this.decals.splice(i, 1);
+        p.destroy();
+      },
+    });
   }
 
   /** Brief cone flash at the muzzle for a shotgun blast. */

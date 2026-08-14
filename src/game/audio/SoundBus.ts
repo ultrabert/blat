@@ -3,7 +3,16 @@
  * Falls back to short procedural synthesis if a buffer isn't loaded yet.
  * Call unlock() from a user gesture (lobby click / first pointer).
  */
-export type ShootKind = 'rifle' | 'sniper' | 'shotgun';
+export type ShootKind = string;
+
+function shootBuf(kind: string): BufKey {
+  if (kind === 'barrett') return 'shoot_sniper';
+  if (kind === 'spas') return 'shoot_shotgun';
+  if (kind === 'm79' || kind === 'law') return 'explode';
+  if (kind === 'flamer') return 'jet_loop';
+  if (kind === 'knife' || kind === 'chainsaw') return 'hit';
+  return 'shoot_rifle';
+}
 
 type BufKey =
   | 'shoot_rifle'
@@ -85,10 +94,14 @@ export class SoundBus {
     );
   }
 
-  shoot(kind: ShootKind = 'rifle'): void {
-    const key: BufKey =
-      kind === 'sniper' ? 'shoot_sniper' : kind === 'shotgun' ? 'shoot_shotgun' : 'shoot_rifle';
-    if (this.play(key, { gain: kind === 'sniper' ? 0.95 : kind === 'shotgun' ? 0.9 : 0.78, rate: 0.96 + Math.random() * 0.08 })) {
+  shoot(kind: ShootKind = 'de'): void {
+    const key = shootBuf(kind);
+    const gain =
+      kind === 'barrett' ? 0.95 : kind === 'spas' || kind === 'law' ? 0.9 : kind === 'de' ? 0.82 : 0.74;
+    const rate =
+      kind === 'mp5' || kind === 'minigun' ? 1.08 + Math.random() * 0.08 : 0.96 + Math.random() * 0.08;
+    if (this.play(key, { gain, rate })) {
+      if (kind === 'knife' || kind === 'chainsaw') this.fallbackTone(900, 400, 0.12, 0.04);
       return;
     }
     this.fallbackShoot(kind);
@@ -130,6 +143,22 @@ export class SoundBus {
   hit(): void {
     if (this.play('hit', { gain: 0.55, rate: 0.95 + Math.random() * 0.1 })) return;
     this.fallbackTone(160, 70, 0.12, 0.07);
+  }
+
+  ricochet(): void {
+    if (this.play('hit', { gain: 0.28, rate: 1.55 + Math.random() * 0.25 })) {
+      this.fallbackTone(2400, 900, 0.12, 0.045);
+      return;
+    }
+    this.fallbackRicochet();
+  }
+
+  pain(): void {
+    if (this.play('wet_hit', { gain: 0.38, rate: 0.62 + Math.random() * 0.12 })) {
+      this.fallbackTone(210, 90, 0.16, 0.12);
+      return;
+    }
+    this.fallbackPain();
   }
 
   pickup(): void {
@@ -250,27 +279,27 @@ export class SoundBus {
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
     const t = ctx.currentTime;
-    const bodyHz = kind === 'sniper' ? 95 : kind === 'shotgun' ? 120 : 180;
-    const crackHz = kind === 'sniper' ? 1600 : kind === 'shotgun' ? 900 : 1800;
+    const bodyHz = kind === 'barrett' ? 95 : kind === 'spas' || kind === 'law' ? 120 : kind === 'de' ? 140 : 180;
+    const crackHz = kind === 'barrett' ? 1600 : kind === 'spas' ? 900 : 1800;
     const thump = ctx.createOscillator();
     const thumpG = ctx.createGain();
     thump.type = 'triangle';
     thump.frequency.setValueAtTime(bodyHz, t);
     thump.frequency.exponentialRampToValueAtTime(bodyHz * 0.3, t + 0.08);
-    thumpG.gain.setValueAtTime(kind === 'rifle' ? 0.35 : 0.5, t);
+    thumpG.gain.setValueAtTime(kind === 'mp5' || kind === 'ak' ? 0.35 : 0.5, t);
     thumpG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
     thump.connect(thumpG);
     thumpG.connect(this.master);
     thump.start(t);
     thump.stop(t + 0.12);
-    const noise = this.noiseSource(kind === 'shotgun' ? 0.1 : 0.05);
+    const noise = this.noiseSource(kind === 'spas' || kind === 'flamer' ? 0.1 : 0.05);
     const ng = ctx.createGain();
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
     bp.frequency.value = crackHz;
     bp.Q.value = 0.8;
     ng.gain.setValueAtTime(0.4, t);
-    ng.gain.exponentialRampToValueAtTime(0.001, t + (kind === 'shotgun' ? 0.1 : 0.05));
+    ng.gain.exponentialRampToValueAtTime(0.001, t + (kind === 'spas' ? 0.1 : 0.05));
     noise.connect(bp);
     bp.connect(ng);
     ng.connect(this.master);
@@ -312,6 +341,46 @@ export class SoundBus {
     g.connect(this.master);
     noise.start(t);
     noise.stop(t + dur + 0.01);
+  }
+
+  private fallbackRicochet(): void {
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const ping = ctx.createOscillator();
+    const pg = ctx.createGain();
+    ping.type = 'triangle';
+    ping.frequency.setValueAtTime(2600 + Math.random() * 400, t);
+    ping.frequency.exponentialRampToValueAtTime(700, t + 0.07);
+    pg.gain.setValueAtTime(0.18, t);
+    pg.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    ping.connect(pg);
+    pg.connect(this.master);
+    ping.start(t);
+    ping.stop(t + 0.09);
+    this.fallbackNoise(0.035, 3200, 0.12);
+  }
+
+  private fallbackPain(): void {
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(190 + Math.random() * 40, t);
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.16);
+    g.gain.setValueAtTime(0.14, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 420;
+    o.connect(lp);
+    lp.connect(g);
+    g.connect(this.master);
+    o.start(t);
+    o.stop(t + 0.2);
+    this.fallbackNoise(0.08, 380, 0.1);
   }
 
   private fallbackExplode(vol: number): void {

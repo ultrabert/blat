@@ -1,10 +1,12 @@
 import {
   INTERP_DELAY_MS,
+  PLAYER,
   RECONCILE_SNAP_DIST,
   TICK_MS,
+  playerHalfExtents,
   type PlayerInput,
 } from '../../../shared/constants';
-import { copyMoveBody, stepMovement, type MoveBody } from '../../../shared/physics';
+import { copyMoveBody, separateFromSolids, stepMovement, type MoveBody } from '../../../shared/physics';
 import type { PlayerState } from '../../../shared/schema';
 
 type PendingInput = PlayerInput;
@@ -25,6 +27,7 @@ type RemoteSample = {
   rolling: boolean;
   cannonball: boolean;
   backflip: boolean;
+  prone: boolean;
   alpha: number;
 };
 
@@ -51,6 +54,8 @@ function bodyFromServer(p: PlayerState): MoveBody {
     landGraceMs: 0,
     cannonballMs: p.cannonball ? 120 : 0,
     backflipMs: p.backflip ? 120 : 0,
+    prone: !!p.prone,
+    proneHoldMs: p.prone ? PLAYER.proneHoldMs : 0,
   };
 }
 
@@ -62,10 +67,25 @@ export class PredictionController {
   private wasAlive = true;
   private fireLatch = false;
   private grenadeHeld = false;
+  private reloadLatch = false;
+  private dropLatch = false;
+  private nadeCycleLatch = false;
   private remotes = new Map<string, RemoteSample[]>();
 
   latchFire(): void {
     this.fireLatch = true;
+  }
+
+  latchReload(): void {
+    this.reloadLatch = true;
+  }
+
+  latchDrop(): void {
+    this.dropLatch = true;
+  }
+
+  latchNadeCycle(): void {
+    this.nadeCycleLatch = true;
   }
 
   setGrenadeHeld(held: boolean): void {
@@ -75,7 +95,7 @@ export class PredictionController {
   /** Fixed-step predict + return inputs that should be sent this frame. */
   tick(
     deltaMs: number,
-    sample: Omit<PlayerInput, 'seq' | 'fire' | 'grenade'>,
+    sample: Omit<PlayerInput, 'seq' | 'fire' | 'grenade' | 'reload' | 'drop' | 'nadeCycle'>,
     serverMe: PlayerState | undefined,
   ): PlayerInput[] {
     const sent: PlayerInput[] = [];
@@ -101,14 +121,28 @@ export class PredictionController {
         aimY: sample.aimY,
         fire: this.fireLatch,
         grenade: this.grenadeHeld,
+        reload: this.reloadLatch,
+        drop: this.dropLatch,
+        nadeCycle: this.nadeCycleLatch,
       };
       this.fireLatch = false;
+      this.reloadLatch = false;
+      this.dropLatch = false;
+      this.nadeCycleLatch = false;
 
       this.pending.push(input);
       if (this.pending.length > 64) this.pending.shift();
 
       if (this.predicted.alive) {
         stepMovement(this.predicted, input, TICK_MS / 1000);
+        const blockers = [];
+        for (const buf of this.remotes.values()) {
+          const s = buf[buf.length - 1];
+          if (!s?.alive) continue;
+          const h = playerHalfExtents(s.crouching, s.prone);
+          blockers.push({ x: s.x, y: s.y, halfW: h.halfW, halfH: h.halfH, vx: s.vx });
+        }
+        separateFromSolids(this.predicted, blockers);
       }
 
       sent.push(input);
@@ -195,6 +229,8 @@ export class PredictionController {
     this.predicted.jetting = corrected.jetting;
     this.predicted.onGround = corrected.onGround;
     this.predicted.crouching = corrected.crouching;
+    this.predicted.prone = corrected.prone;
+    this.predicted.proneHoldMs = corrected.proneHoldMs;
     this.predicted.rollMs = corrected.rollMs;
     this.predicted.rollCdMs = corrected.rollCdMs;
     this.predicted.rollDir = corrected.rollDir;
@@ -229,6 +265,7 @@ export class PredictionController {
       rolling: !!p.rolling,
       cannonball: !!p.cannonball,
       backflip: !!p.backflip,
+      prone: !!p.prone,
       alpha: p.alive ? 1 : 0.45,
     };
     const last = buf[buf.length - 1];
@@ -260,6 +297,7 @@ export class PredictionController {
       rolling: s.rolling,
       cannonball: s.cannonball,
       backflip: s.backflip,
+      prone: s.prone,
       alpha: s.alpha,
     });
 
@@ -288,6 +326,7 @@ export class PredictionController {
       rolling: t < 0.5 ? a.rolling : b.rolling,
       cannonball: t < 0.5 ? a.cannonball : b.cannonball,
       backflip: t < 0.5 ? a.backflip : b.backflip,
+      prone: t < 0.5 ? a.prone : b.prone,
       alpha: a.alpha + (b.alpha - a.alpha) * t,
     };
   }

@@ -52,6 +52,16 @@ describe('state-accuracy', () => {
     assert.ok(moving > still);
     assert.ok(jet > moving);
     assert.ok(crouch < still);
+    const prone = stanceSpreadRad({
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      jetting: false,
+      crouching: true,
+      prone: true,
+      rolling: false,
+    });
+    assert.ok(prone < crouch);
   });
 
   it('fire-direction-deterministic-for-seed', () => {
@@ -82,10 +92,10 @@ describe('state-accuracy', () => {
     };
     const { dirs } = shotgunBlastDirections(1, 0, still, 0, 42, {
       pellets: 7,
-      spreadMult: WEAPONS.shotgun.spreadMult,
-      pelletSpread: WEAPONS.shotgun.pelletSpread,
-      recoilKick: WEAPONS.shotgun.recoilKick,
-      recoilMax: WEAPONS.shotgun.recoilMax,
+      spreadMult: WEAPONS.spas.spreadMult,
+      pelletSpread: WEAPONS.spas.pelletSpread,
+      recoilKick: WEAPONS.spas.recoilKick,
+      recoilMax: WEAPONS.spas.recoilMax,
     });
     assert.equal(dirs.length, 7);
     const angles = dirs.map((d) => Math.atan2(d.aimY, d.aimX));

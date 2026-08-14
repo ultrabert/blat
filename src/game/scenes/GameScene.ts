@@ -8,6 +8,7 @@ import {
   GAME_WIDTH,
   PLATFORMS,
   PLAYER,
+  RAMPS,
   TERRAIN_FILLS,
   VIEW_HEIGHT,
   VIEW_WIDTH,
@@ -17,9 +18,11 @@ import type { GameState, PlayerState } from '../../../shared/schema';
 import type { TraceTarget } from '../../../shared/trace';
 import {
   DEFAULT_WEAPON,
+  isFirearm,
+  isMelee,
   isWeaponId,
+  weaponIconKey,
   WEAPONS,
-  weaponBySlot,
   type WeaponId,
 } from '../../../shared/weapons';
 import { StickSoldier } from '../StickSoldier';
@@ -48,7 +51,9 @@ export class GameScene extends Phaser.Scene {
   private keyG!: Phaser.Input.Keyboard.Key;
   private key1!: Phaser.Input.Keyboard.Key;
   private key2!: Phaser.Input.Keyboard.Key;
-  private key3!: Phaser.Input.Keyboard.Key;
+  private keyR!: Phaser.Input.Keyboard.Key;
+  private keyQ!: Phaser.Input.Keyboard.Key;
+  private keyV!: Phaser.Input.Keyboard.Key;
   private hud!: Phaser.GameObjects.Text;
   private crosshair!: Phaser.GameObjects.Graphics;
   private pickupSprites = new Map<string, Phaser.GameObjects.Container>();
@@ -67,14 +72,17 @@ export class GameScene extends Phaser.Scene {
   private lastHealth = new Map<string, number>();
   private lastAlive = new Map<string, boolean>();
   private pendingBlast: { x: number; y: number; at: number } | null = null;
-  private wasOwnedSniper = false;
-  private wasOwnedShotgun = false;
+  private lastFirearm = '';
+  private lastVest = 0;
+  private lastNades = 0;
+  private lastReserve = 0;
   private wasRolling = false;
-  private ownershipPrimed = false;
   private aimReadyUntil = 0;
   private spectating = false;
   private camX = GAME_WIDTH / 2;
   private camY = GAME_HEIGHT / 2;
+  private shakeMs = 0;
+  private shakeAmp = 0;
 
   constructor() {
     super('Game');
@@ -89,6 +97,7 @@ export class GameScene extends Phaser.Scene {
     this.drawBackground();
     this.drawTerrain();
     this.drawPlatforms();
+    this.drawRamps();
     this.drawCovers();
     this.drawScenery();
     this.tracerGfx = this.add.graphics().setDepth(8);
@@ -104,7 +113,9 @@ export class GameScene extends Phaser.Scene {
     this.keyG = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     this.key1 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
     this.key2 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
-    this.key3 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+    this.keyR = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+    this.keyQ = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+    this.keyV = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.V);
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       sound.unlock();
@@ -141,7 +152,7 @@ export class GameScene extends Phaser.Scene {
         VIEW_HEIGHT - 52,
         this.spectating
           ? 'DEMO · bots fighting · open /demo after each ship to watch'
-          : '1/2/3 weapons · A/D · W/Space jet · S crouch/roll · hold RMB/G cook · LMB',
+          : '1 gun · 2 knife · R reload · Q drop · V nade · A/D · W jet · S crouch/prone · RMB cook · LMB',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '13px',
@@ -174,6 +185,9 @@ export class GameScene extends Phaser.Scene {
     this.handleWeaponKeys(serverMe);
 
     if (this.fireHeld) this.prediction.latchFire();
+    if (Phaser.Input.Keyboard.JustDown(this.keyR)) this.prediction.latchReload();
+    if (Phaser.Input.Keyboard.JustDown(this.keyQ)) this.prediction.latchDrop();
+    if (Phaser.Input.Keyboard.JustDown(this.keyV)) this.prediction.latchNadeCycle();
     if (this.keyG.isDown) this.grenadeHeld = true;
     if (Phaser.Input.Keyboard.JustUp(this.keyG) && !this.input.activePointer.rightButtonDown()) {
       this.grenadeHeld = false;
@@ -224,9 +238,16 @@ export class GameScene extends Phaser.Scene {
       this.room.send('input', packet);
       const body = this.prediction.predicted;
       if (body && packet.fire) {
-        const w = serverMe?.weapon ?? this.localWeapon;
-        if (this.projectiles.tryFire(body, this.nowMs, packet.seq, w)) {
-          sound.shoot(isWeaponId(w) ? w : 'rifle');
+        const w = isWeaponId(serverMe?.weapon ?? this.localWeapon)
+          ? ((serverMe?.weapon as WeaponId) ?? this.localWeapon)
+          : this.localWeapon;
+        const melee = isMelee(w);
+        const canShoot =
+          !!body.alive &&
+          !serverMe?.reloading &&
+          (melee || (serverMe?.ammo ?? 1) > 0);
+        if (canShoot && this.projectiles.tryFire(body, this.nowMs, packet.seq, w)) {
+          sound.shoot(w);
           this.aimReadyUntil = this.nowMs + 220;
         }
       }
@@ -244,6 +265,7 @@ export class GameScene extends Phaser.Scene {
         y: p.y,
         alive: p.alive,
         crouching: !!p.crouching || !!p.rolling || !!p.cannonball,
+        prone: !!p.prone,
       });
     });
     this.projectiles.step(delta / 1000, this.nowMs, bulletTargets, this.sessionId);
@@ -258,17 +280,12 @@ export class GameScene extends Phaser.Scene {
 
   private handleWeaponKeys(serverMe: PlayerState | undefined): void {
     if (!serverMe?.alive) return;
-    const trySlot = (slot: number) => {
-      const id = weaponBySlot(slot);
-      if (!id) return;
-      if (id === 'sniper' && !serverMe.ownedSniper) return;
-      if (id === 'shotgun' && !serverMe.ownedShotgun) return;
-      this.localWeapon = id;
-      this.room.send('weapon', { weapon: id });
-    };
-    if (Phaser.Input.Keyboard.JustDown(this.key1)) trySlot(1);
-    if (Phaser.Input.Keyboard.JustDown(this.key2)) trySlot(2);
-    if (Phaser.Input.Keyboard.JustDown(this.key3)) trySlot(3);
+    if (Phaser.Input.Keyboard.JustDown(this.key1)) {
+      this.room.send('weapon', { weapon: 'firearm' });
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.key2)) {
+      this.room.send('weapon', { weapon: 'melee' });
+    }
     if (isWeaponId(serverMe.weapon)) this.localWeapon = serverMe.weapon;
   }
 
@@ -338,15 +355,46 @@ export class GameScene extends Phaser.Scene {
       }
       this.camX += (tx - this.camX) * 0.12;
       this.camY += (ty - this.camY) * 0.12;
-      this.cameras.main.centerOn(this.camX, this.camY);
+      this.centerCam();
       return;
     }
     const x =
       this.prediction.predicted?.x ?? serverMe?.x ?? GAME_WIDTH / 2;
     const y =
       this.prediction.predicted?.y ?? serverMe?.y ?? GAME_HEIGHT / 2;
-    // centerOn + setBounds clamps so the arena stays in view near edges
-    this.cameras.main.centerOn(x, y);
+    const pointer = this.input.activePointer;
+    let lx = pointer.worldX - x;
+    let ly = pointer.worldY - y;
+    const dist = Math.hypot(lx, ly) || 1;
+    const maxLead = 240;
+    if (dist > maxLead) {
+      lx = (lx / dist) * maxLead;
+      ly = (ly / dist) * maxLead;
+    }
+    const lead = 0.42;
+    const tx = x + lx * lead;
+    const ty = y + ly * lead;
+    this.camX += (tx - this.camX) * 0.22;
+    this.camY += (ty - this.camY) * 0.22;
+    this.centerCam();
+  }
+
+  private kickCam(durationMs: number, intensity: number): void {
+    this.shakeMs = Math.max(this.shakeMs, durationMs);
+    this.shakeAmp = Math.max(this.shakeAmp, intensity * 520);
+  }
+
+  private centerCam(): void {
+    let ox = 0;
+    let oy = 0;
+    if (this.shakeMs > 0) {
+      this.shakeMs = Math.max(0, this.shakeMs - this.lastDelta);
+      const mag = this.shakeAmp * Math.min(1, this.shakeMs / 90);
+      ox = (Math.random() - 0.5) * mag;
+      oy = (Math.random() - 0.5) * mag;
+      this.shakeAmp *= 0.86;
+    }
+    this.cameras.main.centerOn(this.camX + ox, this.camY + oy);
   }
 
   private aimFromPointer(serverMe: PlayerState | undefined): { x: number; y: number } {
@@ -396,6 +444,7 @@ export class GameScene extends Phaser.Scene {
             onGround: local.onGround,
             jetting: local.jetting,
             crouching: local.crouching,
+            prone: local.prone,
             rolling: local.rollMs > 0,
             cannonball: local.cannonballMs > 0,
             backflip: local.backflipMs > 0,
@@ -423,6 +472,7 @@ export class GameScene extends Phaser.Scene {
           onGround: !!player.onGround,
           jetting: player.jetting,
           crouching: !!player.crouching,
+          prone: !!player.prone,
           rolling: !!player.rolling,
           cannonball: !!player.cannonball,
           backflip: !!player.backflip,
@@ -433,6 +483,7 @@ export class GameScene extends Phaser.Scene {
           {
             ...view,
             crouching: view.crouching,
+            prone: view.prone,
             rolling: view.rolling,
             cannonball: view.cannonball,
             backflip: view.backflip,
@@ -530,7 +581,7 @@ export class GameScene extends Phaser.Scene {
       this.detonate(boom.x, boom.y);
     }
     for (const flash of this.projectiles.takeMuzzleFlashes()) {
-      if (flash.weapon === 'shotgun') {
+      if (flash.weapon === 'spas') {
         this.fx.shotgunMuzzle(flash.x, flash.y, flash.aimX, flash.aimY);
       }
     }
@@ -540,6 +591,8 @@ export class GameScene extends Phaser.Scene {
         sound.wetHit();
       } else {
         this.fx.wallSpark(hit.x, hit.y);
+        this.fx.wallSplat(hit.x, hit.y);
+        sound.ricochet();
       }
     }
 
@@ -564,18 +617,18 @@ export class GameScene extends Phaser.Scene {
   private syncPickups(): void {
     const me = this.room.state.players?.get(this.sessionId);
     if (me) {
-      if (!this.ownershipPrimed) {
-        this.wasOwnedSniper = !!me.ownedSniper;
-        this.wasOwnedShotgun = !!me.ownedShotgun;
-        this.ownershipPrimed = true;
-      } else if (
-        (!!me.ownedSniper && !this.wasOwnedSniper) ||
-        (!!me.ownedShotgun && !this.wasOwnedShotgun)
+      if (
+        (this.lastFirearm && me.firearm !== this.lastFirearm) ||
+        me.vest > this.lastVest + 4 ||
+        me.grenades > this.lastNades ||
+        me.reserve > this.lastReserve + 8
       ) {
         sound.pickup();
       }
-      this.wasOwnedSniper = !!me.ownedSniper;
-      this.wasOwnedShotgun = !!me.ownedShotgun;
+      this.lastFirearm = me.firearm;
+      this.lastVest = me.vest;
+      this.lastNades = me.grenades;
+      this.lastReserve = me.reserve;
     }
 
     const seen = new Set<string>();
@@ -583,16 +636,23 @@ export class GameScene extends Phaser.Scene {
       seen.add(id);
       let box = this.pickupSprites.get(id);
       if (!box) {
-        const iconKey =
-          p.weapon === 'sniper'
-            ? 'icon_sniper'
-            : p.weapon === 'shotgun'
-              ? 'icon_shotgun'
-              : 'icon_rifle';
-        const hasIcon = this.textures.exists(iconKey);
+        const kind = p.kind || 'weapon';
+        const item = p.item || p.weapon;
+        const iconKey = kind === 'weapon' ? weaponIconKey(item) : '';
+        const hasIcon = !!iconKey && this.textures.exists(iconKey) && kind === 'weapon';
         const parts: Phaser.GameObjects.GameObject[] = [];
         const pad = this.add.graphics();
-        pad.fillStyle(0x0b1020, 0.55);
+        const tint =
+          kind === 'medkit'
+            ? 0x14532d
+            : kind === 'vest'
+              ? 0x1e3a5f
+              : kind === 'ammo'
+                ? 0x713f12
+                : kind === 'nade'
+                  ? 0x7c2d12
+                  : 0x0b1020;
+        pad.fillStyle(tint, 0.7);
         pad.fillRoundedRect(-22, -18, 44, 36, 6);
         pad.lineStyle(2, 0xe8eefc, 0.35);
         pad.strokeRoundedRect(-22, -18, 44, 36, 6);
@@ -601,11 +661,23 @@ export class GameScene extends Phaser.Scene {
           const icon = this.add.image(0, -2, iconKey).setDisplaySize(36, 36);
           parts.push(icon);
         } else {
+          const label =
+            kind === 'medkit'
+              ? '+'
+              : kind === 'vest'
+                ? 'V'
+                : kind === 'ammo'
+                  ? 'A'
+                  : kind === 'nade'
+                    ? (item === 'cluster' ? 'C' : item === 'sting' ? 'S' : 'F')
+                    : isWeaponId(item)
+                      ? WEAPONS[item].short
+                      : '?';
           parts.push(
             this.add
-              .text(0, 0, p.weapon === 'sniper' ? 'SR' : p.weapon === 'shotgun' ? 'SG' : 'AR', {
+              .text(0, 0, label, {
                 fontFamily: 'ui-monospace, Menlo, monospace',
-                fontSize: '11px',
+                fontSize: '12px',
                 color: '#e8eefc',
               })
               .setOrigin(0.5),
@@ -639,9 +711,11 @@ export class GameScene extends Phaser.Scene {
     g.clear();
 
     for (const t of tracers) {
-      const isShot = t.weapon === 'shotgun';
-      const isSniper = t.weapon === 'sniper';
-      const trailLen = isShot ? 3 : isSniper ? 8 : 5;
+      const isShot = t.weapon === 'spas';
+      const isSniper = t.weapon === 'barrett';
+      const isFlame = t.weapon === 'flamer';
+      const isRocket = t.weapon === 'law' || t.weapon === 'm79';
+      const trailLen = isShot ? 3 : isSniper ? 8 : isFlame ? 4 : 5;
 
       let trail = this.bulletTrails.get(t.id);
       if (!trail) {
@@ -667,8 +741,16 @@ export class GameScene extends Phaser.Scene {
       const x0 = x1 - ux * streak;
       const y0 = y1 - uy * streak;
 
-      const glow = isSniper ? 0xa5f3fc : isShot ? 0xfb923c : 0xfbbf24;
-      const core = isSniper ? 0xecfeff : isShot ? 0xffedd5 : 0xfff7c2;
+      const glow = isFlame
+        ? 0xf97316
+        : isRocket
+          ? 0xfacc15
+          : isSniper
+            ? 0xa5f3fc
+            : isShot
+              ? 0xfb923c
+              : 0xfbbf24;
+      const core = isFlame ? 0xffedd5 : isSniper ? 0xecfeff : isShot ? 0xffedd5 : 0xfff7c2;
       g.lineStyle(isShot ? 2.6 : isSniper ? 2.4 : 3.4, glow, isShot ? 0.4 : isSniper ? 0.22 : 0.28);
       g.beginPath();
       g.moveTo(x0, y0);
@@ -724,7 +806,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     const fuel = this.prediction.predicted?.fuel ?? serverMe.fuel;
-    const nades = Math.max(0, serverMe.grenades - this.projectiles.pendingGrenades());
     const cooking = this.localCooking || !!serverMe.cooking;
     const cookFrac = cooking
       ? Math.min(1, (this.nowMs - this.cookStartedAt) / GRENADE.fuseMs)
@@ -738,23 +819,26 @@ export class GameScene extends Phaser.Scene {
 
     const weaponId = isWeaponId(serverMe.weapon) ? serverMe.weapon : DEFAULT_WEAPON;
     const weapon = WEAPONS[weaponId];
+    const gunName = isWeaponId(serverMe.firearm) ? WEAPONS[serverMe.firearm].short : '—';
+    const meleeName = isWeaponId(serverMe.melee) ? WEAPONS[serverMe.melee].short : 'KN';
+    const mag =
+      isMelee(weaponId) || !isFirearm(weaponId)
+        ? '∞'
+        : `${serverMe.ammo}/${weapon.magSize} +${serverMe.reserve}`;
     const slots = [
-      `1:${WEAPONS.rifle.name}${weaponId === 'rifle' ? '«' : ''}`,
-      serverMe.ownedSniper
-        ? `2:${WEAPONS.sniper.name}${weaponId === 'sniper' ? '«' : ''}`
-        : '2:—',
-      serverMe.ownedShotgun
-        ? `3:${WEAPONS.shotgun.name}${weaponId === 'shotgun' ? '«' : ''}`
-        : '3:—',
+      `1:${gunName}${isFirearm(weaponId) ? '«' : ''}`,
+      `2:${meleeName}${isMelee(weaponId) ? '«' : ''}`,
     ].join('  ');
+    const nadeLine = `NADES F${serverMe.frags} C${serverMe.clusters} S${serverMe.stings} [${(serverMe.nadeType || 'frag').toUpperCase()}]`;
 
     this.hud.setText(
       [
         `HP ${this.bar(serverMe.health, PLAYER.maxHealth, 10)} ${Math.ceil(serverMe.health)}`,
+        `VEST ${this.bar(serverMe.vest, PLAYER.maxVest, 10)} ${Math.ceil(serverMe.vest)}`,
         `FUEL ${this.bar(fuel, PLAYER.maxFuel, 10)} ${Math.ceil(fuel)}`,
-        `GUN ${weapon.name}`,
+        `GUN ${weapon.name}  ${mag}${serverMe.reloading ? '  REL' : ''}`,
         slots,
-        `NADES ${nades}/${PLAYER.maxGrenades}`,
+        nadeLine,
         cooking ? `COOK ${this.bar(cookFrac * GRENADE.fuseMs, GRENADE.fuseMs, 10)}` : '',
         `KILLS ${serverMe.kills}`,
         ...others,
@@ -786,6 +870,7 @@ export class GameScene extends Phaser.Scene {
         onGround: body.onGround,
         jetting: body.jetting,
         crouching: body.crouching,
+        prone: body.prone,
         rolling: body.rollMs > 0,
         cannonball: body.cannonballMs > 0,
       }) *
@@ -828,6 +913,12 @@ export class GameScene extends Phaser.Scene {
           id === this.sessionId && this.prediction.predicted
             ? this.prediction.predicted
             : p;
+        if (id === this.sessionId) {
+          const dmg = prevH - p.health;
+          this.kickCam(80 + dmg * 0.6, 0.0035 + dmg * 0.00007);
+          this.fx.lensBlood(dmg);
+          sound.pain();
+        }
         // Prefer blast wound if a grenade just went off nearby
         if (
           this.pendingBlast &&
@@ -857,6 +948,7 @@ export class GameScene extends Phaser.Scene {
             ? this.prediction.predicted
             : p;
         this.fx.deathGibs(sample.x, sample.y, sample.vx, sample.vy);
+        this.fx.bloodPool(sample.x, sample.y + 16);
         sound.wetHit();
       }
 
@@ -876,6 +968,11 @@ export class GameScene extends Phaser.Scene {
     this.fx.explosion(x, y);
     sound.explode(1);
     this.pendingBlast = { x, y, at: this.nowMs };
+    const me = this.prediction.predicted;
+    if (me) {
+      const d = Math.hypot(me.x - x, me.y - y);
+      if (d < 420) this.kickCam(140, 0.008 * (1 - d / 420));
+    }
     // Gib anyone standing in the blast (visual; damage comes from server)
     this.room.state.players?.forEach((p) => {
       if (!p.alive) return;
@@ -943,6 +1040,26 @@ export class GameScene extends Phaser.Scene {
         plat.setDisplaySize(p.w, p.h);
         plat.setDepth(1);
       }
+    }
+  }
+
+  private drawRamps(): void {
+    const g = this.add.graphics().setDepth(0.85);
+    for (const r of RAMPS) {
+      const thick = 36;
+      g.fillStyle(0x6b5344, 0.95);
+      g.beginPath();
+      g.moveTo(r.ax, r.ay);
+      g.lineTo(r.bx, r.by);
+      g.lineTo(r.bx, r.by + thick);
+      g.lineTo(r.ax, r.ay + thick);
+      g.closePath();
+      g.fillPath();
+      g.lineStyle(2, 0x1a1208, 0.55);
+      g.beginPath();
+      g.moveTo(r.ax, r.ay);
+      g.lineTo(r.bx, r.by);
+      g.strokePath();
     }
   }
 

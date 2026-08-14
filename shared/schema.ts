@@ -9,8 +9,13 @@ export class PlayerState extends Schema {
   @type('number') vx = 0;
   @type('number') vy = 0;
   @type('number') health = 100;
+  @type('number') vest = 0;
   @type('number') fuel = 100;
   @type('number') grenades = 3;
+  @type('number') frags = 2;
+  @type('number') clusters = 1;
+  @type('number') stings = 1;
+  @type('string') nadeType = 'frag';
   @type('number') kills = 0;
   @type('boolean') alive = true;
   @type('number') facing = 1;
@@ -19,15 +24,20 @@ export class PlayerState extends Schema {
   @type('boolean') jetting = false;
   @type('boolean') onGround = false;
   @type('boolean') crouching = false;
+  @type('boolean') prone = false;
   @type('boolean') rolling = false;
   @type('number') rollMs = 0;
   @type('boolean') cannonball = false;
   @type('boolean') backflip = false;
   @type('boolean') cooking = false;
-  /** Active weapon id: rifle | sniper | shotgun */
-  @type('string') weapon = 'rifle';
-  @type('boolean') ownedSniper = false;
-  @type('boolean') ownedShotgun = false;
+  /** Gun or melee currently in hands. */
+  @type('string') weapon = 'de';
+  /** Holstered firearm while melee is out. */
+  @type('string') firearm = 'de';
+  @type('string') melee = 'knife';
+  @type('number') ammo = 7;
+  @type('number') reserve = 21;
+  @type('boolean') reloading = false;
   @type('number') lastProcessedInput = 0;
 }
 
@@ -44,6 +54,7 @@ export class BulletState extends Schema {
 export class GrenadeState extends Schema {
   @type('string') id = '';
   @type('string') ownerId = '';
+  @type('string') kind = 'frag';
   @type('number') x = 0;
   @type('number') y = 0;
   @type('number') vx = 0;
@@ -52,7 +63,12 @@ export class GrenadeState extends Schema {
 
 export class PickupState extends Schema {
   @type('string') id = '';
+  @type('string') kind = 'weapon';
+  @type('string') item = '';
+  /** Legacy alias — same as item for weapon pads. */
   @type('string') weapon = '';
+  @type('number') ammo = 0;
+  @type('number') reserve = 0;
   @type('number') x = 0;
   @type('number') y = 0;
   @type('boolean') active = true;

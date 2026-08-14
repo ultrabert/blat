@@ -6,8 +6,8 @@ import {
   PLAYER,
   PLATFORMS,
 } from '../../../shared/constants';
-import { fireDirection, shotgunBlastDirections } from '../../../shared/accuracy';
-import { BALLISTICS, muzzleVelocity, stepBallistic } from '../../../shared/ballistics';
+import { planFire, stanceFromBody } from '../../../shared/fire';
+import { stepBallistic } from '../../../shared/ballistics';
 import { GRENADE } from '../../../shared/grenades';
 import type { MoveBody } from '../../../shared/physics';
 import type { BulletState, GrenadeState } from '../../../shared/schema';
@@ -23,10 +23,13 @@ type PredBullet = {
   power: number;
   bornAt: number;
   weapon: string;
-  /** Muzzle origin — used for sniper fade streaks. */
   ox: number;
   oy: number;
   serverId: string | null;
+  gravityScale: number;
+  dragPerSec: number;
+  lifeMs: number;
+  explodeOnHit: boolean;
 };
 
 type PredGrenade = {
@@ -40,7 +43,6 @@ type PredGrenade = {
   serverId: string | null;
 };
 
-const BULLET_LIFE_MS = BALLISTICS.lifeMs;
 /** Drop ghost shots if the server never confirms. */
 const MATCH_TIMEOUT_MS = 700;
 
@@ -96,98 +98,67 @@ export class ProjectilePredictor {
    * @mechanic recoil
    * @mechanic weapon-arsenal
    */
-  tryFire(body: MoveBody, now: number, seed: number, weaponId: string = 'rifle'): boolean {
+  tryFire(body: MoveBody, now: number, seed: number, weaponId: string = DEFAULT_WEAPON): boolean {
     if (!body.alive) return false;
     const weapon = WEAPONS[isWeaponId(weaponId) ? weaponId : DEFAULT_WEAPON];
     if (now < this.lastFireAt + weapon.fireCooldownMs) return false;
     this.lastFireAt = now;
 
-    const stance = {
-      vx: body.vx,
-      vy: body.vy,
-      onGround: body.onGround,
-      jetting: body.jetting,
-      crouching: body.crouching,
-      rolling: body.rollMs > 0,
-      cannonball: body.cannonballMs > 0,
-    };
-
-    const crouch = body.crouching || body.rollMs > 0;
-    const muzzleY = (dirY: number) => body.y + dirY * (crouch ? 6 : 12) - (crouch ? 2 : 4);
-
-    if (weapon.id === 'shotgun') {
-      const blast = shotgunBlastDirections(body.aimX, body.aimY, stance, body.recoil, seed, {
-        pellets: weapon.pellets,
-        spreadMult: weapon.spreadMult,
-        pelletSpread: weapon.pelletSpread,
-        recoilKick: weapon.recoilKick,
-        recoilMax: weapon.recoilMax,
-      });
-      body.recoil = blast.recoil;
-      const center = blast.dirs[Math.floor(blast.dirs.length / 2)] ?? {
+    const stance = stanceFromBody(body);
+    const plan = planFire(
+      {
+        x: body.x,
+        y: body.y,
+        vx: body.vx,
+        vy: body.vy,
         aimX: body.aimX,
         aimY: body.aimY,
-      };
-      const base = muzzleVelocity(center.aimX, center.aimY, body.vx, body.vy, weapon.muzzleSpeed);
-      const speed = Math.hypot(base.vx, base.vy);
-      const ox = body.x + center.aimX * 18;
-      const oy = muzzleY(center.aimY);
+        crouching: body.crouching,
+        recoil: body.recoil,
+      },
+      weapon,
+      stance,
+      seed,
+    );
+    body.recoil = plan.recoil;
+    if (plan.melee) {
       this.muzzleFlashes.push({
-        x: ox,
-        y: oy,
-        aimX: center.aimX,
-        aimY: center.aimY,
+        x: body.x + body.aimX * 12,
+        y: body.y + body.aimY * 8,
+        aimX: body.aimX,
+        aimY: body.aimY,
         weapon: weapon.id,
       });
-      for (const dir of blast.dirs) {
-        this.bullets.push({
-          id: `pb_${this.nextId++}`,
-          x: body.x + dir.aimX * 18,
-          y: muzzleY(dir.aimY),
-          vx: dir.aimX * speed,
-          vy: dir.aimY * speed,
-          power: base.power,
-          bornAt: now,
-          weapon: weapon.id,
-          ox,
-          oy,
-          serverId: null,
-        });
-      }
       return true;
     }
 
-    for (let i = 0; i < weapon.pellets; i++) {
-      const fired = fireDirection(body.aimX, body.aimY, stance, body.recoil, seed + i * 97, {
-        spreadMult: weapon.spreadMult,
-        pelletSpread: weapon.pelletSpread,
-        recoilKick: weapon.recoilKick,
-        recoilMax: weapon.recoilMax,
-        applyRecoil: i === 0,
+    const first = plan.shots[0];
+    if (first) {
+      this.muzzleFlashes.push({
+        x: first.x,
+        y: first.y,
+        aimX: body.aimX,
+        aimY: body.aimY,
+        weapon: weapon.id,
       });
-      if (i === 0) body.recoil = fired.recoil;
-
-      const muzzle = muzzleVelocity(
-        fired.aimX,
-        fired.aimY,
-        body.vx,
-        body.vy,
-        weapon.muzzleSpeed,
-      );
-      const ox = body.x + fired.aimX * 20;
-      const oy = muzzleY(fired.aimY);
+    }
+    for (const shot of plan.shots) {
       this.bullets.push({
         id: `pb_${this.nextId++}`,
-        x: ox,
-        y: oy,
-        vx: muzzle.vx,
-        vy: muzzle.vy,
-        power: muzzle.power,
+        x: shot.x,
+        y: shot.y,
+        vx: shot.vx,
+        vy: shot.vy,
+        power: shot.power,
         bornAt: now,
         weapon: weapon.id,
-        ox,
-        oy,
+        ox: shot.x,
+        oy: shot.y,
         serverId: null,
+        gravityScale: shot.gravityScale,
+        dragPerSec: shot.dragPerSec,
+        lifeMs: shot.lifeMs,
+        explodeOnHit: shot.explodeOnHit,
       });
     }
     return true;
@@ -230,7 +201,7 @@ export class ProjectilePredictor {
   step(dt: number, now: number, targets: TraceTarget[] = [], ownerId = ''): void {
     const kept: PredBullet[] = [];
     for (const b of this.bullets) {
-      const { x0, y0, x1, y1 } = stepBallistic(b, dt);
+      const { x0, y0, x1, y1 } = stepBallistic(b, dt, b.gravityScale, b.dragPerSec);
       const hit = traceBullet(x0, y0, x1, y1, targets, ownerId);
       if (hit) {
         this.impacts.push({
@@ -241,6 +212,7 @@ export class ProjectilePredictor {
           ox: b.ox,
           oy: b.oy,
         });
+        if (b.explodeOnHit) this.explosions.push({ x: hit.x, y: hit.y });
         continue;
       }
       // stepBallistic already wrote x/y
@@ -260,7 +232,7 @@ export class ProjectilePredictor {
 
     this.bullets = this.bullets.filter((b) => {
       if (!b.serverId && now - b.bornAt > MATCH_TIMEOUT_MS) return false;
-      if (now - b.bornAt > BULLET_LIFE_MS) return false;
+      if (now - b.bornAt > b.lifeMs) return false;
       if (b.x < -40 || b.x > GAME_WIDTH + 40 || b.y < -40 || b.y > GAME_HEIGHT + 40) {
         return false;
       }

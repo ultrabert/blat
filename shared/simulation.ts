@@ -7,12 +7,28 @@ import {
   PLAYER,
   PLATFORMS,
   SPAWNS,
+  playerHalfExtents,
   type PlayerInput,
 } from './constants.js';
-import { bodyDamageMult, fireDirection, shotgunBlastDirections } from './accuracy.js';
+import { bodyDamageMult } from './accuracy.js';
 import { fellOutOfWorld, stepMovement, type MoveBody } from './physics.js';
-import { ballisticDamage, BALLISTICS, muzzleVelocity, stepBallistic } from './ballistics.js';
-import { blastImpulse, bulletImpulse, GRENADE, remainingFuse } from './grenades.js';
+import { ballisticDamage, stepBallistic } from './ballistics.js';
+import {
+  applyVestDamage,
+  planFire,
+  spawnAmmoFor,
+  stanceFromBody,
+} from './fire.js';
+import {
+  blastImpulse,
+  bulletImpulse,
+  GRENADE,
+  isNadeKind,
+  NADE,
+  NADE_KINDS,
+  remainingFuse,
+  type NadeKind,
+} from './grenades.js';
 import { traceBullet } from './trace.js';
 import {
   BulletState,
@@ -22,18 +38,27 @@ import {
   PlayerState,
 } from './schema.js';
 import {
+  AMMO_BOX,
+  DEFAULT_MELEE,
   DEFAULT_WEAPON,
+  isFirearm,
+  isMelee,
   isWeaponId,
+  MAP_PICKUPS,
+  MAX_VEST,
+  MEDKIT_HEAL,
+  PICKUP_ARM_MS,
   PICKUP_RADIUS,
   PICKUP_RESPAWN_MS,
-  WEAPON_PICKUPS,
+  VEST_PICKUP,
   WEAPONS,
+  type PickupKind,
   type WeaponId,
 } from './weapons.js';
 
 const MAX_INPUT_QUEUE = 48;
 /** When buffered, drain extra steps so seqs aren't dropped. */
-const MAX_INPUT_CATCHUP = 3;
+const MAX_INPUT_CATCHUP = 8;
 
 type InternalSoldier = {
   state: PlayerState;
@@ -49,11 +74,14 @@ type InternalSoldier = {
   landGraceMs: number;
   cannonballMs: number;
   backflipMs: number;
+  proneHoldMs: number;
   /** Pin pulled — fuse ticks until throw or self-blast. */
   cooking: boolean;
   cookStartedAt: number;
+  cookKind: NadeKind;
   lastFireAt: number;
   lastGrenadeAt: number;
+  reloadEndsAt: number;
   respawnAt: number;
   botThinkAt: number;
   botTargetId: string | null;
@@ -70,16 +98,26 @@ type InternalBullet = {
   power: number;
   baseDamage: number;
   weapon: WeaponId;
+  gravityScale: number;
+  dragPerSec: number;
+  lifeMs: number;
+  explodeOnHit: boolean;
+  blastRadius: number;
+  blastDamage: number;
 };
 
 type InternalGrenade = {
   state: GrenadeState;
   explodeAt: number;
+  kind: NadeKind;
+  cluster: boolean;
 };
 
 type InternalPickup = {
   state: PickupState;
   respawnAt: number;
+  ephemeral: boolean;
+  armedAt: number;
 };
 
 function clamp(v: number, min: number, max: number): number {
@@ -119,6 +157,8 @@ function toMoveBody(soldier: InternalSoldier): MoveBody {
     landGraceMs: soldier.landGraceMs,
     cannonballMs: soldier.cannonballMs,
     backflipMs: soldier.backflipMs,
+    prone: soldier.state.prone,
+    proneHoldMs: soldier.proneHoldMs,
   };
 }
 
@@ -135,6 +175,7 @@ function fromMoveBody(soldier: InternalSoldier, body: MoveBody): void {
   p.jetting = body.jetting;
   p.onGround = body.onGround;
   p.crouching = body.crouching;
+  p.prone = body.prone;
   p.rolling = body.rollMs > 0;
   p.rollMs = body.rollMs;
   p.cannonball = body.cannonballMs > 0;
@@ -149,6 +190,7 @@ function fromMoveBody(soldier: InternalSoldier, body: MoveBody): void {
   soldier.landGraceMs = body.landGraceMs;
   soldier.cannonballMs = body.cannonballMs;
   soldier.backflipMs = body.backflipMs;
+  soldier.proneHoldMs = body.proneHoldMs;
 }
 
 function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
@@ -161,6 +203,9 @@ function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
     aimY: input.aimY,
     fire: !!input.fire,
     grenade: !!input.grenade,
+    reload: !!input.reload,
+    drop: !!input.drop,
+    nadeCycle: !!input.nadeCycle,
   };
 }
 
@@ -174,6 +219,9 @@ function idleInput(seq = 0): PlayerInput {
     aimY: 0,
     fire: false,
     grenade: false,
+    reload: false,
+    drop: false,
+    nadeCycle: false,
   };
 }
 
@@ -189,15 +237,22 @@ export class Simulation {
   }
 
   private initPickups(): void {
-    for (const spec of WEAPON_PICKUPS) {
+    for (const spec of MAP_PICKUPS) {
       const p = new PickupState();
       p.id = spec.id;
-      p.weapon = spec.weapon;
+      p.kind = spec.kind;
+      p.item = spec.item;
+      p.weapon = spec.item;
+      if (spec.kind === 'weapon' && isWeaponId(spec.item)) {
+        const ammo = spawnAmmoFor(spec.item);
+        p.ammo = ammo.ammo;
+        p.reserve = ammo.reserve;
+      }
       p.x = spec.x;
       p.y = spec.y;
       p.active = true;
       this.state.pickups.set(spec.id, p);
-      this.pickups.set(spec.id, { state: p, respawnAt: 0 });
+      this.pickups.set(spec.id, { state: p, respawnAt: 0, ephemeral: false, armedAt: 0 });
     }
   }
 
@@ -210,15 +265,24 @@ export class Simulation {
     p.x = spawn.x;
     p.y = spawn.y;
     p.health = PLAYER.maxHealth;
+    p.vest = 0;
     p.fuel = PLAYER.maxFuel;
-    p.grenades = PLAYER.maxGrenades;
+    p.weapon = DEFAULT_WEAPON;
+    p.firearm = DEFAULT_WEAPON;
+    p.melee = DEFAULT_MELEE;
+    const spawnAmmo = spawnAmmoFor(DEFAULT_WEAPON);
+    p.ammo = spawnAmmo.ammo;
+    p.reserve = spawnAmmo.reserve;
+    p.reloading = false;
+    p.frags = 2;
+    p.clusters = 1;
+    p.stings = 1;
+    p.nadeType = 'frag';
+    p.grenades = 4;
     p.alive = true;
     p.onGround = false;
     p.crouching = false;
     p.rolling = false;
-    p.weapon = DEFAULT_WEAPON;
-    p.ownedSniper = false;
-    p.ownedShotgun = false;
     p.lastProcessedInput = 0;
     this.state.players.set(id, p);
     this.soldiers.set(id, {
@@ -235,10 +299,13 @@ export class Simulation {
       landGraceMs: 0,
       cannonballMs: 0,
       backflipMs: 0,
+      proneHoldMs: 0,
       cooking: false,
       cookStartedAt: 0,
+      cookKind: 'frag',
       lastFireAt: 0,
       lastGrenadeAt: 0,
+      reloadEndsAt: 0,
       respawnAt: 0,
       botThinkAt: 0,
       botTargetId: null,
@@ -274,26 +341,57 @@ export class Simulation {
     s.inputQueue.push(normalizeInput(input, seq));
   }
 
-  /** Equip a owned weapon (client keys 1–3). */
+  /** Equip firearm or melee (client keys 1–2). */
   setWeapon(id: string, weaponRaw: string): void {
     const s = this.soldiers.get(id);
     if (!s || !s.state.alive || s.state.isBot) return;
-    if (!isWeaponId(weaponRaw)) return;
-    if (!this.ownsWeapon(s, weaponRaw)) return;
-    s.state.weapon = weaponRaw;
+    this.equipHands(s, weaponRaw);
   }
 
-  private ownsWeapon(s: InternalSoldier, weapon: WeaponId): boolean {
-    if (weapon === 'rifle') return true;
-    if (weapon === 'sniper') return s.state.ownedSniper;
-    if (weapon === 'shotgun') return s.state.ownedShotgun;
-    return false;
+  private equipHands(s: InternalSoldier, want: string): void {
+    const p = s.state;
+    if (want === 'firearm' || want === 'gun') {
+      if (isFirearm(p.firearm)) p.weapon = p.firearm;
+      return;
+    }
+    if (want === 'melee' || want === 'knife') {
+      p.weapon = isWeaponId(p.melee) ? p.melee : DEFAULT_MELEE;
+      return;
+    }
+    if (!isWeaponId(want)) return;
+    if (isMelee(want)) {
+      if (p.melee === want || want === 'knife') p.weapon = p.melee || DEFAULT_MELEE;
+      return;
+    }
+    if (p.firearm === want) p.weapon = want;
   }
 
-  private grantWeapon(s: InternalSoldier, weapon: WeaponId): void {
-    if (weapon === 'sniper') s.state.ownedSniper = true;
-    if (weapon === 'shotgun') s.state.ownedShotgun = true;
-    s.state.weapon = weapon;
+  private nadeCount(p: PlayerState, kind: NadeKind): number {
+    if (kind === 'cluster') return p.clusters;
+    if (kind === 'sting') return p.stings;
+    return p.frags;
+  }
+
+  private setNadeCount(p: PlayerState, kind: NadeKind, n: number): void {
+    if (kind === 'cluster') p.clusters = n;
+    else if (kind === 'sting') p.stings = n;
+    else p.frags = n;
+    p.grenades = p.frags + p.clusters + p.stings;
+  }
+
+  private currentNade(p: PlayerState): NadeKind {
+    return isNadeKind(p.nadeType) ? p.nadeType : 'frag';
+  }
+
+  private cycleNade(p: PlayerState): void {
+    const start = NADE_KINDS.indexOf(this.currentNade(p));
+    for (let i = 1; i <= NADE_KINDS.length; i++) {
+      const k = NADE_KINDS[(start + i) % NADE_KINDS.length]!;
+      if (this.nadeCount(p, k) > 0) {
+        p.nadeType = k;
+        return;
+      }
+    }
   }
 
   ensureBots(desired: number): void {
@@ -331,6 +429,8 @@ export class Simulation {
       }
     }
 
+    this.separateSoldiers();
+
     for (const bullet of [...this.bullets.values()]) {
       this.stepBullet(bullet, dt);
     }
@@ -340,6 +440,43 @@ export class Simulation {
     }
 
     this.stepPickups();
+  }
+
+  private separateSoldiers(): void {
+    const list = [...this.soldiers.values()].filter((s) => s.state.alive);
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const sa = list[i]!;
+        const sb = list[j]!;
+        const a = toMoveBody(sa);
+        const b = toMoveBody(sb);
+        const ha = playerHalfExtents(a.crouching, a.prone);
+        const hb = playerHalfExtents(b.crouching, b.prone);
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const overlapX = ha.halfW + hb.halfW - Math.abs(dx);
+        const overlapY = ha.halfH + hb.halfH - Math.abs(dy);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+        if (overlapX < overlapY) {
+          const dir = dx >= 0 ? 1 : -1;
+          const push = overlapX * 0.5;
+          a.x += dir * push;
+          b.x -= dir * push;
+          a.vx += dir * 28;
+          b.vx -= dir * 28;
+        } else if (dy < 0) {
+          a.y = b.y - hb.halfH - ha.halfH;
+          a.vy = 0;
+          a.onGround = true;
+        } else {
+          b.y = a.y - ha.halfH - hb.halfH;
+          b.vy = 0;
+          b.onGround = true;
+        }
+        fromMoveBody(sa, a);
+        fromMoveBody(sb, b);
+      }
+    }
   }
 
   /** Pop next queued input, or hold last (with fire/grenade cleared). */
@@ -354,6 +491,9 @@ export class Simulation {
     soldier.input = {
       ...soldier.input,
       fire: false,
+      reload: false,
+      drop: false,
+      nadeCycle: false,
     };
   }
 
@@ -412,19 +552,26 @@ export class Simulation {
     bot.input.crouch = bot.botMoveStyle === 1 && bot.onGround && dist < 200;
     bot.input.aimX = dx + (Math.random() * 60 - 30);
     bot.input.aimY = dy + (Math.random() * 30 - 20);
-    bot.input.fire = dist < BOT.fireRange && dist > 28 && Math.random() > 0.42;
+    const p = bot.state;
+    bot.input.fire = dist < BOT.fireRange && Math.random() > 0.42;
     bot.input.grenade = false;
+    bot.input.reload = false;
+    bot.input.drop = false;
+    bot.input.nadeCycle = false;
 
-    // Distance-based loadout (unlock all for bots)
-    bot.state.ownedSniper = true;
-    bot.state.ownedShotgun = true;
-    if (dist > 420) bot.state.weapon = 'sniper';
-    else if (dist < 180) bot.state.weapon = 'shotgun';
-    else bot.state.weapon = 'rifle';
+    if (p.reloading) bot.input.fire = false;
 
-    // Bots skip cooking — instant full-fuse lob
+    if (dist < 48) {
+      p.weapon = isWeaponId(p.melee) ? p.melee : DEFAULT_MELEE;
+      bot.input.fire = dist < 46 && Math.random() > 0.25;
+    } else if (isFirearm(p.firearm)) {
+      p.weapon = p.firearm;
+      if (p.ammo <= 0 && p.reserve > 0) bot.input.reload = true;
+      if (p.ammo <= 0) bot.input.fire = false;
+    }
+
     const nadeChance = dist < 120 ? 0.88 : 0.94;
-    if (dist < 280 && bot.state.grenades > 0 && Math.random() > nadeChance) {
+    if (dist < 280 && p.grenades > 0 && Math.random() > nadeChance) {
       this.throwGrenade(bot, GRENADE.fuseMs, { consumeInventory: true });
     }
   }
@@ -483,6 +630,10 @@ export class Simulation {
       return;
     }
 
+    if (soldier.input.nadeCycle) this.cycleNade(p);
+    if (soldier.input.drop) this.dropFirearm(soldier);
+    this.updateReload(soldier);
+    if (soldier.input.reload) this.startReload(soldier);
     if (soldier.input.fire) this.tryFire(soldier);
     this.updateGrenadeCook(soldier);
 
@@ -502,12 +653,14 @@ export class Simulation {
       if (
         holding &&
         p.grenades > 0 &&
+        this.nadeCount(p, this.currentNade(p)) > 0 &&
         this.now >= soldier.lastGrenadeAt + PLAYER.grenadeCooldownMs
       ) {
         soldier.cooking = true;
         soldier.cookStartedAt = this.now;
+        soldier.cookKind = this.currentNade(p);
         p.cooking = true;
-        p.grenades -= 1;
+        this.setNadeCount(p, soldier.cookKind, this.nadeCount(p, soldier.cookKind) - 1);
       }
       return;
     }
@@ -518,7 +671,11 @@ export class Simulation {
       soldier.cooking = false;
       p.cooking = false;
       soldier.lastGrenadeAt = this.now;
-      this.blastAt(p.x, p.y, soldier);
+      this.blastAt(p.x, p.y, soldier, {
+        radius: NADE[soldier.cookKind].blastRadius,
+        damage: NADE[soldier.cookKind].blastDamage,
+        knockback: NADE[soldier.cookKind].knockback,
+      });
       return;
     }
 
@@ -526,38 +683,64 @@ export class Simulation {
       soldier.cooking = false;
       p.cooking = false;
       soldier.lastGrenadeAt = this.now;
-      this.throwGrenade(soldier, remainingFuse(cooked));
+      this.throwGrenade(soldier, remainingFuse(cooked), { consumeInventory: false, kind: soldier.cookKind });
     }
   }
 
   private throwGrenade(
     soldier: InternalSoldier,
     fuseMs: number,
-    opts: { consumeInventory: boolean } = { consumeInventory: false },
+    opts: { consumeInventory: boolean; kind?: NadeKind } = { consumeInventory: false },
   ): void {
     const p = soldier.state;
+    const kind = opts.kind ?? this.currentNade(p);
     if (opts.consumeInventory) {
-      if (p.grenades <= 0) return;
+      if (this.nadeCount(p, kind) <= 0) return;
       if (this.now < soldier.lastGrenadeAt + PLAYER.grenadeCooldownMs) return;
-      p.grenades -= 1;
+      this.setNadeCount(p, kind, this.nadeCount(p, kind) - 1);
       soldier.lastGrenadeAt = this.now;
     }
 
     const len = Math.hypot(p.aimX, p.aimY) || 1;
     const ax = p.aimX / len;
     const ay = p.aimY / len;
+    this.spawnGrenade(
+      p.id,
+      p.x + ax * 16,
+      p.y - 8,
+      ax * GRENADE.throwSpeed + p.vx * 0.35,
+      ay * GRENADE.throwSpeed - 180 + p.vy * 0.2,
+      Math.max(GRENADE.minFuseMs, fuseMs),
+      kind,
+      false,
+    );
+  }
+
+  private spawnGrenade(
+    ownerId: string,
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    fuseMs: number,
+    kind: NadeKind,
+    cluster: boolean,
+  ): void {
     const id = eid('g');
     const g = new GrenadeState();
     g.id = id;
-    g.ownerId = p.id;
-    g.x = p.x + ax * 16;
-    g.y = p.y - 8;
-    g.vx = ax * GRENADE.throwSpeed + p.vx * 0.35;
-    g.vy = ay * GRENADE.throwSpeed - 180 + p.vy * 0.2;
+    g.ownerId = ownerId;
+    g.kind = kind;
+    g.x = x;
+    g.y = y;
+    g.vx = vx;
+    g.vy = vy;
     this.state.grenades.set(id, g);
     this.grenades.set(id, {
       state: g,
-      explodeAt: this.now + Math.max(GRENADE.minFuseMs, fuseMs),
+      explodeAt: this.now + fuseMs,
+      kind,
+      cluster,
     });
   }
 
@@ -566,117 +749,132 @@ export class Simulation {
    * @mechanic state-accuracy
    * @mechanic recoil
    * @mechanic weapon-arsenal
-   * Spawn with weapon stats; shotgun fires multiple pellets.
+   * @mechanic magazines-reload
+   * @mechanic melee
+   * @mechanic special-ballistics
    */
   private tryFire(soldier: InternalSoldier): void {
     const p = soldier.state;
     const weaponId = isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON;
     const weapon = WEAPONS[weaponId];
+    if (p.reloading) return;
     if (this.now < soldier.lastFireAt + weapon.fireCooldownMs) return;
-    soldier.lastFireAt = this.now;
 
-    const stance = {
+    if (weapon.kind !== 'melee') {
+      if (p.ammo <= 0) {
+        this.startReload(soldier);
+        return;
+      }
+    }
+
+    soldier.lastFireAt = this.now;
+    if (weapon.kind !== 'melee') {
+      p.ammo = Math.max(0, p.ammo - 1);
+      if (p.ammo <= 0) this.startReload(soldier);
+    }
+
+    const stance = stanceFromBody({
       vx: p.vx,
       vy: p.vy,
       onGround: soldier.onGround,
       jetting: p.jetting,
       crouching: p.crouching,
-      rolling: soldier.rollMs > 0,
-      cannonball: soldier.cannonballMs > 0,
-    };
+      prone: p.prone,
+      rollMs: soldier.rollMs,
+      cannonballMs: soldier.cannonballMs,
+    });
     const baseSeed = soldier.input.seq > 0 ? soldier.input.seq : Math.floor(this.now);
-    const crouch = p.crouching;
-
-    if (weaponId === 'shotgun') {
-      const blast = shotgunBlastDirections(p.aimX, p.aimY, stance, soldier.recoil, baseSeed, {
-        pellets: weapon.pellets,
-        spreadMult: weapon.spreadMult,
-        pelletSpread: weapon.pelletSpread,
-        recoilKick: weapon.recoilKick,
-        recoilMax: weapon.recoilMax,
-      });
-      soldier.recoil = blast.recoil;
-      // Shared speed so the cone doesn't smear into different ranges.
-      const center = blast.dirs[Math.floor(blast.dirs.length / 2)] ?? {
+    const plan = planFire(
+      {
+        x: p.x,
+        y: p.y,
+        vx: p.vx,
+        vy: p.vy,
         aimX: p.aimX,
         aimY: p.aimY,
-      };
-      const base = muzzleVelocity(center.aimX, center.aimY, p.vx, p.vy, weapon.muzzleSpeed);
-      const speed = Math.hypot(base.vx, base.vy);
-      for (const dir of blast.dirs) {
-        const id = eid('b');
-        const b = new BulletState();
-        b.id = id;
-        b.ownerId = p.id;
-        b.weapon = weaponId;
-        b.x = p.x + dir.aimX * 18;
-        b.y = p.y + dir.aimY * (crouch ? 6 : 12) - (crouch ? 2 : 4);
-        b.vx = dir.aimX * speed;
-        b.vy = dir.aimY * speed;
-        this.state.bullets.set(id, b);
-        this.bullets.set(id, {
-          state: b,
-          bornAt: this.now,
-          power: base.power,
-          baseDamage: weapon.damage,
-          weapon: weaponId,
-        });
-      }
+        crouching: p.crouching,
+        recoil: soldier.recoil,
+      },
+      weapon,
+      stance,
+      baseSeed,
+    );
+    soldier.recoil = plan.recoil;
+
+    if (plan.melee) {
+      this.resolveMelee(soldier, plan.meleeRange, plan.meleeDamage);
       return;
     }
 
-    for (let i = 0; i < weapon.pellets; i++) {
-      const fired = fireDirection(p.aimX, p.aimY, stance, soldier.recoil, baseSeed + i * 97, {
-        spreadMult: weapon.spreadMult,
-        pelletSpread: weapon.pelletSpread,
-        recoilKick: weapon.recoilKick,
-        recoilMax: weapon.recoilMax,
-        applyRecoil: i === 0,
-      });
-      if (i === 0) soldier.recoil = fired.recoil;
-
+    for (const shot of plan.shots) {
       const id = eid('b');
       const b = new BulletState();
       b.id = id;
       b.ownerId = p.id;
       b.weapon = weaponId;
-      b.x = p.x + fired.aimX * 20;
-      b.y = p.y + fired.aimY * (crouch ? 6 : 12) - (crouch ? 2 : 4);
-      const muzzle = muzzleVelocity(
-        fired.aimX,
-        fired.aimY,
-        p.vx,
-        p.vy,
-        weapon.muzzleSpeed,
-      );
-      b.vx = muzzle.vx;
-      b.vy = muzzle.vy;
+      b.x = shot.x;
+      b.y = shot.y;
+      b.vx = shot.vx;
+      b.vy = shot.vy;
       this.state.bullets.set(id, b);
       this.bullets.set(id, {
         state: b,
         bornAt: this.now,
-        power: muzzle.power,
+        power: shot.power,
         baseDamage: weapon.damage,
         weapon: weaponId,
+        gravityScale: shot.gravityScale,
+        dragPerSec: shot.dragPerSec,
+        lifeMs: shot.lifeMs,
+        explodeOnHit: shot.explodeOnHit,
+        blastRadius: shot.blastRadius,
+        blastDamage: shot.blastDamage,
       });
     }
+  }
+
+  private resolveMelee(soldier: InternalSoldier, range: number, damage: number): void {
+    const p = soldier.state;
+    const len = Math.hypot(p.aimX, p.aimY) || 1;
+    const ax = p.aimX / len;
+    const ay = p.aimY / len;
+    const x0 = p.x + ax * 10;
+    const y0 = p.y + ay * 6;
+    const x1 = p.x + ax * range;
+    const y1 = p.y + ay * range;
+    const targets = [...this.soldiers.values()].map((s) => ({
+      id: s.state.id,
+      x: s.state.x,
+      y: s.state.y,
+      alive: s.state.alive,
+      crouching: s.state.crouching || s.rollMs > 0 || s.cannonballMs > 0,
+      prone: !!s.state.prone,
+    }));
+    const hit = traceBullet(x0, y0, x1, y1, targets, p.id);
+    if (hit?.kind !== 'player') return;
+    const victim = this.soldiers.get(hit.playerId);
+    if (!victim) return;
+    const dmg = Math.round(damage * bodyDamageMult(hit.bodyPart));
+    const impulse = bulletImpulse(ax, ay, dmg);
+    this.damage(victim, dmg, soldier, impulse, hit.bodyPart);
   }
 
   /**
    * @mechanic ballistic-projectiles
    * Gravity + drag, then swept hit test; damage scales with power.
    * @mechanic knockback
+   * @mechanic special-ballistics
    */
   private stepBullet(bullet: InternalBullet, dt: number): void {
     const b = bullet.state;
 
-    if (this.now - bullet.bornAt > BALLISTICS.lifeMs) {
+    if (this.now - bullet.bornAt > bullet.lifeMs) {
       this.removeBullet(b.id);
       return;
     }
 
     const body = { x: b.x, y: b.y, vx: b.vx, vy: b.vy, power: bullet.power };
-    const { x0, y0, x1, y1 } = stepBallistic(body, dt);
+    const { x0, y0, x1, y1 } = stepBallistic(body, dt, bullet.gravityScale, bullet.dragPerSec);
     b.vx = body.vx;
     b.vy = body.vy;
     bullet.power = body.power;
@@ -687,26 +885,31 @@ export class Simulation {
       y: s.state.y,
       alive: s.state.alive,
       crouching: s.state.crouching || s.rollMs > 0 || s.cannonballMs > 0,
+      prone: !!s.state.prone,
     }));
     const hit = traceBullet(x0, y0, x1, y1, targets, b.ownerId);
 
     if (hit) {
       b.x = hit.x;
       b.y = hit.y;
-      if (hit.kind === 'player') {
+      const killer = this.soldiers.get(b.ownerId);
+      if (bullet.explodeOnHit) {
+        this.blastAt(hit.x, hit.y, killer, {
+          radius: bullet.blastRadius,
+          damage: bullet.blastDamage,
+        });
+      } else if (hit.kind === 'player') {
         const victim = this.soldiers.get(hit.playerId);
-        const killer = this.soldiers.get(b.ownerId);
         if (victim) {
-          // Sniper headshot is always lethal (Soldat-style reward for precision).
           const dmg =
-            bullet.weapon === 'sniper' && hit.bodyPart === 'head'
+            WEAPONS[bullet.weapon]?.headOhk && hit.bodyPart === 'head'
               ? PLAYER.maxHealth
               : Math.round(
                   ballisticDamage(bullet.power, bullet.baseDamage) *
                     bodyDamageMult(hit.bodyPart),
                 );
           const impulse = bulletImpulse(b.vx, b.vy, dmg);
-          this.damage(victim, dmg, killer, impulse);
+          this.damage(victim, dmg, killer, impulse, hit.bodyPart);
         }
       }
       this.removeBullet(b.id);
@@ -766,49 +969,245 @@ export class Simulation {
 
   private explodeGrenade(grenade: InternalGrenade): void {
     const g = grenade.state;
-    this.blastAt(g.x, g.y, this.soldiers.get(g.ownerId));
+    const killer = this.soldiers.get(g.ownerId);
+    const def = NADE[grenade.kind];
+    this.blastAt(g.x, g.y, killer, {
+      radius: def.blastRadius,
+      damage: def.blastDamage,
+      knockback: def.knockback,
+    });
+
+    if (grenade.kind === 'cluster' && !grenade.cluster) {
+      for (let i = 0; i < NADE.cluster.children; i++) {
+        const a = (i / NADE.cluster.children) * Math.PI * 2 + 0.4;
+        this.spawnGrenade(
+          g.ownerId,
+          g.x,
+          g.y - 6,
+          Math.cos(a) * 180 + (Math.random() - 0.5) * 40,
+          Math.sin(a) * 90 - 160,
+          GRENADE.clusterChildFuseMs + i * 40,
+          'frag',
+          true,
+        );
+      }
+    }
+
+    if (grenade.kind === 'sting') {
+      const targets = [...this.soldiers.values()].map((s) => ({
+        id: s.state.id,
+        x: s.state.x,
+        y: s.state.y,
+        alive: s.state.alive,
+        crouching: s.state.crouching || s.rollMs > 0 || s.cannonballMs > 0,
+        prone: !!s.state.prone,
+      }));
+      for (let i = 0; i < NADE.sting.pellets; i++) {
+        const a = (i / NADE.sting.pellets) * Math.PI * 2;
+        const x1 = g.x + Math.cos(a) * 140;
+        const y1 = g.y + Math.sin(a) * 140;
+        const hit = traceBullet(g.x, g.y, x1, y1, targets, '');
+        if (hit?.kind === 'player') {
+          const victim = this.soldiers.get(hit.playerId);
+          if (victim) {
+            this.damage(victim, NADE.sting.pelletDamage, killer, undefined, hit.bodyPart);
+          }
+        }
+      }
+    }
+
     this.grenades.delete(g.id);
     this.state.grenades.delete(g.id);
   }
 
   /** @mechanic knockback @mechanic throwable-grenades */
-  private blastAt(x: number, y: number, killer?: InternalSoldier): void {
+  private blastAt(
+    x: number,
+    y: number,
+    killer?: InternalSoldier,
+    opts?: { radius?: number; damage?: number; knockback?: number },
+  ): void {
+    const radius = opts?.radius ?? GRENADE.blastRadius;
+    const dmg = opts?.damage ?? GRENADE.blastDamage;
+    const kb = opts?.knockback ?? 1;
     for (const soldier of this.soldiers.values()) {
       if (!soldier.state.alive) continue;
       const dist = Math.hypot(soldier.state.x - x, soldier.state.y - y);
-      if (dist > GRENADE.blastRadius) continue;
-      const falloff = 1 - dist / GRENADE.blastRadius;
-      const impulse = blastImpulse(x, y, soldier.state.x, soldier.state.y, falloff);
+      if (dist > radius) continue;
+      const falloff = 1 - dist / radius;
+      const impulse = blastImpulse(x, y, soldier.state.x, soldier.state.y, falloff, kb);
       this.damage(
         soldier,
-        Math.round(GRENADE.blastDamage * (0.45 + 0.55 * falloff)),
+        Math.round(dmg * (0.45 + 0.55 * falloff)),
         killer,
         impulse,
+        'blast',
       );
     }
   }
 
   private stepPickups(): void {
-    for (const pickup of this.pickups.values()) {
+    for (const [id, pickup] of [...this.pickups.entries()]) {
       const ps = pickup.state;
       if (!ps.active) {
-        if (pickup.respawnAt && this.now >= pickup.respawnAt) {
+        if (!pickup.ephemeral && pickup.respawnAt && this.now >= pickup.respawnAt) {
           ps.active = true;
           pickup.respawnAt = 0;
+          if (ps.kind === 'weapon' && isWeaponId(ps.item)) {
+            const ammo = spawnAmmoFor(ps.item);
+            ps.ammo = ammo.ammo;
+            ps.reserve = ammo.reserve;
+          }
         }
         continue;
       }
+      if (this.now < pickup.armedAt) continue;
       for (const soldier of this.soldiers.values()) {
         if (!soldier.state.alive) continue;
         const dist = Math.hypot(soldier.state.x - ps.x, soldier.state.y - ps.y);
         if (dist > PICKUP_RADIUS) continue;
-        if (!isWeaponId(ps.weapon)) continue;
-        this.grantWeapon(soldier, ps.weapon);
-        ps.active = false;
-        pickup.respawnAt = this.now + PICKUP_RESPAWN_MS;
+        if (!this.collectPickup(soldier, pickup)) continue;
+        if (pickup.ephemeral) {
+          this.pickups.delete(id);
+          this.state.pickups.delete(id);
+        } else {
+          ps.active = false;
+          pickup.respawnAt = this.now + PICKUP_RESPAWN_MS;
+        }
         break;
       }
     }
+  }
+
+  private collectPickup(soldier: InternalSoldier, pickup: InternalPickup): boolean {
+    const p = soldier.state;
+    const ps = pickup.state;
+    const kind = (ps.kind || 'weapon') as PickupKind;
+    if (kind === 'weapon') {
+      const item = isWeaponId(ps.item) ? ps.item : isWeaponId(ps.weapon) ? ps.weapon : null;
+      if (!item) return false;
+      if (isMelee(item)) {
+        if (p.melee === 'chainsaw' && item === 'knife') return false;
+        p.melee = item;
+        p.weapon = item;
+        return true;
+      }
+      if (isFirearm(p.firearm) && p.firearm !== item) {
+        this.dropAt(soldier, p.firearm as WeaponId, p.ammo, p.reserve);
+      }
+      p.firearm = item;
+      p.weapon = item;
+      p.ammo = ps.ammo || spawnAmmoFor(item).ammo;
+      p.reserve = ps.reserve || spawnAmmoFor(item).reserve;
+      p.reloading = false;
+      soldier.reloadEndsAt = 0;
+      return true;
+    }
+    if (kind === 'medkit') {
+      if (p.health >= PLAYER.maxHealth) return false;
+      p.health = Math.min(PLAYER.maxHealth, p.health + MEDKIT_HEAL);
+      return true;
+    }
+    if (kind === 'vest') {
+      if (p.vest >= MAX_VEST) return false;
+      p.vest = Math.min(MAX_VEST, p.vest + VEST_PICKUP);
+      return true;
+    }
+    if (kind === 'ammo') {
+      if (!isFirearm(p.firearm)) return false;
+      const cap = WEAPONS[p.firearm as WeaponId].reserveMax;
+      if (p.reserve >= cap) return false;
+      p.reserve = Math.min(cap, p.reserve + AMMO_BOX);
+      return true;
+    }
+    if (kind === 'nade') {
+      const nk = isNadeKind(ps.item) ? ps.item : 'frag';
+      this.setNadeCount(p, nk, this.nadeCount(p, nk) + 1);
+      p.nadeType = nk;
+      return true;
+    }
+    return false;
+  }
+
+  private dropAt(
+    soldier: InternalSoldier,
+    weapon: WeaponId,
+    ammo: number,
+    reserve: number,
+  ): void {
+    const face = soldier.state.facing || 1;
+    this.spawnDroppedWeapon(
+      soldier.state.x - face * 40,
+      soldier.state.y + 10,
+      weapon,
+      ammo,
+      reserve,
+      this.now + PICKUP_ARM_MS,
+    );
+  }
+
+  private spawnDroppedWeapon(
+    x: number,
+    y: number,
+    weapon: WeaponId,
+    ammo: number,
+    reserve: number,
+    armedAt = 0,
+  ): void {
+    const id = eid('drop');
+    const ps = new PickupState();
+    ps.id = id;
+    ps.kind = 'weapon';
+    ps.item = weapon;
+    ps.weapon = weapon;
+    ps.ammo = ammo;
+    ps.reserve = reserve;
+    ps.x = x;
+    ps.y = y;
+    ps.active = true;
+    this.state.pickups.set(id, ps);
+    this.pickups.set(id, { state: ps, respawnAt: 0, ephemeral: true, armedAt });
+  }
+
+  private dropFirearm(soldier: InternalSoldier): void {
+    const p = soldier.state;
+    if (!isFirearm(p.firearm)) return;
+    this.dropAt(soldier, p.firearm as WeaponId, p.ammo, p.reserve);
+    p.firearm = '';
+    p.ammo = 0;
+    p.reserve = 0;
+    p.reloading = false;
+    soldier.reloadEndsAt = 0;
+    p.weapon = isWeaponId(p.melee) ? p.melee : DEFAULT_MELEE;
+  }
+
+  private startReload(soldier: InternalSoldier): void {
+    const p = soldier.state;
+    if (p.reloading) return;
+    const id = isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON;
+    if (isMelee(id) || !isFirearm(p.firearm)) return;
+    const w = WEAPONS[p.firearm as WeaponId];
+    if (p.ammo >= w.magSize || p.reserve <= 0) return;
+    p.reloading = true;
+    soldier.reloadEndsAt = this.now + w.reloadMs;
+  }
+
+  private updateReload(soldier: InternalSoldier): void {
+    const p = soldier.state;
+    if (!p.reloading) return;
+    if (this.now < soldier.reloadEndsAt) return;
+    const id = isFirearm(p.firearm) ? (p.firearm as WeaponId) : null;
+    if (!id) {
+      p.reloading = false;
+      return;
+    }
+    const w = WEAPONS[id];
+    const need = w.magSize - p.ammo;
+    const take = Math.min(need, p.reserve);
+    p.ammo += take;
+    p.reserve -= take;
+    p.reloading = false;
+    soldier.reloadEndsAt = 0;
   }
 
   private removeBullet(id: string): void {
@@ -821,13 +1220,16 @@ export class Simulation {
     amount: number,
     killer?: InternalSoldier,
     impulse?: { vx: number; vy: number },
+    bodyPart: 'head' | 'torso' | 'legs' | 'blast' = 'torso',
   ): void {
     if (!soldier.state.alive) return;
     if (impulse) {
       soldier.state.vx += impulse.vx;
       soldier.state.vy += impulse.vy;
     }
-    soldier.state.health = Math.max(0, soldier.state.health - amount);
+    const next = applyVestDamage(soldier.state.health, soldier.state.vest, amount, bodyPart);
+    soldier.state.health = next.health;
+    soldier.state.vest = next.vest;
     if (soldier.state.health <= 0) this.kill(soldier, killer);
   }
 
@@ -838,7 +1240,19 @@ export class Simulation {
     soldier.state.jetting = false;
     soldier.cooking = false;
     soldier.state.cooking = false;
-    // Keep knockback velocity; add a death pop if barely moving
+    soldier.state.reloading = false;
+    if (isFirearm(soldier.state.firearm)) {
+      this.spawnDroppedWeapon(
+        soldier.state.x,
+        soldier.state.y,
+        soldier.state.firearm as WeaponId,
+        soldier.state.ammo,
+        soldier.state.reserve,
+      );
+    }
+    if (soldier.state.melee === 'chainsaw') {
+      this.spawnDroppedWeapon(soldier.state.x + 12, soldier.state.y, 'chainsaw', 0, 0);
+    }
     const speed = Math.hypot(soldier.state.vx, soldier.state.vy);
     if (speed < 90) {
       soldier.state.vx += Math.random() * 240 - 120;
@@ -856,8 +1270,20 @@ export class Simulation {
     const p = soldier.state;
     p.alive = true;
     p.health = PLAYER.maxHealth;
+    p.vest = 0;
     p.fuel = PLAYER.maxFuel;
-    p.grenades = PLAYER.maxGrenades;
+    p.weapon = DEFAULT_WEAPON;
+    p.firearm = DEFAULT_WEAPON;
+    p.melee = DEFAULT_MELEE;
+    const ammo = spawnAmmoFor(DEFAULT_WEAPON);
+    p.ammo = ammo.ammo;
+    p.reserve = ammo.reserve;
+    p.reloading = false;
+    p.frags = 2;
+    p.clusters = 1;
+    p.stings = 1;
+    p.nadeType = 'frag';
+    p.grenades = 4;
     p.x = spawn.x;
     p.y = spawn.y;
     p.vx = 0;
@@ -868,10 +1294,6 @@ export class Simulation {
     p.rollMs = 0;
     p.cannonball = false;
     p.backflip = false;
-    // Keep weapon unlocks across death; stay on current if still owned
-    if (!this.ownsWeapon(soldier, isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON)) {
-      p.weapon = DEFAULT_WEAPON;
-    }
     soldier.respawnAt = 0;
     soldier.onGround = false;
     soldier.rollMs = 0;
@@ -885,6 +1307,7 @@ export class Simulation {
     soldier.backflipMs = 0;
     soldier.cooking = false;
     soldier.cookStartedAt = 0;
+    soldier.reloadEndsAt = 0;
     p.cooking = false;
     this.clearInputQueue(soldier);
   }

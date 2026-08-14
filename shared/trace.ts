@@ -22,6 +22,7 @@ export type TraceTarget = {
   y: number;
   alive: boolean;
   crouching?: boolean;
+  prone?: boolean;
 };
 
 /**
@@ -118,7 +119,7 @@ export function traceBullet(
 
   for (const target of targets) {
     if (!target.alive || target.id === ownerId) continue;
-    const { halfW, halfH } = playerHalfExtents(!!target.crouching);
+    const { halfW, halfH } = playerHalfExtents(!!target.crouching, !!target.prone);
     const t = segmentHitAabb(
       x0,
       y0,
@@ -138,7 +139,7 @@ export function traceBullet(
         x: hx,
         y: hy,
         playerId: target.id,
-        bodyPart: bodyPartAtHit(hy, target.y, !!target.crouching),
+        bodyPart: bodyPartAtHit(hy, target.y, !!target.crouching, !!target.prone),
       });
     }
   }

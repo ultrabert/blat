@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { PLATFORMS } from '../../shared/constants';
-import { DEFAULT_WEAPON, type WeaponId } from '../../shared/weapons';
+import { DEFAULT_WEAPON, weaponIconKey, type WeaponId } from '../../shared/weapons';
 import { SKINS, skinPartKeys, type SkinId, DEFAULT_SKIN } from './skins';
 
 export type StickView = {
@@ -14,6 +14,7 @@ export type StickView = {
   onGround: boolean;
   jetting: boolean;
   crouching: boolean;
+  prone?: boolean;
   rolling: boolean;
   cannonball: boolean;
   backflip: boolean;
@@ -60,19 +61,25 @@ const TORSO_W = 14;
 const LIMB_THICK = 7.5;
 
 /** Held weapon display length (px) + grip/fore distances along barrel from pivot. */
-const WEAPON_HOLD: Record<
-  WeaponId,
-  { len: number; h: number; grip: number; fore: number; originX: number; originY: number }
-> = {
-  rifle: { len: 26, h: 11, grip: 4, fore: 12, originX: 0.28, originY: 0.58 },
-  sniper: { len: 32, h: 10, grip: 5, fore: 14, originX: 0.26, originY: 0.55 },
-  shotgun: { len: 24, h: 12, grip: 4, fore: 11, originX: 0.3, originY: 0.6 },
-};
+const HOLD_RIFLE = { len: 26, h: 11, grip: 4, fore: 12, originX: 0.28, originY: 0.58 };
+const HOLD_SNIPER = { len: 32, h: 10, grip: 5, fore: 14, originX: 0.26, originY: 0.55 };
+const HOLD_SHOT = { len: 24, h: 12, grip: 4, fore: 11, originX: 0.3, originY: 0.6 };
+const HOLD_PISTOL = { len: 16, h: 10, grip: 3, fore: 7, originX: 0.3, originY: 0.55 };
+const HOLD_LAUNCH = { len: 28, h: 13, grip: 5, fore: 13, originX: 0.28, originY: 0.58 };
+const HOLD_MELEE = { len: 18, h: 7, grip: 2, fore: 10, originX: 0.2, originY: 0.5 };
+
+function weaponHold(id: WeaponId): typeof HOLD_RIFLE {
+  if (id === 'de') return HOLD_PISTOL;
+  if (id === 'barrett') return HOLD_SNIPER;
+  if (id === 'spas') return HOLD_SHOT;
+  if (id === 'm79' || id === 'law') return HOLD_LAUNCH;
+  if (id === 'knife' || id === 'chainsaw') return HOLD_MELEE;
+  if (id === 'flamer') return HOLD_LAUNCH;
+  return HOLD_RIFLE;
+}
 
 function weaponTextureKey(id: WeaponId): string {
-  if (id === 'sniper') return 'icon_sniper';
-  if (id === 'shotgun') return 'icon_shotgun';
-  return 'icon_rifle';
+  return weaponIconKey(id);
 }
 
 function len2(x: number, y: number): number {
@@ -274,7 +281,7 @@ export class StickSoldier {
     this.weaponId = wid;
     const key = weaponTextureKey(wid);
     if (!this.scene.textures.exists(key)) return;
-    const hold = WEAPON_HOLD[wid];
+    const hold = weaponHold(wid);
     this.weaponImg = this.scene.add
       .image(0, 0, key)
       .setOrigin(hold.originX, hold.originY)
@@ -325,12 +332,12 @@ export class StickSoldier {
   }
 
   private computePose(view: StickView, _dtMs: number): Pose {
-    const hold = WEAPON_HOLD[view.weapon] ?? WEAPON_HOLD.rifle;
+    const hold = weaponHold(view.weapon);
     const aimA = this.resolveHoldAim(view, _dtMs);
     const face = view.aimX >= 0 ? 1 : -1;
 
     const land = this.landMs / 200;
-    const stance = view.crouching || view.rolling ? 1 : 0;
+    const stance = view.prone ? 1.4 : view.crouching || view.rolling ? 1 : 0;
     const crouch = land * 7 + stance * 8;
     const hipY = 5 + crouch;
     const shoulderY = -7 + crouch * 0.55 + stance * 2;
@@ -350,7 +357,8 @@ export class StickSoldier {
     let rFoot: Pt;
 
     const speed = Math.abs(view.vx);
-    const moving = view.onGround && speed > 25 && this.landMs <= 0 && !view.crouching;
+    const moving =
+      view.onGround && speed > 25 && this.landMs <= 0 && !view.crouching && !view.prone;
 
     if (view.rolling || view.cannonball) {
       this.rollSpin += _dtMs * 0.022 * (view.vx >= 0 ? 1 : -1);
@@ -376,6 +384,28 @@ export class StickSoldier {
       tuckHands = true;
       gunHand = { x: face * 6, y: 2 };
       offHand = { x: -face * 4, y: 3 };
+    } else if (view.prone && view.onGround) {
+      this.rollSpin *= 0.55;
+      const crawl = speed > 10;
+      if (crawl) {
+        if (this.lastGroundX === null) this.lastGroundX = view.x;
+        this.runPhase += ((view.x - this.lastGroundX) / 22) * Math.PI;
+        this.lastGroundX = view.x;
+      } else {
+        this.lastGroundX = view.x;
+        this.runPhase *= 0.9;
+      }
+      const wiggle = crawl ? Math.sin(this.runPhase) * 2.5 : 0;
+      hip.y = 12;
+      hip.x = -face * 3;
+      shoulder.y = 9.5;
+      shoulder.x = face * 7;
+      head.x = face * 15;
+      head.y = 7.5;
+      lFoot = { x: -face * 16 + wiggle, y: 14 };
+      rFoot = { x: -face * 8 - wiggle, y: 14 };
+      lKnee = { x: -face * 11 + wiggle * 0.4, y: 13 };
+      rKnee = { x: -face * 5 - wiggle * 0.4, y: 13 };
     } else if (view.crouching && view.onGround && !moving) {
       this.rollSpin *= 0.65;
       lFoot = { x: -7, y: 14 };
@@ -462,8 +492,8 @@ export class StickSoldier {
         ? this.rollSpin
         : this.rollSpin * 0.15,
     );
-    const sy = view.rolling ? 0.85 : pose.squash;
-    const sx = view.rolling ? 0.85 : 1 + (1 - pose.squash) * 0.55;
+    const sy = view.rolling ? 0.85 : view.prone ? 0.58 : pose.squash;
+    const sx = view.rolling ? 0.85 : view.prone ? 1.38 : 1 + (1 - pose.squash) * 0.55;
     this.root.setScale(sx, sy);
 
     this.gunGfx.clear();
@@ -509,7 +539,7 @@ export class StickSoldier {
   }
 
   private drawHeldWeapon(pose: Pose, view: StickView, tuck: boolean): void {
-    const hold = WEAPON_HOLD[view.weapon] ?? WEAPON_HOLD.rifle;
+    const hold = weaponHold(view.weapon);
     const aimA = this.holdAim;
     const face = view.aimX >= 0 ? 1 : -1;
     const pivot = tuck

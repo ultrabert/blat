@@ -3,8 +3,8 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { PLAYER } from './constants.js';
-import { stepMovement, type MoveBody, type MoveInput } from './physics.js';
+import { GRAVITY, PLAYER, RAMPS, TICK_MS, playerHalfExtents } from './constants.js';
+import { separateFromSolids, stepMovement, type MoveBody, type MoveInput } from './physics.js';
 
 function body(partial: Partial<MoveBody> = {}): MoveBody {
   return {
@@ -29,6 +29,8 @@ function body(partial: Partial<MoveBody> = {}): MoveBody {
     landGraceMs: 0,
     cannonballMs: 0,
     backflipMs: 0,
+    prone: false,
+    proneHoldMs: 0,
     ...partial,
   };
 }
@@ -104,5 +106,133 @@ describe('advanced-movement', () => {
     const b = body({ onGround: false, vx: 350, y: 200 });
     stepMovement(b, input({ move: 1 }), DT);
     assert.ok(b.vx > 350, 'air accel should add, not replace');
+  });
+});
+
+describe('ground-inertia-and-slopes', () => {
+  it('ground-accel-does-not-snap-to-walk', () => {
+    const b = body({ vx: 0, onGround: true });
+    stepMovement(b, input({ move: 1 }), DT);
+    assert.ok(b.vx > 20, `should start accelerating, vx=${b.vx}`);
+    assert.ok(b.vx < PLAYER.speed * 0.7, `should not snap to walk, vx=${b.vx}`);
+  });
+
+  it('ramp-supports-onGround', () => {
+    const ramp = RAMPS[0]!;
+    const x = (ramp.ax + ramp.bx) / 2;
+    const t = (x - ramp.ax) / (ramp.bx - ramp.ax);
+    const surfaceY = ramp.ay + t * (ramp.by - ramp.ay);
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x,
+      y: surfaceY - halfH - 6,
+      vx: 30,
+      vy: 40,
+      onGround: false,
+    });
+    for (let i = 0; i < 10; i++) stepMovement(b, input({ move: 1 }), DT);
+    assert.equal(b.onGround, true);
+    assert.ok(Math.abs(b.y + halfH - surfaceY) < 22, `feet near ramp, y=${b.y} surface=${surfaceY}`);
+  });
+});
+
+describe('prone-and-blocking', () => {
+  it('hold-crouch-still-goes-prone', () => {
+    const floorTop = 850;
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x: 1280,
+      y: floorTop - halfH,
+      onGround: true,
+      vx: 0,
+    });
+    const ticks = Math.ceil((PLAYER.proneHoldMs + 50) / (DT * 1000));
+    for (let i = 0; i < ticks; i++) {
+      stepMovement(b, input({ crouch: true }), DT);
+    }
+    assert.equal(b.prone, true);
+    assert.equal(b.crouching, true);
+    const proneH = playerHalfExtents(true, true).halfH;
+    assert.ok(Math.abs(b.y + proneH - floorTop) < 8, `prone feet on floor, y=${b.y}`);
+  });
+
+  it('tap-crouch-with-move-rolls-not-prone', () => {
+    const floorTop = 850;
+    const { halfH } = playerHalfExtents(false);
+    const b = body({ x: 1280, y: floorTop - halfH, onGround: true, vx: 0 });
+    stepMovement(b, input({ crouch: true, move: 1 }), DT);
+    assert.ok(b.rollMs > 0);
+    assert.equal(b.prone, false);
+  });
+
+  it('separate-pushes-overlapping-bodies', () => {
+    const { halfW, halfH } = playerHalfExtents(false);
+    const a = body({ x: 400, y: 400, vx: 0 });
+    separateFromSolids(a, [{ x: 408, y: 400, halfW, halfH, vx: 0 }]);
+    assert.ok(Math.abs(a.x - 400) > 2, `should unstick, x=${a.x}`);
+  });
+
+  it('separate-allows-standing-on-shoulders', () => {
+    const { halfW, halfH } = playerHalfExtents(false);
+    const a = body({ x: 400, y: 400 - halfH, vx: 0, vy: 20 });
+    separateFromSolids(a, [{ x: 400, y: 400 + halfH - 4, halfW, halfH, vx: 0 }]);
+    assert.equal(a.onGround, true);
+    assert.ok(a.y < 400, `should rest on top, y=${a.y}`);
+  });
+});
+
+describe('sim-tick', () => {
+  it('tick-is-near-60hz', () => {
+    assert.ok(TICK_MS <= 16, `expected ~60 Hz tick, got ${TICK_MS}ms`);
+  });
+});
+
+describe('limited-jetpack', () => {
+  it('held-jet-climbs-against-gravity', () => {
+    const b = body({ onGround: false, vy: 0, x: 1280, y: 350, fuel: 100 });
+    const startY = b.y;
+    for (let i = 0; i < 20; i++) stepMovement(b, input({ jet: true }), DT);
+    assert.ok(b.jetting, 'should still be jetting');
+    assert.ok(b.y < startY - 40, `should climb, y ${b.y} from ${startY}`);
+    assert.ok(b.vy < 0, 'velocity should be upward (negative)');
+  });
+
+  it('jet-thrust-exceeds-gravity', () => {
+    const net = PLAYER.jetAcceleration + GRAVITY;
+    assert.ok(net < -200, `held jet must climb (net ${net} px/s²)`);
+  });
+
+  it('fuel-lasts-across-the-arena', () => {
+    const b = body({ onGround: false, x: 1280, y: 350, fuel: PLAYER.maxFuel });
+    const seconds = 3.5;
+    for (let i = 0; i < Math.round(seconds / DT); i++) {
+      stepMovement(b, input({ jet: true }), DT);
+    }
+    assert.ok(b.fuel > 10, `expected remaining fuel after ${seconds}s, got ${b.fuel}`);
+  });
+
+  it('jet-strafe-adds-more-than-air-accel', () => {
+    const gliding = body({ onGround: false, vx: 0, x: 1280, y: 350, fuel: 100 });
+    const jetting = body({ onGround: false, vx: 0, x: 1280, y: 350, fuel: 100 });
+    stepMovement(gliding, input({ move: 1 }), DT);
+    stepMovement(jetting, input({ move: 1, jet: true }), DT);
+    assert.ok(jetting.vx > gliding.vx + 8, `jet strafe ${jetting.vx} vs glide ${gliding.vx}`);
+  });
+
+  it('ceiling-slide-stops-upward-into-platform', () => {
+    // High mid platform: x=1280 y=160 h=22 → underside at 171
+    const platBottom = 160 + 11;
+    const halfH = (PLAYER.height - 2) / 2;
+    const b = body({
+      onGround: false,
+      x: 1280,
+      y: platBottom + halfH + 6,
+      vy: -480,
+      fuel: 100,
+    });
+    stepMovement(b, input({ jet: true }), DT);
+    assert.ok(b.y >= platBottom + halfH - 1, `should not pass through ceiling, y=${b.y}`);
+    assert.ok(b.vy >= -20, `upward speed should dump, vy=${b.vy}`);
+    assert.equal(b.onGround, false);
   });
 });

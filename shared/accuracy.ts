@@ -15,6 +15,7 @@ export const ACCURACY = {
   jetSpread: 0.09,
   rollSpread: 0.1,
   crouchMult: 0.45,
+  proneMult: 0.28,
   /** Upward recoil kick per shot (radians). */
   recoilKick: 0.048,
   recoilKickAuto: 0.055,
@@ -29,7 +30,7 @@ export const BODY = {
   headFrac: 0.28,
   torsoFrac: 0.42,
   /** Damage multipliers. */
-  head: 1.85,
+  head: 2.0,
   torso: 1.0,
   legs: 0.65,
 } as const;
@@ -42,6 +43,7 @@ export type AccuracyStance = {
   onGround: boolean;
   jetting: boolean;
   crouching: boolean;
+  prone?: boolean;
   rolling: boolean;
   cannonball?: boolean;
 };
@@ -64,7 +66,8 @@ export function stanceSpreadRad(s: AccuracyStance): number {
     const t = Math.min(1, (speed - 40) / 280);
     spread = ACCURACY.baseSpread + (ACCURACY.moveSpread - ACCURACY.baseSpread) * t;
   }
-  if (s.crouching && s.onGround && !s.rolling) spread *= ACCURACY.crouchMult;
+  if (s.prone && s.onGround && !s.rolling) spread *= ACCURACY.proneMult;
+  else if (s.crouching && s.onGround && !s.rolling) spread *= ACCURACY.crouchMult;
   return spread;
 }
 
@@ -175,8 +178,9 @@ export function bodyPartAtHit(
   hitY: number,
   bodyY: number,
   crouching: boolean,
+  prone = false,
 ): BodyPart {
-  const h = crouching ? PLAYER.crouchHeight : PLAYER.height;
+  const h = prone ? PLAYER.proneHeight : crouching ? PLAYER.crouchHeight : PLAYER.height;
   const top = bodyY - h / 2;
   const rel = (hitY - top) / h; // 0 at head top, 1 at feet
   if (rel < BODY.headFrac) return 'head';

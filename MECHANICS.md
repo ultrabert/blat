@@ -8,7 +8,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | Choice | Benefit | Cost |
 |---|---|---|
 | Custom fixed-step arcade sim (`shared/`) + Colyseus authority | Predictable ticks, easy client prediction, low bandwidth | Not full rigid-body Soldat; no Matter/Box2D |
-| Grounded jet (ascent cap, hungry fuel, soft air steer) | Ground fights matter; jets are bursts | Less freestyle aerial dueling |
+| Hover jet (thrust > gravity, long fuel, ceiling slide) | Soldat-style aerial gunplay | Ground fights are optional; can retune grounded later |
 | Client prediction (move + projectiles) | Responsive feel over internet | Must share exact step math with server |
 | Client-only ragdoll/gibs | Cheap, juicy | Bodies are not authoritative obstacles |
 | Single Fly machine | Correct in-memory rooms | No horizontal scale yet |
@@ -25,7 +25,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | 4 | Accuracy, recoil, body hitboxes | **Done** — stance spread, recoil climb, head/torso/legs |
 | 5 | Advanced movement (cannonball, etc.) | **Done** — bhop, kick jump, cannonball, backflip, air momentum |
 | 6 | Grenade cook, richer ragdoll/knockback | **Done** — cook/hold, blast+bullet knockback, death fling |
-| 7 | Weapon arsenal + pickups | **Done** — rifle / sniper / shotgun + map pickups |
+| 7 | Weapon arsenal + pickups | **Done** — Wave B kit, mags, drops, vest, nades |
 | 8 | Modes / realism toggles / polish | Partial (DM lobby + spectator demo) |
 
 ## Mechanic: arcade-physics-core
@@ -34,8 +34,8 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together.  
-**Tests:** movement stays within arena; platforms support landing.  
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Arcade `RAMPS` are line segments, not rigid-body polygons. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
+**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`.  
 **Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/simulation.ts`
 
 ## Mechanic: ballistic-projectiles
@@ -53,11 +53,12 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 ## Mechanic: limited-jetpack
 
-**Phase:** 1/3  
+**Phase:** 1/3 — **A1 retune**  
 **Tags:** `@mechanic limited-jetpack`  
-**Description:** Fuel-limited upward thrust; regenerates (faster grounded).  
-**Trade-offs:** More fuel / thrust undermines grounded movement skill and future accuracy penalties.  
-**Files:** `shared/physics.ts`, HUD in `GameScene`
+**Description:** Fuel-limited thrust that **beats gravity**. Hold W/Space to climb; feather to hover; strafe in air while jetting. Jetting into a platform underside (or the sky bound) dumps upward speed so you can slide along the ceiling. Fuel lasts ~5s continuous; regenerates on ground and slower while gliding (not while thrusting). Grounded W/Space is still a jump, then jets.  
+**Trade-offs:** Aerial duels dominate if fuel is too generous; spread is still worse while jetting (`state-accuracy`). Can retune toward grounded later without a netcode change.  
+**Tests:** `shared/movement.test.ts` (`limited-jetpack`)  
+**Files:** `shared/physics.ts`, `shared/constants.ts` (`PLAYER.jet*`, fuel), HUD in `GameScene`
 
 ## Mechanic: throwable-grenades
 
@@ -91,7 +92,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 3  
 **Tags:** `@mechanic crouch-cover`  
-**Description:** Crouch (S/↓) lowers hitbox + muzzle. Crouch+move starts a short momentum roll. Waist-high `COVERS` are solid for bullets and bodies — crouched players hide fully; standing peeks (head exposed). Grenade arcs clear covers.  
+**Description:** Crouch (S/↓) lowers hitbox + muzzle. Crouch+move starts a short momentum roll. Hold S still ~240ms on ground to go **prone** (tiny AABB, crawl speed, tightest spread). Release S stands. Waist-high `COVERS` are solid for bullets and bodies — crouched players hide fully; standing peeks (head exposed). Grenade arcs clear covers.  
 **Dependencies:** hit traces, movement  
 **Trade-offs:**
 - Safety vs offense (can't easily shoot through your own barricade while crouched)  
@@ -108,7 +109,8 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Dependencies:** `ballistic-projectiles`, movement stance  
 **Trade-offs:**
 - Mobility vs accuracy — jetting/rolling is loud and inaccurate by design  
-- Crouch tightens the cone but slows you and ties into cover  
+- Crouch tightens the cone but slows you and ties into cover
+- Prone is tighter still (`proneMult`) but you crawl and present a low silhouette  
 **Tests:** `shared/accuracy.test.ts`  
 **Files:** `shared/accuracy.ts`, `shared/simulation.ts`, `ProjectilePredictor`, `GameScene`
 
@@ -124,7 +126,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 4  
 **Tags:** `@mechanic body-hitboxes`  
-**Description:** Player AABB hits resolve to head / torso / legs by vertical fraction (crouch-aware). Damage multiplies: head 1.85×, torso 1×, legs 0.65×.  
+**Description:** Player AABB hits resolve to head / torso / legs by vertical fraction (crouch-aware). Damage multiplies: head 2.0×, torso 1×, legs 0.65×. Barrett head is always lethal.  
 **Dependencies:** swept traces  
 **Trade-offs:** Rewards aim at peeks over cover; legs are forgiving for low sprays.  
 **Tests:** `shared/accuracy.test.ts`  
@@ -136,6 +138,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic advanced-movement`  
 **Description:** Momentum chaining on top of arcade movement:
 - **Overspeed coast** — same-direction speed above walk decays slowly (prone/roll cancel keeps momentum)
+- **Ground inertia** — accelerate / brake toward walk (or crouch/crawl) speed; no snap from rest
 - **Air control** — soft lateral accel; does not snap `vx`
 - **Bunny hop** — jump inside `landGraceMs` after landing multiplies horizontal speed (capped)
 - **Kick jump** — grounded jump while strafing adds a forward nudge
@@ -144,31 +147,73 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Dependencies:** `arcade-physics-core`, `limited-jetpack`, rolls  
 **Trade-offs:**
-- Mobility skill ceiling vs beginner snap-strafe feel (walk still snaps; overspeed is opt-in via chaining)
+- Mobility skill ceiling vs beginner snap-strafe feel (walk accelerates; overspeed is still opt-in via chaining)
 - Cannonball / flip are inaccurate and spend attention / fuel  
 **Tests:** `shared/movement.test.ts`  
 **Files:** `shared/physics.ts`, `shared/constants.ts` (`PLAYER.*` move tunables), prediction, `StickSoldier`
 
 ## Mechanic: weapon-arsenal
 
-**Phase:** 7  
+**Phase:** 7 — **B1 / B5 retune**  
 **Tags:** `@mechanic weapon-arsenal`  
-**Description:** Three guns with shared fire math:
-- **Rifle (1)** — default, mid RoF / mid spread  
-- **Sniper (2)** — slow bolt, tight cone, high damage & muzzle speed  
-- **Shotgun (3)** — slow pump, 7 pellets, wide cone, per-pellet damage  
+**Description:** Soldat-ish kit. Spawn with Desert Eagle. Map guns are objects. `1` firearm / `2` melee.
+- **DE** — 7-round tap cannon; 2-tap torso, head deletes  
+- **MP5 / AK / minigun** — spray vs mid vs hose  
+- **Barrett** — bolt, body chunky, head OHK  
+- **SPAS-12** — 7-pellet pump  
+- **M79 / LAW** — arcing shell / flat rocket, explode on hit  
+- **Flamer** — short-life particles  
+- **Knife / chainsaw** — melee (dry-gun finisher)  
 
-Keys `1/2/3` equip owned weapons. Crosshair reflects weapon cone.  
-**Trade-offs:** Range vs RoF — sniper punishes spray; shotgun owns close range; rifle is the flexible middle.  
+Shared `planFire` keeps client prediction identical to the server. Head multiplier is 2.0.  
+**Trade-offs:** Fast TTK + vest makes armor pickups matter; DE/Barrett punish misses less than the old sponge rifle.  
 **Tests:** `shared/weapons.test.ts`  
-**Files:** `shared/weapons.ts`, `shared/simulation.ts`, `ProjectilePredictor`, `GameScene`
+**Files:** `shared/weapons.ts`, `shared/fire.ts`, `shared/simulation.ts`, `ProjectilePredictor`, `GameScene`
+
+## Mechanic: magazines-reload
+
+**Phase:** B2  
+**Tags:** `@mechanic magazines-reload`  
+**Description:** Firearms have mag + reserve. Empty mag or `R` reloads (`reloadMs`). Ammo boxes add reserve. Melee has no mag.  
+**Tests:** `shared/weapons.test.ts` (`magazines-reload`)  
+**Files:** `shared/weapons.ts`, `shared/simulation.ts`, HUD
 
 ## Mechanic: weapon-pickups
 
-**Phase:** 7  
+**Phase:** 7 — **B3 retune**  
 **Tags:** `@mechanic weapon-pickups`  
-**Description:** Map pads unlock sniper/shotgun (and a mid rifle pad). Touch to grant + equip; pad respawns after `PICKUP_RESPAWN_MS`. Unlocks persist across death.  
-**Files:** `shared/weapons.ts` (`WEAPON_PICKUPS`), `shared/simulation.ts`, `schema.PickupState`
+**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Map pads respawn; drops are ephemeral.  
+**Files:** `shared/weapons.ts` (`MAP_PICKUPS`), `shared/simulation.ts`, `schema.PickupState`
+
+## Mechanic: melee
+
+**Phase:** B4  
+**Tags:** `@mechanic melee`  
+**Description:** Knife always (key `2`). Short trace, high damage. Chainsaw pickup replaces the melee slot (hold-fire ticks).  
+**Files:** `shared/weapons.ts`, `shared/simulation.ts` (`resolveMelee`)
+
+## Mechanic: vest-medkits
+
+**Phase:** B6  
+**Tags:** `@mechanic vest-medkits`  
+**Description:** Vest 0–100 soaks ~50% of body shots (less on head). Medkits +50 HP. Map pads. Spawn with no vest.  
+**Tests:** `shared/weapons.test.ts` (`vest-medkits`)  
+**Files:** `shared/fire.ts` (`applyVestDamage`), `shared/weapons.ts`, simulation pickups
+
+## Mechanic: nade-variety
+
+**Phase:** B7  
+**Tags:** `@mechanic throwable-grenades`  
+**Description:** Frag / cluster / sting. `V` cycles. Cook still on RMB/G. Cluster bursts into child nades; sting is a weak blast plus radial pellets. Spawn 2/1/1.  
+**Tests:** `shared/weapons.test.ts` (`nade-variety`), `shared/grenades.test.ts`  
+**Files:** `shared/grenades.ts` (`NADE`), `shared/simulation.ts`
+
+## Mechanic: special-ballistics
+
+**Phase:** B8  
+**Tags:** `@mechanic special-ballistics`  
+**Description:** Per-shot gravity/drag/life from the weapon def. LAW is a flat rocket; M79 a heavy shell; both explode on hit. Flamer particles die in ~200ms with heavy drag.  
+**Files:** `shared/fire.ts` (`planFire`), `shared/ballistics.ts`, simulation `stepBullet`
 
 ## Mechanic: bot-dm-ai
 
@@ -177,6 +222,22 @@ Keys `1/2/3` equip owned weapons. Crosshair reflects weapon cone.
 **Description:** Bots pick a sticky target (prefer humans, else other soldiers) and hold it for ~0.7–2.2s, then nearest or random. Close range they strafe / back off / roll instead of always walking into the target. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
 **Trade-offs:** Random retarget + strafe breaks 1v1 mirror loops; bots look less “aimed.” Extra demo bots cost a bit of sim.  
 **Files:** `shared/simulation.ts` (`updateBotBrain`), `shared/constants.ts` (`BOT`, `DEMO_BOTS`), `server/rooms/DmRoom.ts`
+
+## Mechanic: body-blocking
+
+**Phase:** A5  
+**Tags:** `@mechanic body-blocking`  
+**Description:** Living players are solid to each other. Pairwise AABB separate (50/50) after soldier steps; you can stand on shoulders. Client prediction pushes the local body out of interpolated remotes.  
+**Trade-offs:** Spawn piles and nade-boosts become possible; prediction vs remote can still ghost for a frame.  
+**Tests:** `shared/movement.test.ts` (`prone-and-blocking`)  
+**Files:** `shared/physics.ts` (`separateFromSolids`), `shared/simulation.ts`, `PredictionController`
+
+## Mechanic: mouse-lead-camera
+
+**Phase:** A3  
+**Tags:** `@mechanic mouse-lead-camera`  
+**Description:** Local camera lerps toward the player plus a capped pull toward the cursor (lead 0.42, max 240px). Spectator camera still follows the fight cluster.  
+**Files:** `src/game/scenes/GameScene.ts`
 
 ## How agents / humans must edit mechanics
 

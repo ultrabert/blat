@@ -5,6 +5,20 @@
  */
 import { PLAYER } from './constants.js';
 
+export type NadeKind = 'frag' | 'cluster' | 'sting';
+
+export const NADE_KINDS: NadeKind[] = ['frag', 'cluster', 'sting'];
+
+export function isNadeKind(v: string): v is NadeKind {
+  return v === 'frag' || v === 'cluster' || v === 'sting';
+}
+
+export const NADE = {
+  frag: { fuseMs: 2000, blastRadius: 110, blastDamage: 55, knockback: 1 },
+  cluster: { fuseMs: 2000, blastRadius: 62, blastDamage: 26, knockback: 0.7, children: 5 },
+  sting: { fuseMs: 1800, blastRadius: 88, blastDamage: 16, knockback: 0.45, pellets: 12, pelletDamage: 10 },
+} as const;
+
 export const GRENADE = {
   /** Full fuse from pin pull to boom. */
   fuseMs: 2000,
@@ -19,6 +33,7 @@ export const GRENADE = {
   blastLift: 140,
   bounce: 0.45,
   bounceFriction: 0.85,
+  clusterChildFuseMs: 320,
 } as const;
 
 export const KNOCKBACK = {
@@ -40,11 +55,12 @@ export function blastImpulse(
   targetX: number,
   targetY: number,
   falloff: number,
+  knockbackScale = 1,
 ): { vx: number; vy: number } {
   const dx = targetX - bombX;
   const dy = targetY - bombY;
   const len = Math.hypot(dx, dy) || 1;
-  const f = Math.max(0, Math.min(1, falloff));
+  const f = Math.max(0, Math.min(1, falloff)) * knockbackScale;
   return {
     vx: (dx / len) * GRENADE.blastKnockback * f,
     vy: (dy / len) * GRENADE.blastKnockback * f * 0.85 - GRENADE.blastLift * f,

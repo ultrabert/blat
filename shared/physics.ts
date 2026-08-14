@@ -13,6 +13,8 @@ import {
   GRAVITY,
   PLAYER,
   PLATFORMS,
+  RAMPS,
+  TICK_MS,
   playerHalfExtents,
 } from './constants.js';
 import { recoverRecoil } from './accuracy.js';
@@ -46,6 +48,8 @@ export type MoveBody = {
   cannonballMs: number;
   /** Brief flip window for visuals / locked facing. */
   backflipMs: number;
+  prone: boolean;
+  proneHoldMs: number;
 };
 
 export type MoveInput = {
@@ -65,15 +69,16 @@ function len(x: number, y: number): number {
 }
 
 function snapFeetToGround(body: MoveBody): void {
-  const { halfW, halfH } = playerHalfExtents(body.crouching);
+  const { halfW, halfH } = playerHalfExtents(body.crouching, body.prone);
+  const searchH = playerHalfExtents(false, false).halfH;
   let bestTop: number | null = null;
   for (const plat of PLATFORMS) {
     const left = plat.x - plat.w / 2;
     const right = plat.x + plat.w / 2;
     const top = plat.y - plat.h / 2;
     if (body.x + halfW <= left || body.x - halfW >= right) continue;
-    const feet = body.y + halfH;
-    if (feet >= top - 6 && feet <= top + 20) {
+    const feet = body.y + searchH;
+    if (feet >= top - 6 && feet <= top + 24) {
       if (bestTop === null || top < bestTop) bestTop = top;
     }
   }
@@ -93,16 +98,24 @@ function applyHorizontal(
   if (body.rollMs > 0 || body.cannonballMs > 0 || body.backflipMs > 0) return;
 
   if (grounded) {
-    const wishSpeed = body.crouching ? PLAYER.crouchSpeed : PLAYER.speed;
+    const wishSpeed = body.prone
+      ? PLAYER.proneSpeed
+      : body.crouching
+        ? PLAYER.crouchSpeed
+        : PLAYER.speed;
     if (input.move !== 0) {
       const wish = input.move * wishSpeed;
-      // Same-direction overspeed: coast (prone-cancel / bhop keep speed)
+      const reversing = body.vx !== 0 && Math.sign(body.vx) !== input.move;
       if (Math.sign(body.vx) === input.move && Math.abs(body.vx) > wishSpeed + 10) {
         const decay = PLAYER.overspeedDecayGround * dt;
         if (Math.abs(body.vx) <= decay) body.vx = wish;
         else body.vx -= Math.sign(body.vx) * decay;
       } else {
-        body.vx = wish;
+        const a = reversing ? PLAYER.groundBrake : PLAYER.groundAccel;
+        body.vx += input.move * a * dt;
+        if (!reversing && Math.abs(body.vx) > wishSpeed && Math.sign(body.vx) === input.move) {
+          body.vx = wish;
+        }
       }
       body.facing = input.move > 0 ? 1 : -1;
     } else {
@@ -143,6 +156,8 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.landGraceMs = 0;
     body.cannonballMs = 0;
     body.backflipMs = 0;
+    body.prone = false;
+    body.proneHoldMs = 0;
     return;
   }
 
@@ -167,6 +182,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
   body.holdJet = input.jet;
 
   const prevCrouch = body.crouching;
+  const prevProne = body.prone;
   const wasRolling = body.rollMs > 0;
 
   // --- Cannonball: tap crouch while falling fast ---
@@ -229,6 +245,19 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     if (!body.crouching) body.rollDir = 0;
   }
 
+  if (!input.crouch || !body.onGround || body.rollMs > 0 || body.cannonballMs > 0) {
+    if (!input.crouch || !body.onGround) {
+      body.prone = false;
+      body.proneHoldMs = 0;
+    }
+  } else if (Math.abs(input.move) < 0.5) {
+    body.proneHoldMs += dt * 1000;
+    if (body.proneHoldMs >= PLAYER.proneHoldMs) body.prone = true;
+  } else if (!body.prone) {
+    body.proneHoldMs = 0;
+  }
+  if (body.prone) body.crouching = true;
+
   // Aim facing when not locked in a move
   if (
     body.rollMs <= 0 &&
@@ -239,7 +268,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.facing = body.aimX >= 0 ? 1 : -1;
   }
 
-  if (body.onGround && prevCrouch !== body.crouching) {
+  if (body.onGround && (prevCrouch !== body.crouching || prevProne !== body.prone)) {
     snapFeetToGround(body);
   }
 
@@ -268,6 +297,8 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.rollDir = 0;
     body.cannonballMs = 0;
     body.landGraceMs = 0;
+    body.prone = false;
+    body.proneHoldMs = 0;
   } else if (
     jetEdge &&
     !body.onGround &&
@@ -287,8 +318,8 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.crouching = false;
     body.jetting = true;
   } else if (input.jet && body.fuel > 0) {
+    // @mechanic limited-jetpack — thrust beats gravity; hold climbs, feather hovers
     body.vy += PLAYER.jetAcceleration * dt;
-    // Soft ascent cap — stops indefinite hover climbs
     if (body.vy < -PLAYER.jetMaxAscent) body.vy = -PLAYER.jetMaxAscent;
     body.fuel = Math.max(0, body.fuel - PLAYER.fuelBurnRate * dt);
     body.jetting = true;
@@ -296,6 +327,9 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
     body.rollMs = 0;
     body.rollDir = 0;
     if (body.cannonballMs > 0) body.cannonballMs = 0;
+    if (input.move !== 0 && body.backflipMs <= 0) {
+      body.vx += input.move * PLAYER.jetStrafeAccel * dt;
+    }
   } else {
     const regen = body.onGround
       ? PLAYER.fuelRegenRate
@@ -325,7 +359,7 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
 }
 
 function collideBody(body: MoveBody): void {
-  const { halfW, halfH } = playerHalfExtents(body.crouching);
+  const { halfW, halfH } = playerHalfExtents(body.crouching, body.prone);
   const wasGrounded = body.onGround;
   body.onGround = false;
   body.x = clamp(body.x, halfW, GAME_WIDTH - halfW);
@@ -353,13 +387,39 @@ function collideBody(body: MoveBody): void {
     }
 
     const overlapTop = playerBottom - top;
+    const overlapBottom = bottom - playerTop;
+    const travel = Math.abs(body.vy) / 28;
+    const slop = snapDepth + travel + 4;
+
+    // Soldat ceiling slide: jetting up into a slab underside, then strafe along it.
+    if (
+      body.vy < 0 &&
+      (body.jetting || body.backflipMs > 0) &&
+      overlapBottom > 0 &&
+      overlapBottom <= slop &&
+      overlapBottom < overlapTop
+    ) {
+      body.y = bottom + halfH;
+      body.vy = 0;
+      continue;
+    }
+
     const canLand =
       body.rollMs > 0 || body.cannonballMs > 0 || wasGrounded || body.vy >= -40;
-    if (canLand && overlapTop > 0 && overlapTop <= snapDepth + Math.abs(body.vy) * 0.05) {
+    if (canLand && overlapTop > 0 && overlapTop <= slop) {
       body.y = top - halfH;
       body.vy = 0;
       body.onGround = true;
     }
+  }
+
+  collideRamps(body);
+
+  // Map sky — hang and strafe under the world ceiling
+  const sky = halfH + 8;
+  if (body.y < sky) {
+    body.y = sky;
+    if (body.vy < 0) body.vy = 0;
   }
 
   for (const cover of COVERS) {
@@ -421,6 +481,65 @@ function resolveSolid(
   } else {
     body.y = bottom + halfH;
     body.vy = Math.max(0, body.vy);
+  }
+}
+
+function collideRamps(body: MoveBody): void {
+  const { halfH } = playerHalfExtents(body.crouching, body.prone);
+  const feetX = body.x;
+  const feetY = body.y + halfH;
+  const dt = TICK_MS / 1000;
+  for (const r of RAMPS) {
+    const span = r.bx - r.ax || 1;
+    const t = (feetX - r.ax) / span;
+    if (t < -0.02 || t > 1.02) continue;
+    const surfaceY = r.ay + t * (r.by - r.ay);
+    const pen = feetY - surfaceY;
+    if (pen > -10 && pen < 24 && body.vy >= -90) {
+      body.y = surfaceY - halfH;
+      body.vy = 0;
+      body.onGround = true;
+      const slope = (r.by - r.ay) / span;
+      body.vx += GRAVITY * slope * dt * 0.85;
+    }
+  }
+}
+
+export type Blocker = {
+  x: number;
+  y: number;
+  halfW: number;
+  halfH: number;
+  vx: number;
+};
+
+/** Push `body` out of other soldiers (prediction vs remotes, or half of a pair). */
+export function separateFromSolids(body: MoveBody, blockers: Blocker[]): void {
+  if (!body.alive) return;
+  const { halfW, halfH } = playerHalfExtents(body.crouching, body.prone);
+  for (const o of blockers) {
+    const dx = body.x - o.x;
+    const dy = body.y - o.y;
+    const overlapX = halfW + o.halfW - Math.abs(dx);
+    const overlapY = halfH + o.halfH - Math.abs(dy);
+    if (overlapX <= 0 || overlapY <= 0) continue;
+    if (dy < 0 && overlapY <= overlapX + 8 && body.vy >= -40) {
+      body.y = o.y - o.halfH - halfH;
+      body.vy = 0;
+      body.onGround = true;
+      body.vx += o.vx * 0.12;
+      continue;
+    }
+    if (overlapX < overlapY) {
+      const dir = dx >= 0 ? 1 : -1;
+      body.x += overlapX * dir;
+      body.vx += dir * 40;
+    } else {
+      const dir = dy >= 0 ? 1 : -1;
+      body.y += overlapY * dir;
+      if (dir > 0) body.vy = Math.max(body.vy, 0);
+      else body.vy = Math.min(body.vy, 0);
+    }
   }
 }
 
