@@ -13,7 +13,7 @@ When the user is iterating on **feel, art, audio, weapons, or anything they will
    - **Local agent with Fly CLI:** `npm run ship` (tests + `fly deploy --yes`).
    - **Cloud / iPhone agent:** commit the playable change, push `main` (or merge the PR into `main`). GitHub Action `Fly Deploy` ships to Fly. Do not force-push.
 4. Reply with the play URL: **https://blat.fly.dev/** — hard-refresh after a deploy. Password is the Fly secret `BLAT_PASSWORD` (same as local `.env` if they kept them in sync). Do not print the password unless they ask.
-5. If they ask to **watch** or **demo**: open the live site, create a room (bots fill empty slots), and report what you see (screenshots if the browser tools are available). Do not spend the turn only describing controls.
+5. If they ask to **watch** or **demo**: the live URL is **https://blat.fly.dev/demo** (spectator, bots fight). Open it and report what you see (screenshots if the browser tools are available). Do not spend the turn only describing controls.
 
 Create/join needs **one** Fly machine in `sin`. Do not scale out extra regions.
 

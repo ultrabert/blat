@@ -38,7 +38,7 @@ One human → bots fill slots. Second human → bots leave.
 
 **https://blat.fly.dev/** — hard-refresh after a deploy. Lobby password is the Fly secret `BLAT_PASSWORD`.
 
-Prompt in Cursor (desktop or iPhone) → agent ships → you play there. One human in a room gets bots; a second human makes the bots leave.
+Prompt in Cursor (desktop or iPhone) → agent ships → open **https://blat.fly.dev/demo** to watch bots fight, or create a game at **https://blat.fly.dev/**.
 
 iPhone Cursor is for **prompts**. Play in Safari (or a computer) — the game needs a keyboard + mouse.
 

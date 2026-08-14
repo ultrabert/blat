@@ -7,7 +7,11 @@ import { GameScene } from './scenes/GameScene';
 
 let started = false;
 
-export function startGame(room: Room<GameState>, roomCode: string): void {
+export function startGame(
+  room: Room<GameState>,
+  roomCode: string,
+  opts: { spectate?: boolean } = {},
+): void {
   if (started) return;
   started = true;
 
@@ -27,6 +31,7 @@ export function startGame(room: Room<GameState>, roomCode: string): void {
         preBoot: (game) => {
           game.registry.set('room', room);
           game.registry.set('roomCode', roomCode);
+          game.registry.set('spectate', !!opts.spectate);
         },
       },
     };

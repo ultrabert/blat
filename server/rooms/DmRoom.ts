@@ -1,6 +1,6 @@
 import { Room, Client } from 'colyseus';
 import { TICK_MS, type PlayerInput } from '../../shared/constants.js';
-import { normalizeRoomCode } from '../../shared/roomCode.js';
+import { isDemoRoomCode, normalizeRoomCode } from '../../shared/roomCode.js';
 import { GameState } from '../../shared/schema.js';
 import { Simulation } from '../../shared/simulation.js';
 
@@ -11,6 +11,7 @@ type JoinOptions = {
 };
 
 function assertPassword(options: JoinOptions): void {
+  if (isDemoRoomCode(options.code || '')) return;
   const expected = process.env.BLAT_PASSWORD;
   if (!expected) return;
   if (options.password !== expected) {
@@ -22,6 +23,7 @@ export class DmRoom extends Room<GameState> {
   maxClients = 4;
   private sim!: Simulation;
   roomCode = '';
+  private demo = false;
 
   onCreate(options: JoinOptions = {}): void {
     assertPassword(options);
@@ -32,10 +34,12 @@ export class DmRoom extends Room<GameState> {
     }
 
     this.roomCode = code;
-    this.setMetadata({ code });
+    this.demo = isDemoRoomCode(code);
+    if (this.demo) this.maxClients = 12;
+    this.setMetadata({ code, demo: this.demo });
     this.setState(new GameState());
     this.sim = new Simulation(this.state);
-    this.sim.ensureBots(2);
+    this.sim.ensureBots(this.demo ? 3 : 2);
 
     this.onMessage('input', (client, message: PlayerInput) => {
       this.sim.setInput(client.sessionId, message);
@@ -47,11 +51,15 @@ export class DmRoom extends Room<GameState> {
     this.setPatchRate(TICK_MS);
     this.setSimulationInterval((deltaTime) => {
       this.sim.step(deltaTime || TICK_MS);
+      if (this.demo) {
+        this.sim.ensureBots(3);
+        return;
+      }
       const humans = [...this.sim.soldiers.values()].filter((s) => !s.state.isBot).length;
       this.sim.ensureBots(humans >= 2 ? 0 : 2);
     }, TICK_MS);
 
-    console.log(`[dm] room created code=${code} id=${this.roomId}`);
+    console.log(`[dm] room created code=${code} id=${this.roomId}${this.demo ? ' demo' : ''}`);
   }
 
   onAuth(_client: Client, options: JoinOptions = {}): boolean {
@@ -60,6 +68,10 @@ export class DmRoom extends Room<GameState> {
   }
 
   onJoin(client: Client, options: JoinOptions = {}): void {
+    if (this.demo) {
+      console.log(`[dm] ${client.sessionId} watching demo ${this.roomCode}`);
+      return;
+    }
     const name = (options.name || `Player`).slice(0, 16);
     this.sim.addPlayer(client.sessionId, name, false);
     console.log(`[dm] ${client.sessionId} joined ${this.roomCode} as ${name}`);

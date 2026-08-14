@@ -72,6 +72,9 @@ export class GameScene extends Phaser.Scene {
   private wasRolling = false;
   private ownershipPrimed = false;
   private aimReadyUntil = 0;
+  private spectating = false;
+  private camX = GAME_WIDTH / 2;
+  private camY = GAME_HEIGHT / 2;
 
   constructor() {
     super('Game');
@@ -81,6 +84,7 @@ export class GameScene extends Phaser.Scene {
     this.room = this.game.registry.get('room') as Room<GameState>;
     this.roomCode = (this.game.registry.get('roomCode') as string) || '';
     this.sessionId = this.room.sessionId;
+    this.spectating = !!this.game.registry.get('spectate');
 
     this.drawBackground();
     this.drawTerrain();
@@ -129,13 +133,15 @@ export class GameScene extends Phaser.Scene {
       .setDepth(100);
 
     this.crosshair = this.add.graphics().setDepth(90);
-    this.input.setDefaultCursor('none');
+    this.input.setDefaultCursor(this.spectating ? 'default' : 'none');
 
     this.add
       .text(
         16,
         VIEW_HEIGHT - 52,
-        '1/2/3 weapons · A/D · W/Space jet · S crouch/roll · hold RMB/G cook · LMB',
+        this.spectating
+          ? 'DEMO · bots fighting · open /demo after each ship to watch'
+          : '1/2/3 weapons · A/D · W/Space jet · S crouch/roll · hold RMB/G cook · LMB',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '13px',
@@ -153,6 +159,14 @@ export class GameScene extends Phaser.Scene {
     if (!this.room?.state?.players) return;
     this.nowMs += delta;
     this.lastDelta = delta;
+
+    if (this.spectating) {
+      this.syncEntities();
+      this.watchWounds();
+      this.updateHud(undefined);
+      this.updateCamera(undefined);
+      return;
+    }
 
     const serverMe = this.room.state.players.get(this.sessionId);
     this.handleWeaponKeys(serverMe);
@@ -296,6 +310,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCamera(serverMe: PlayerState | undefined): void {
+    if (this.spectating) {
+      let sx = 0;
+      let sy = 0;
+      let n = 0;
+      this.room.state.players?.forEach((p) => {
+        if (!p.alive) return;
+        sx += p.x;
+        sy += p.y;
+        n += 1;
+      });
+      const tx = n > 0 ? sx / n : GAME_WIDTH / 2;
+      const ty = n > 0 ? sy / n : GAME_HEIGHT / 2;
+      this.camX += (tx - this.camX) * 0.08;
+      this.camY += (ty - this.camY) * 0.08;
+      this.cameras.main.centerOn(this.camX, this.camY);
+      return;
+    }
     const x =
       this.prediction.predicted?.x ?? serverMe?.x ?? GAME_WIDTH / 2;
     const y =
@@ -663,6 +694,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateHud(serverMe: PlayerState | undefined): void {
+    if (this.spectating) {
+      const roster = [...this.room.state.players.entries()]
+        .map(
+          ([, p]) =>
+            `${p.isBot ? 'BOT' : p.name} ${p.alive ? `${Math.ceil(p.health)}HP` : 'DEAD'}`,
+        )
+        .join(' · ');
+      this.hud.setText(`DEMO  watching\n${roster || 'Waiting for bots…'}`);
+      return;
+    }
     if (!serverMe) {
       this.hud.setText('Waiting for spawn…');
       return;

@@ -1,6 +1,8 @@
 import { Client, type Room } from 'colyseus.js';
 import {
+  DEMO_ROOM_CODE,
   generateRoomCode,
+  isDemoRoomCode,
   isValidRoomCode,
   normalizeRoomCode,
 } from '../shared/roomCode';
@@ -21,6 +23,7 @@ const nameInput = document.querySelector<HTMLInputElement>('#player-name')!;
 const passwordInput = document.querySelector<HTMLInputElement>('#access-password')!;
 const codeInput = document.querySelector<HTMLInputElement>('#room-code')!;
 const btnCreate = document.querySelector<HTMLButtonElement>('#btn-create')!;
+const btnDemo = document.querySelector<HTMLButtonElement>('#btn-demo')!;
 const btnJoin = document.querySelector<HTMLButtonElement>('#btn-join')!;
 const btnCopy = document.querySelector<HTMLButtonElement>('#btn-copy')!;
 const roomBarCode = document.querySelector<HTMLElement>('#room-bar-code')!;
@@ -52,6 +55,7 @@ function joinOptions(extra: Record<string, string> = {}): Record<string, string>
 
 function setBusy(busy: boolean): void {
   btnCreate.disabled = busy;
+  btnDemo.disabled = busy;
   btnJoin.disabled = busy;
   nameInput.disabled = busy;
   passwordInput.disabled = busy;
@@ -72,6 +76,11 @@ function roomUrl(code: string): string {
   const url = new URL(window.location.href);
   url.search = '';
   url.hash = '';
+  if (isDemoRoomCode(code)) {
+    url.pathname = '/demo';
+    return url.toString();
+  }
+  url.pathname = url.pathname.replace(/\/demo\/?$/, '/') || '/';
   url.searchParams.set('room', code);
   return url.toString();
 }
@@ -167,15 +176,19 @@ async function joinRoom(rawCode: string): Promise<void> {
   }
 }
 
-function enterGame(room: Room<GameState>, code: string): void {
+function enterGame(room: Room<GameState>, code: string, spectate = false): void {
   sound.unlock();
-  setRoomInUrl(code);
-  roomBarCode.textContent = `ROOM ${code}`;
+  if (spectate || isDemoRoomCode(code)) {
+    history.replaceState(null, '', '/demo');
+  } else {
+    setRoomInUrl(code);
+  }
+  roomBarCode.textContent = spectate || isDemoRoomCode(code) ? 'DEMO' : `ROOM ${code}`;
   lobby.hidden = true;
   gameShell.hidden = false;
   showStatus('');
   showError('');
-  startGame(room, code);
+  startGame(room, code, { spectate: spectate || isDemoRoomCode(code) });
 }
 
 btnCopy.addEventListener('click', async () => {
@@ -197,6 +210,11 @@ btnCopy.addEventListener('click', async () => {
 btnCreate.addEventListener('click', () => {
   sound.unlock();
   void createRoom();
+});
+
+btnDemo.addEventListener('click', () => {
+  sound.unlock();
+  void joinDemo();
 });
 
 btnJoin.addEventListener('click', () => {
@@ -224,9 +242,42 @@ nameInput.addEventListener('keydown', (event) => {
   }
 });
 
-// Deep link: /?room=ABCD
-const initialCode = normalizeRoomCode(new URLSearchParams(window.location.search).get('room') || '');
-if (initialCode) {
-  codeInput.value = initialCode;
-  void joinRoom(initialCode);
+async function joinDemo(): Promise<void> {
+  showError('');
+  setBusy(true);
+  showStatus('Loading demo…');
+  try {
+    const client = new Client(COLYSEUS_URL);
+    const room = await withTimeout(
+      client.joinOrCreate<GameState>('dm', {
+        code: DEMO_ROOM_CODE,
+        name: 'Watcher',
+      }),
+      8000,
+      'Demo',
+    );
+    enterGame(room, DEMO_ROOM_CODE, true);
+  } catch (err) {
+    console.error(err);
+    showError(formatJoinError(err));
+    showStatus('');
+  } finally {
+    setBusy(false);
+  }
+}
+
+// Deep link: /demo or /?demo=1 or /?room=ABCD
+const path = window.location.pathname.replace(/\/+$/, '') || '/';
+const params = new URLSearchParams(window.location.search);
+if (path === '/demo' || params.has('demo')) {
+  void joinDemo();
+} else {
+  const initialCode = normalizeRoomCode(params.get('room') || '');
+  if (initialCode) {
+    if (isDemoRoomCode(initialCode)) void joinDemo();
+    else {
+      codeInput.value = initialCode;
+      void joinRoom(initialCode);
+    }
+  }
 }
