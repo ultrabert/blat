@@ -223,8 +223,9 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 8  
 **Tags:** `@mechanic bot-dm-ai`  
-**Description:** Bots pick a sticky target (prefer humans), steer via `WAYPOINTS` (jet to high pads / drop into caves), seek medkits when hurt and guns when still on DE, cook nades in mid range, and strafe/backoff up close. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
+**Description:** Bots pick a sticky target (prefer humans), steer via `WAYPOINTS` (jet to high pads / drop into caves), skip paths that clip solid hills, jump when a crate or wall pins them, seek medkits when hurt and guns when still on DE, cook nades in mid range, and strafe/backoff up close. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
 **Trade-offs:** Waypoint greedy-steer is not a navmesh — bots can still take odd paths around bunkers. Extra demo bots cost a bit of sim.  
+**Tests:** `shared/world.test.ts` (`arena-map`, `bot-dm-ai`)  
 **Files:** `shared/simulation.ts` (`updateBotBrain`), `shared/constants.ts` (`BOT`, `WAYPOINTS`, `DEMO_BOTS`), `server/rooms/DmRoom.ts`
 
 ## Mechanic: body-blocking
@@ -247,7 +248,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C1  
 **Tags:** `@mechanic arena-map`  
-**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (solid dirt, same shape the client paints). Caves are air under a poly's bottom edge and under the rim decks (`x<400` / `x>2160`) — loft pads and cave spawns must not sit inside the fill.  
+**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (solid dirt, same shape the client paints). Caves are air under the rim decks (`x<400` / `x>2160`) plus a door through each bowl so the under-hill tunnel connects — loft pads and cave spawns must not sit inside the fill.  
 **Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit in the pit. Not a vertex-perfect Arena port — layout and slopes, not the original texture set.  
 **Tests:** `shared/world.test.ts` (`arena-map`)  
 **Files:** `shared/constants.ts`, `src/game/scenes/GameScene.ts`

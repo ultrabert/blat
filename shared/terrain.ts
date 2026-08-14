@@ -34,6 +34,21 @@ export function pointInTerrain(x: number, y: number): boolean {
   return false;
 }
 
+/** True if the segment clips dirt (skips the start point). */
+export function segmentHitsTerrain(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  samples = 8,
+): boolean {
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples;
+    if (pointInTerrain(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t)) return true;
+  }
+  return false;
+}
+
 /** Even-odd vertical spans of dirt at world X. */
 export function terrainBandsAt(x: number): TerrainBand[] {
   const bands: TerrainBand[] = [];

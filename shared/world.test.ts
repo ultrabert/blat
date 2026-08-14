@@ -20,6 +20,8 @@ import { pickAntiCampSpawn } from './spawns.js';
 import { traceBullet } from './trace.js';
 import { pointInTerrain } from './terrain.js';
 import { MAP_PICKUPS } from './weapons.js';
+import { Simulation } from './simulation.js';
+import { GameState } from './schema.js';
 
 describe('arena-map', () => {
   it('map-is-taller-than-the-viewport-and-has-sky-and-caves', () => {
@@ -130,5 +132,39 @@ describe('arena-map', () => {
     assert.ok(!pointInTerrain(360, 560), 'inner loft ledge should be air');
     assert.ok(!pointInTerrain(2200, 560), 'right loft ledge should be air');
     assert.ok(pointInTerrain(800, 720), 'bowl mass should stay solid dirt');
+    assert.ok(!pointInTerrain(420, 1100), 'left cave door should be open');
+    assert.ok(!pointInTerrain(2140, 1100), 'right cave door should be open');
+  });
+});
+
+describe('bot-dm-ai', () => {
+  it('loft-bot-jumps-the-crate-instead-of-sticking', () => {
+    const sim = new Simulation(new GameState(), { mode: 'dm' });
+    const a = sim.addPlayer('a', 'A', true);
+    const b = sim.addPlayer('b', 'B', true);
+    a.x = 180;
+    a.y = 280;
+    b.x = 1920;
+    b.y = 200;
+    for (let i = 0; i < 90; i++) sim.step(16);
+    assert.ok(
+      a.x > 290 || !a.alive,
+      `loft bot should leave the crate pocket, x=${a.x} vx=${a.vx}`,
+    );
+  });
+
+  it('cave-bot-can-leave-through-the-door', () => {
+    const sim = new Simulation(new GameState(), { mode: 'dm' });
+    const a = sim.addPlayer('a', 'A', true);
+    const b = sim.addPlayer('b', 'B', true);
+    a.x = 220;
+    a.y = 1120;
+    b.x = 1280;
+    b.y = 830;
+    for (let i = 0; i < 120; i++) sim.step(16);
+    assert.ok(
+      a.x > 410 || a.y < 900 || !a.alive,
+      `cave bot should exit or jet out, x=${a.x} y=${a.y}`,
+    );
   });
 });

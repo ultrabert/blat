@@ -184,7 +184,7 @@ export const RAMPS: RampSpec[] = [
 export type TerrainPoly = { x: number; y: number }[];
 
 export const TERRAIN_POLYS: TerrainPoly[] = [
-  // Left bowl mass — starts at the rim so the loft/cave under x<400 stays air
+  // Left bowl — cave door under the rim so the under-hill tunnel is reachable
   [
     { x: 400, y: 309 },
     { x: 640, y: 470 },
@@ -192,9 +192,10 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
     { x: 1100, y: 849 },
     { x: 920, y: 849 },
     { x: 700, y: 1000 },
-    { x: 400, y: 1142 },
+    { x: 520, y: 1020 },
+    { x: 400, y: 960 },
   ],
-  // Right bowl mass — cave/loft air for x>2160
+  // Right bowl — matching cave door for x>2160
   [
     { x: 2160, y: 309 },
     { x: 1920, y: 470 },
@@ -202,7 +203,8 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
     { x: 1460, y: 849 },
     { x: 1640, y: 849 },
     { x: 1860, y: 1000 },
-    { x: 2160, y: 1142 },
+    { x: 2040, y: 1020 },
+    { x: 2160, y: 960 },
   ],
   // Pit bed
   [

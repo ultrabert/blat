@@ -14,7 +14,7 @@ import {
 } from './constants.js';
 import { bodyDamageMult } from './accuracy.js';
 import { fellOutOfWorld, stepMovement, type MoveBody } from './physics.js';
-import { terrainBandsAt } from './terrain.js';
+import { terrainBandsAt, segmentHitsTerrain } from './terrain.js';
 import { ballisticDamage, stepBallistic } from './ballistics.js';
 import {
   applyVestDamage,
@@ -703,7 +703,10 @@ export class Simulation {
       bot.input.move = toward || bot.botStrafeDir;
     }
 
+    const blocked =
+      bot.onGround && toward !== 0 && Math.abs(p.vx) < 36 && p.fuel > 8;
     bot.input.jet =
+      blocked ||
       (gdy < -70 && gdist > 40) ||
       (!bot.onGround && gdy < -12) ||
       (p.y > 980 && gdist > 80 && p.fuel > 20);
@@ -782,7 +785,9 @@ export class Simulation {
     const tx = target.state.x;
     const ty = target.state.y;
     const dist = Math.hypot(tx - p.x, ty - p.y);
-    if (dist < BOT.waypointSlack) return { x: tx, y: ty };
+    if (dist < BOT.waypointSlack && !segmentHitsTerrain(p.x, p.y, tx, ty)) {
+      return { x: tx, y: ty };
+    }
     return this.steerViaWaypoint(p.x, p.y, tx, ty);
   }
 
@@ -796,7 +801,7 @@ export class Simulation {
       const ps = pickup.state;
       if (!ok(ps)) continue;
       const d = Math.hypot(ps.x - bot.state.x, ps.y - bot.state.y);
-      if (d < bestD) {
+      if (d < bestD && !segmentHitsTerrain(bot.state.x, bot.state.y, ps.x, ps.y)) {
         bestD = d;
         best = ps;
       }
@@ -809,6 +814,8 @@ export class Simulation {
     let bestD = Infinity;
     for (const w of WAYPOINTS) {
       const d = Math.hypot(w.x - x, w.y - y);
+      if (d < 30) continue;
+      if (segmentHitsTerrain(x, y, w.x, w.y)) continue;
       if (d < bestD) {
         bestD = d;
         best = w;
@@ -824,13 +831,16 @@ export class Simulation {
     ty: number,
   ): { x: number; y: number } {
     const direct = Math.hypot(tx - x, ty - y);
+    const directClear = !segmentHitsTerrain(x, y, tx, ty);
     let best = { x: tx, y: ty };
-    let bestCost = direct;
+    let bestCost = directClear ? direct : direct + 2400;
     for (const w of WAYPOINTS) {
       const toWp = Math.hypot(w.x - x, w.y - y);
+      if (toWp <= 40) continue;
+      if (segmentHitsTerrain(x, y, w.x, w.y)) continue;
       const wpTo = Math.hypot(tx - w.x, ty - w.y);
       const cost = toWp + wpTo * 0.82;
-      if (cost < bestCost && toWp > 40) {
+      if (cost < bestCost) {
         bestCost = cost;
         best = w;
       }

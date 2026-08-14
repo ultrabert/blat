@@ -206,6 +206,20 @@ describe('ground-inertia-and-slopes', () => {
     assert.equal(b.onGround, true);
   });
 
+  it('cave-door-lets-you-walk-under-the-hill', () => {
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x: 280,
+      y: 1142 - halfH,
+      vx: 80,
+      vy: 0,
+      onGround: true,
+    });
+    for (let i = 0; i < 28; i++) stepMovement(b, input({ move: 1 }), DT);
+    assert.ok(b.x > 450, `should pass the cave door, x=${b.x}`);
+    assert.ok(b.y > 980, `should stay in the cave, y=${b.y}`);
+  });
+
   it('jet-does-not-glue-to-nearby-ramp', () => {
     const ramp = RAMPS[0]!;
     const x = (ramp.ax + ramp.bx) / 2;
