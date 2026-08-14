@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { PLATFORMS } from '../../shared/constants';
-import { DEFAULT_WEAPON, weaponIconKey, type WeaponId } from '../../shared/weapons';
+import { type WeaponId } from '../../shared/weapons';
 import { displayLabel } from '../../shared/labels';
-import { SKINS, skinPartKeys, type SkinId, DEFAULT_SKIN } from './skins';
+import { SKINS, SKIN_IDS, skinPartKeys, type SkinId, DEFAULT_SKIN } from './skins';
 
 export type StickView = {
   x: number;
@@ -62,30 +62,59 @@ type VerletStick = {
   len: number;
 };
 
-const HEAD_DISPLAY = 16;
-const TORSO_W = 15;
-const LIMB_THICK = 8.2;
+const HEAD_DISPLAY = 17;
+const TORSO_W = 16;
+const LIMB_THICK = 8.8;
+const SILHOUETTE = 0x0b0e14;
+/** Cool vest shade — readable armor, not a pale wash over the kit. */
+const VEST_TINT = 0x6d8aa8;
 
 /** Held weapon display length (px) + grip/fore distances along barrel from pivot. */
-const HOLD_RIFLE = { len: 26, h: 11, grip: 4, fore: 12, originX: 0.28, originY: 0.58 };
-const HOLD_SNIPER = { len: 32, h: 10, grip: 5, fore: 14, originX: 0.26, originY: 0.55 };
-const HOLD_SHOT = { len: 24, h: 12, grip: 4, fore: 11, originX: 0.3, originY: 0.6 };
-const HOLD_PISTOL = { len: 16, h: 10, grip: 3, fore: 7, originX: 0.3, originY: 0.55 };
-const HOLD_LAUNCH = { len: 28, h: 13, grip: 5, fore: 13, originX: 0.28, originY: 0.58 };
-const HOLD_MELEE = { len: 18, h: 7, grip: 2, fore: 10, originX: 0.2, originY: 0.5 };
+const HOLD_RIFLE = { len: 30, grip: 4, fore: 13 };
+const HOLD_SNIPER = { len: 38, grip: 5, fore: 16 };
+const HOLD_SHOT = { len: 26, grip: 4, fore: 12 };
+const HOLD_PISTOL = { len: 18, grip: 3, fore: 8 };
+const HOLD_LAUNCH = { len: 30, grip: 5, fore: 14 };
+const HOLD_MELEE = { len: 20, grip: 2, fore: 11 };
+
+type GunKind = 'rifle' | 'sniper' | 'shot' | 'pistol' | 'launch' | 'melee' | 'bow';
 
 function weaponHold(id: WeaponId): typeof HOLD_RIFLE {
-  if (id === 'de') return HOLD_PISTOL;
-  if (id === 'barrett') return HOLD_SNIPER;
+  if (id === 'de' || id === 'socom') return HOLD_PISTOL;
+  if (id === 'barrett' || id === 'ruger') return HOLD_SNIPER;
+  if (id === 'bow') return HOLD_SNIPER;
   if (id === 'spas') return HOLD_SHOT;
-  if (id === 'm79' || id === 'law') return HOLD_LAUNCH;
-  if (id === 'knife' || id === 'chainsaw') return HOLD_MELEE;
-  if (id === 'flamer') return HOLD_LAUNCH;
+  if (id === 'm79' || id === 'law' || id === 'flamer' || id === 'minigun') return HOLD_LAUNCH;
+  if (id === 'knife' || id === 'chainsaw' || id === 'punch') return HOLD_MELEE;
   return HOLD_RIFLE;
 }
 
-function weaponTextureKey(id: WeaponId): string {
-  return weaponIconKey(id);
+function gunKind(id: WeaponId): GunKind {
+  if (id === 'de' || id === 'socom') return 'pistol';
+  if (id === 'barrett' || id === 'ruger') return 'sniper';
+  if (id === 'bow') return 'bow';
+  if (id === 'spas') return 'shot';
+  if (id === 'm79' || id === 'law' || id === 'flamer' || id === 'minigun') return 'launch';
+  if (id === 'knife' || id === 'chainsaw' || id === 'punch') return 'melee';
+  return 'rifle';
+}
+
+function strokeSeg(
+  g: Phaser.GameObjects.Graphics,
+  a: Pt,
+  b: Pt,
+  w: number,
+  color: number,
+  alpha = 1,
+): void {
+  g.lineStyle(w, color, alpha);
+  g.beginPath();
+  g.moveTo(a.x, a.y);
+  g.lineTo(b.x, b.y);
+  g.strokePath();
+  g.fillStyle(color, alpha);
+  g.fillCircle(a.x, a.y, w * 0.5);
+  g.fillCircle(b.x, b.y, w * 0.5);
 }
 
 function len2(x: number, y: number): number {
@@ -131,11 +160,10 @@ export class StickSoldier {
   readonly root: Phaser.GameObjects.Container;
   private readonly gunGfx: Phaser.GameObjects.Graphics;
   private readonly fallbackGfx: Phaser.GameObjects.Graphics;
-  private weaponImg: Phaser.GameObjects.Image | null = null;
   private parts: PartSet | null = null;
   private skin: SkinId | null = null;
-  private weaponId: WeaponId | null = null;
   private readonly scene: Phaser.Scene;
+  private static skinFilterSet = false;
   private readonly depth: number;
 
   private runPhase = 0;
@@ -202,7 +230,6 @@ export class StickSoldier {
   update(view: StickView, dtMs: number): void {
     this.footstepFx = false;
     this.ensureSkin(view.skin);
-    this.ensureWeapon(view.weapon);
     this.updateNameTag(view);
 
     if (!view.alive) {
@@ -276,6 +303,17 @@ export class StickSoldier {
       this.scene.textures.exists(keys.leg);
     if (!ok) return;
 
+    if (!StickSoldier.skinFilterSet) {
+      StickSoldier.skinFilterSet = true;
+      for (const sid of SKIN_IDS) {
+        for (const k of Object.values(skinPartKeys(sid))) {
+          if (this.scene.textures.exists(k)) {
+            this.scene.textures.get(k).setFilter(Phaser.Textures.FilterMode.NEAREST);
+          }
+        }
+      }
+    }
+
     const mk = (key: string) =>
       this.scene.add.image(0, 0, key).setOrigin(0.5).setVisible(false);
 
@@ -290,52 +328,34 @@ export class StickSoldier {
       rShin: mk(keys.leg),
     };
 
-    // Draw order: legs → torso → arms → head → weapon/gunGfx on top
-    this.root.addAt(this.parts.lThigh, 0);
-    this.root.addAt(this.parts.lShin, 1);
-    this.root.addAt(this.parts.rThigh, 2);
-    this.root.addAt(this.parts.rShin, 3);
-    this.root.addAt(this.parts.torso, 4);
-    this.root.addAt(this.parts.offArm, 5);
-    this.root.addAt(this.parts.gunArm, 6);
-    this.root.addAt(this.parts.head, 7);
-    if (this.weaponImg) this.root.bringToTop(this.weaponImg);
+    // Silhouette under parts, gun on top
+    this.root.add(this.parts.lThigh);
+    this.root.add(this.parts.lShin);
+    this.root.add(this.parts.rThigh);
+    this.root.add(this.parts.rShin);
+    this.root.add(this.parts.torso);
+    this.root.add(this.parts.offArm);
+    this.root.add(this.parts.gunArm);
+    this.root.add(this.parts.head);
+    this.root.sendToBack(this.fallbackGfx);
     this.root.bringToTop(this.gunGfx);
     this.root.setDepth(this.depth);
   }
 
-  private ensureWeapon(id: WeaponId): void {
-    const wid = id || DEFAULT_WEAPON;
-    if (this.weaponId === wid && this.weaponImg) return;
-    this.weaponImg?.destroy();
-    this.weaponImg = null;
-    this.weaponId = wid;
-    const key = weaponTextureKey(wid);
-    if (!this.scene.textures.exists(key)) return;
-    const hold = weaponHold(wid);
-    this.weaponImg = this.scene.add
-      .image(0, 0, key)
-      .setOrigin(hold.originX, hold.originY)
-      .setVisible(false);
-    this.root.add(this.weaponImg);
-    this.root.bringToTop(this.weaponImg);
-    this.root.bringToTop(this.gunGfx);
-  }
-
-  /** Carry angle: full cursor when aimReady, else low-ready blend + smooth. */
+  /** Carry angle tracks true aim; idle only dips a few degrees. */
   private resolveHoldAim(view: StickView, dtMs: number): number {
     const aimL = len2(view.aimX, view.aimY);
     const raw = ang(view.aimX / aimL, view.aimY / aimL);
     const face = view.aimX >= 0 ? 1 : -1;
-    // ~28° down from horizontal in facing direction
-    const ready = face >= 0 ? 0.48 : Math.PI - 0.48;
-    const target = view.aimReady ? raw : lerpAngle(ready, raw, 0.42);
+    const low = face >= 0 ? 0.48 : Math.PI - 0.48;
+    // Idle: ~12% toward low-ready so the barrel still reads as the cursor.
+    const target = view.aimReady ? raw : lerpAngle(raw, low, 0.12);
     if (!this.holdAimInit) {
       this.holdAim = target;
       this.holdAimInit = true;
       return this.holdAim;
     }
-    const follow = view.aimReady ? 0.55 : 0.22;
+    const follow = view.aimReady ? 0.82 : 0.5;
     const t = 1 - Math.exp((-follow * dtMs) / 16);
     this.holdAim = lerpAngle(this.holdAim, target, Math.min(1, t));
     return this.holdAim;
@@ -529,18 +549,23 @@ export class StickSoldier {
 
     this.gunGfx.clear();
     this.fallbackGfx.clear();
+    this.root.sendToBack(this.fallbackGfx);
+    this.root.bringToTop(this.gunGfx);
 
     const face = view.aimX >= 0 ? 1 : -1;
     const parts = this.parts;
     const tuck = view.rolling || view.cannonball || view.backflip;
 
     if (!parts) {
-      this.drawFallbackStick(pose, view, tuck);
+      this.drawSilhouette(pose, true);
+      this.drawFallbackStick(pose, view);
       this.drawHeldWeapon(pose, view, tuck);
       return;
     }
 
     for (const img of Object.values(parts)) img.setVisible(false);
+
+    this.drawSilhouette(pose, true);
 
     this.placeLimb(parts.lThigh, pose.hip, pose.lKnee, LIMB_THICK, true);
     this.placeLimb(parts.lShin, pose.lKnee, pose.lFoot, LIMB_THICK - 0.5, true);
@@ -555,7 +580,7 @@ export class StickSoldier {
     parts.torso.setRotation(ang(tdX, tdY) - Math.PI / 2);
     parts.torso.setDisplaySize(TORSO_W + 2, tLen + 2);
     parts.torso.setFlipX(face < 0);
-    if ((view.vest ?? 0) > 12) parts.torso.setTint(0xb8d4ea);
+    if ((view.vest ?? 0) > 12) parts.torso.setTint(VEST_TINT);
     else parts.torso.clearTint();
 
     // Arms to grip / foregrip (weapon prop defines hand targets)
@@ -571,6 +596,22 @@ export class StickSoldier {
     this.drawHeldWeapon(pose, view, tuck);
   }
 
+  private drawSilhouette(pose: Pose, includeHead: boolean): void {
+    const g = this.fallbackGfx;
+    const w = LIMB_THICK + 3.8;
+    strokeSeg(g, pose.hip, pose.shoulder, w + 0.6, SILHOUETTE, 0.96);
+    strokeSeg(g, pose.hip, pose.lKnee, w, SILHOUETTE, 0.96);
+    strokeSeg(g, pose.lKnee, pose.lFoot, w - 0.4, SILHOUETTE, 0.96);
+    strokeSeg(g, pose.hip, pose.rKnee, w, SILHOUETTE, 0.96);
+    strokeSeg(g, pose.rKnee, pose.rFoot, w - 0.4, SILHOUETTE, 0.96);
+    strokeSeg(g, pose.shoulder, pose.offHand, w - 0.8, SILHOUETTE, 0.96);
+    strokeSeg(g, pose.shoulder, pose.gunHand, w - 0.4, SILHOUETTE, 0.96);
+    if (includeHead) {
+      g.fillStyle(SILHOUETTE, 0.96);
+      g.fillCircle(pose.head.x, pose.head.y, HEAD_DISPLAY * 0.5 + 2.2);
+    }
+  }
+
   private drawHeldWeapon(pose: Pose, view: StickView, tuck: boolean): void {
     const hold = weaponHold(view.weapon);
     const aimA = this.holdAim;
@@ -579,42 +620,113 @@ export class StickSoldier {
       ? { x: pose.hip.x + face * 2, y: pose.hip.y - 2 }
       : { x: pose.shoulder.x + face * 2.2, y: pose.shoulder.y + 2.5 };
     const rot = tuck ? (face >= 0 ? 0.9 : Math.PI - 0.9) : aimA;
+    this.paintGun(pivot, rot, hold, gunKind(view.weapon), tuck ? 0.88 : 1);
+  }
 
-    if (this.weaponImg) {
-      this.weaponImg.setVisible(true);
-      this.weaponImg.setPosition(pivot.x, pivot.y);
-      this.weaponImg.setRotation(rot);
-      this.weaponImg.setFlipY(face < 0);
-      this.weaponImg.setDisplaySize(hold.len, hold.h);
-      this.weaponImg.setAlpha(tuck ? 0.85 : 1);
+  /** Crisp vector gun — dark outline, light barrel, bright muzzle pip. */
+  private paintGun(
+    pivot: Pt,
+    rot: number,
+    hold: typeof HOLD_RIFLE,
+    kind: GunKind,
+    alpha: number,
+  ): void {
+    const g = this.gunGfx;
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    let dx = -s;
+    let dy = c;
+    if (dy < 0) {
+      dx = -dx;
+      dy = -dy;
+    }
+    const at = (along: number, down = 0): Pt => ({
+      x: pivot.x + c * along + dx * down,
+      y: pivot.y + s * along + dy * down,
+    });
+
+    const muzzleAlong = hold.len - hold.grip + 3;
+    const stockAlong = -hold.grip - 3;
+    const barrelW =
+      kind === 'shot' || kind === 'launch' ? 4.6 : kind === 'sniper' || kind === 'bow' ? 2.6 : kind === 'pistol' ? 3.0 : 3.4;
+    const outlineW = barrelW + 2.4;
+    const stock = at(stockAlong);
+    const muzzle = at(muzzleAlong);
+    const tip = at(muzzleAlong + 6);
+
+    if (kind === 'melee') {
+      const blade = at(hold.len + 2);
+      const hilt = at(-2);
+      strokeSeg(g, hilt, blade, 4.6, SILHOUETTE, alpha);
+      strokeSeg(g, hilt, blade, 2.2, 0xe8edf4, alpha);
+      g.fillStyle(0xfff4c4, alpha);
+      g.fillCircle(blade.x, blade.y, 2.1);
       return;
     }
 
-    // Fallback: short stock→muzzle bar (no floating spike from the wrist)
-    const muzzle = offset(pivot, rot, hold.len * 0.72);
-    const stock = offset(pivot, rot + Math.PI, hold.len * 0.2);
-    this.gunGfx.lineStyle(3.2, 0xb8bec8, 1);
-    this.gunGfx.beginPath();
-    this.gunGfx.moveTo(stock.x, stock.y);
-    this.gunGfx.lineTo(muzzle.x, muzzle.y);
-    this.gunGfx.strokePath();
-    this.gunGfx.fillStyle(0x6b7280, 1);
-    this.gunGfx.fillCircle(pose.gunHand.x, pose.gunHand.y, 2);
+    if (kind === 'bow') {
+      const nockF = at(muzzleAlong + 1, -7);
+      const nockB = at(stockAlong - 1, -7);
+      const grip = at(0, 1);
+      strokeSeg(g, nockB, grip, 3.8, SILHOUETTE, alpha);
+      strokeSeg(g, grip, nockF, 3.8, SILHOUETTE, alpha);
+      strokeSeg(g, nockB, grip, 2.0, 0xc4a574, alpha);
+      strokeSeg(g, grip, nockF, 2.0, 0xc4a574, alpha);
+      strokeSeg(g, nockB, nockF, 1.4, SILHOUETTE, alpha);
+      strokeSeg(g, nockB, nockF, 0.9, 0xf3efe6, alpha);
+      g.fillStyle(0xfff4c4, alpha);
+      g.fillCircle(nockF.x, nockF.y, 2.0);
+      return;
+    }
+
+    // Outline then metal barrel
+    strokeSeg(g, stock, muzzle, outlineW, SILHOUETTE, alpha);
+    strokeSeg(g, stock, muzzle, barrelW, 0xe4eaf2, alpha);
+
+    // Receiver / handguard block near the grip
+    const recA = at(-1, 0);
+    const recB = at(kind === 'pistol' ? 5 : 8, 0);
+    strokeSeg(g, recA, recB, barrelW + 1.6, 0x4b5568, alpha);
+
+    // Pistol grip / mag hanging toward the feet
+    if (kind === 'pistol') {
+      strokeSeg(g, at(0, 0), at(-1.5, 6.5), 3.6, SILHOUETTE, alpha);
+      strokeSeg(g, at(0, 0), at(-1.5, 6.5), 2.2, 0x5b6573, alpha);
+    } else if (kind !== 'launch') {
+      strokeSeg(g, at(3, 0.5), at(3, 4.5), 3.2, SILHOUETTE, alpha);
+      strokeSeg(g, at(3, 0.5), at(3, 4.5), 2.0, 0x3f4654, alpha);
+    }
+
+    if (kind === 'sniper') {
+      const sc = at(10, -3.2);
+      g.fillStyle(SILHOUETTE, alpha);
+      g.fillCircle(sc.x, sc.y, 3.4);
+      g.fillStyle(0x9aa7b8, alpha);
+      g.fillCircle(sc.x, sc.y, 2.1);
+    }
+
+    if (kind === 'shot') {
+      strokeSeg(g, at(muzzleAlong - 8, -1.6), at(muzzleAlong, -1.6), 2.2, 0xc5ccd6, alpha);
+    }
+
+    // Top-edge shine so the barrel reads as a cylinder
+    strokeSeg(g, at(stockAlong + 4, -barrelW * 0.28), at(muzzleAlong - 2, -barrelW * 0.28), 1.15, 0xffffff, alpha * 0.55);
+
+    // Muzzle pip + tick past the barrel — the "where is it pointed" cue
+    strokeSeg(g, muzzle, tip, 2.4, SILHOUETTE, alpha);
+    strokeSeg(g, muzzle, tip, 1.35, 0xfff4c4, alpha);
+    g.fillStyle(SILHOUETTE, alpha);
+    g.fillCircle(muzzle.x, muzzle.y, 3.1);
+    g.fillStyle(0xfff4c4, alpha);
+    g.fillCircle(muzzle.x, muzzle.y, 2.05);
   }
 
-  private drawFallbackStick(pose: Pose, view: StickView, _tuck: boolean): void {
+  private drawFallbackStick(pose: Pose, view: StickView): void {
     const g = this.fallbackGfx;
     const c = view.tint || SKINS[view.skin ?? DEFAULT_SKIN].tint;
     const STROKE = 6.8;
     const limb = (a: Pt, b: Pt, w = STROKE) => {
-      g.lineStyle(w, c, 1);
-      g.beginPath();
-      g.moveTo(a.x, a.y);
-      g.lineTo(b.x, b.y);
-      g.strokePath();
-      g.fillStyle(c, 1);
-      g.fillCircle(a.x, a.y, w * 0.45);
-      g.fillCircle(b.x, b.y, w * 0.45);
+      strokeSeg(g, a, b, w, c, 1);
     };
     limb(pose.hip, pose.shoulder, STROKE + 0.5);
     limb(pose.hip, pose.lKnee);
@@ -624,7 +736,7 @@ export class StickSoldier {
     limb(pose.shoulder, pose.offHand, STROKE - 0.5);
     limb(pose.shoulder, pose.gunHand);
     g.fillStyle(c, 1);
-    g.fillCircle(pose.head.x, pose.head.y, 7.4);
+    g.fillCircle(pose.head.x, pose.head.y, 7.6);
   }
 
   private beginRagdoll(view: StickView): void {
@@ -744,31 +856,40 @@ export class StickSoldier {
   private drawRagdoll(view: StickView): void {
     this.gunGfx.clear();
     this.fallbackGfx.clear();
+    this.root.sendToBack(this.fallbackGfx);
+    this.root.bringToTop(this.gunGfx);
     this.root.setAlpha(view.alpha);
 
     if (this.nodes.length < 9) return;
     const n = this.nodes;
     const parts = this.parts;
     const hold = weaponHold(view.weapon);
-    if (this.weaponImg) {
-      this.weaponImg.setVisible(true);
-      this.weaponImg.setPosition(n[3]!.x, n[3]!.y);
-      this.weaponImg.setRotation(ang(n[3]!.x - n[1]!.x, n[3]!.y - n[1]!.y));
-      this.weaponImg.setDisplaySize(hold.len, hold.h);
-      this.weaponImg.setAlpha(0.9);
+    const includeHead = view.deathKind !== 'head';
+    const wpt = (i: number): Pt => ({ x: n[i]!.x, y: n[i]!.y });
+
+    const silW = LIMB_THICK + 3.8;
+    strokeSeg(this.fallbackGfx, wpt(1), wpt(2), silW + 0.6, SILHOUETTE, 0.96);
+    strokeSeg(this.fallbackGfx, wpt(2), wpt(5), silW, SILHOUETTE, 0.96);
+    strokeSeg(this.fallbackGfx, wpt(5), wpt(7), silW - 0.4, SILHOUETTE, 0.96);
+    strokeSeg(this.fallbackGfx, wpt(2), wpt(6), silW, SILHOUETTE, 0.96);
+    strokeSeg(this.fallbackGfx, wpt(6), wpt(8), silW - 0.4, SILHOUETTE, 0.96);
+    strokeSeg(this.fallbackGfx, wpt(1), wpt(4), silW - 0.8, SILHOUETTE, 0.96);
+    strokeSeg(this.fallbackGfx, wpt(1), wpt(3), silW - 0.4, SILHOUETTE, 0.96);
+    if (includeHead) {
+      strokeSeg(this.fallbackGfx, wpt(0), wpt(1), silW - 1, SILHOUETTE, 0.96);
+      this.fallbackGfx.fillStyle(SILHOUETTE, 0.96);
+      this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, HEAD_DISPLAY * 0.5 + 2.2);
     }
+
+    const gunRot = ang(n[3]!.x - n[1]!.x, n[3]!.y - n[1]!.y);
+    const gunPivot = offset(wpt(3), gunRot + Math.PI, hold.grip);
+    this.paintGun(gunPivot, gunRot, hold, gunKind(view.weapon), 0.9);
 
     if (!parts) {
       const c = view.tint;
       const STROKE = 6.8;
       const limb = (ia: number, ib: number, w = STROKE) => {
-        const a = n[ia]!;
-        const b = n[ib]!;
-        this.fallbackGfx.lineStyle(w, c, 1);
-        this.fallbackGfx.beginPath();
-        this.fallbackGfx.moveTo(a.x, a.y);
-        this.fallbackGfx.lineTo(b.x, b.y);
-        this.fallbackGfx.strokePath();
+        strokeSeg(this.fallbackGfx, wpt(ia), wpt(ib), w, c, 1);
       };
       limb(1, 2, STROKE + 0.5);
       limb(2, 5);
@@ -777,15 +898,14 @@ export class StickSoldier {
       limb(6, 8);
       limb(1, 3);
       limb(1, 4, STROKE - 0.5);
-      if (view.deathKind !== 'head') {
+      if (includeHead) {
         limb(0, 1, STROKE - 1);
         this.fallbackGfx.fillStyle(c, 1);
-        this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, 7.4);
+        this.fallbackGfx.fillCircle(n[0]!.x, n[0]!.y, 7.6);
       }
       return;
     }
 
-    const wpt = (i: number): Pt => ({ x: n[i]!.x, y: n[i]!.y });
     this.placeLimb(parts.lThigh, wpt(2), wpt(5), LIMB_THICK, false);
     this.placeLimb(parts.lShin, wpt(5), wpt(7), LIMB_THICK - 0.5, false);
     this.placeLimb(parts.rThigh, wpt(2), wpt(6), LIMB_THICK, false);
@@ -801,10 +921,9 @@ export class StickSoldier {
     this.placeLimb(parts.offArm, wpt(1), wpt(4), LIMB_THICK - 1, false);
     this.placeLimb(parts.gunArm, wpt(1), wpt(3), LIMB_THICK - 0.5, false);
 
-    parts.head.setVisible(view.deathKind !== 'head');
+    parts.head.setVisible(includeHead);
     parts.head.setPosition(n[0]!.x, n[0]!.y);
     parts.head.setRotation(ang(n[1]!.x - n[0]!.x, n[1]!.y - n[0]!.y) + Math.PI / 2);
     parts.head.setDisplaySize(HEAD_DISPLAY, HEAD_DISPLAY);
-    if (view.deathKind === 'head') parts.head.setVisible(false);
   }
 }
