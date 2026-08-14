@@ -23,11 +23,11 @@ export class MiniMap {
     const g = this.gfx;
     g.clear();
     const x = VIEW_WIDTH - this.w - 14;
-    const y = VIEW_HEIGHT - this.h - 28;
-    g.fillStyle(0x0b1020, 0.72);
-    g.fillRoundedRect(x, y, this.w, this.h, 4);
-    g.lineStyle(1, 0x7a8fb3, 0.4);
-    g.strokeRoundedRect(x, y, this.w, this.h, 4);
+    const y = VIEW_HEIGHT - this.h - 36;
+    g.fillStyle(0x0b1020, 0.8);
+    g.fillRoundedRect(x, y, this.w, this.h, 6);
+    g.lineStyle(1, 0x7a8fb3, 0.32);
+    g.strokeRoundedRect(x, y, this.w, this.h, 6);
 
     const sx = (this.w - this.pad * 2) / GAME_WIDTH;
     const sy = (this.h - this.pad * 2) / GAME_HEIGHT;

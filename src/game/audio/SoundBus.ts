@@ -252,6 +252,52 @@ export class SoundBus {
     this.fallbackTone(380, 90, 0.28, 0.18);
   }
 
+  /** Reward sting — louder and fatter as multi-kill tier climbs. */
+  medal(tier: number, mine = true): void {
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const notes =
+      tier >= 8
+        ? [523, 659, 784, 1046]
+        : tier >= 5
+          ? [392, 523, 659, 784]
+          : tier >= 3
+            ? [349, 440, 523]
+            : tier >= 2
+              ? [392, 523]
+              : [880, 1175];
+    const vol = (mine ? 0.22 : 0.12) * (0.85 + Math.min(tier, 6) * 0.08);
+    notes.forEach((hz, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = tier >= 4 ? 'triangle' : 'sine';
+      const start = t + i * (tier >= 3 ? 0.07 : 0.05);
+      o.frequency.setValueAtTime(hz, start);
+      o.frequency.exponentialRampToValueAtTime(hz * 1.12, start + 0.12);
+      g.gain.setValueAtTime(0.001, start);
+      g.gain.exponentialRampToValueAtTime(vol, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.22 + tier * 0.02);
+      o.connect(g);
+      g.connect(this.master!);
+      o.start(start);
+      o.stop(start + 0.32);
+    });
+    if (tier >= 3) {
+      const boom = ctx.createOscillator();
+      const bg = ctx.createGain();
+      boom.type = 'sine';
+      boom.frequency.setValueAtTime(110, t);
+      boom.frequency.exponentialRampToValueAtTime(48, t + 0.22);
+      bg.gain.setValueAtTime(vol * 1.4, t);
+      bg.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      boom.connect(bg);
+      bg.connect(this.master);
+      boom.start(t);
+      boom.stop(t + 0.3);
+    }
+  }
+
   setJetting(on: boolean): void {
     if (on === this.jetting) return;
     this.jetting = on;

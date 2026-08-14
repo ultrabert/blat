@@ -5,11 +5,11 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { BONUS, isBonusId, spreeLabel } from './bonuses.js';
+import { BONUS, isBonusId, multiKillLabel, MULTI_WINDOW_MS, spreeLabel } from './bonuses.js';
 import { PLAYER, type PlayerInput } from './constants.js';
 import { OBJECTIVES, TEAM } from './match.js';
 import { stepMovement, type MoveBody, type MoveInput } from './physics.js';
-import { GameState } from './schema.js';
+import { GameState, type PlayerState } from './schema.js';
 import { Simulation } from './simulation.js';
 import { WEAPONS } from './weapons.js';
 
@@ -72,6 +72,13 @@ describe('soldat-bonuses', () => {
     assert.equal(spreeLabel(3), 'KILLING SPREE');
     assert.equal(spreeLabel(5), 'RAMPAGE');
     assert.equal(spreeLabel(4), null);
+    assert.equal(multiKillLabel(1), null);
+    assert.equal(multiKillLabel(2), 'DOUBLE KILL');
+    assert.equal(multiKillLabel(3), 'TRIPLE KILL');
+    assert.equal(multiKillLabel(4), 'QUAD KILL');
+    assert.equal(multiKillLabel(5), 'PENTA KILL');
+    assert.equal(multiKillLabel(8), 'UNREAL');
+    assert.ok(MULTI_WINDOW_MS >= 3000);
   });
 
   it('berserk-walks-faster', () => {
@@ -164,6 +171,77 @@ describe('throw-flag', () => {
     sim.step(16);
     assert.equal(state.flagBCarrier, '');
     assert.ok(state.flagBx < OBJECTIVES.flagBravo.x - 80);
+  });
+});
+
+describe('kill-sprees', () => {
+  function chatOf(state: GameState): { text: string; kind: string }[] {
+    const rows: { text: string; kind: string }[] = [];
+    state.chat?.forEach((c) => rows.push({ text: c.text, kind: c.kind }));
+    return rows;
+  }
+
+  function knifeDown(sim: Simulation, attacker: string, victim: PlayerState): void {
+    const body = sim.soldiers.get(attacker)!;
+    const a = body.state;
+    a.weapon = 'knife';
+    a.melee = 'knife';
+    a.aimX = 1;
+    a.aimY = 0;
+    for (let i = 0; i < 28; i++) sim.step(16);
+    for (let tries = 0; tries < 6 && victim.alive; tries++) {
+      a.x = 640;
+      a.y = 212;
+      victim.x = 668;
+      victim.y = 212;
+      victim.health = 8;
+      victim.vest = 0;
+      a.weapon = 'knife';
+      sim.setInput(attacker, tap({ fire: true, aimX: 1, seq: body.lastQueuedSeq + 1 }));
+      sim.step(16);
+    }
+    sim.setInput(attacker, tap({ fire: false, aimX: 1, seq: body.lastQueuedSeq + 1 }));
+    for (let i = 0; i < 24; i++) sim.step(16);
+  }
+
+  it('rapid-kills-stack-double-and-triple', () => {
+    const state = new GameState();
+    const sim = new Simulation(state, { mode: 'dm' });
+    const a = sim.addPlayer('a', 'Ace');
+    const v1 = sim.addPlayer('v1', 'One');
+    const v2 = sim.addPlayer('v2', 'Two');
+    const v3 = sim.addPlayer('v3', 'Three');
+    v2.x = 2200;
+    v3.x = 2200;
+    knifeDown(sim, 'a', v1);
+    assert.equal(v1.alive, false);
+    assert.ok(chatOf(state).some((c) => c.text === 'FIRST BLOOD' && c.kind === 'spree'));
+    knifeDown(sim, 'a', v2);
+    assert.equal(v2.alive, false);
+    assert.ok(chatOf(state).some((c) => c.text === 'DOUBLE KILL' && c.kind === 'medal'));
+    knifeDown(sim, 'a', v3);
+    assert.equal(v3.alive, false);
+    assert.ok(chatOf(state).some((c) => c.text === 'TRIPLE KILL' && c.kind === 'medal'));
+    assert.ok(chatOf(state).some((c) => c.text === 'KILLING SPREE' && c.kind === 'spree'));
+    assert.equal(a.kills, 3);
+  });
+
+  it('multi-window-expires', () => {
+    const state = new GameState();
+    const sim = new Simulation(state, { mode: 'dm' });
+    sim.addPlayer('a', 'Ace');
+    const v1 = sim.addPlayer('v1', 'One');
+    const v2 = sim.addPlayer('v2', 'Two');
+    v2.x = 2200;
+    knifeDown(sim, 'a', v1);
+    const ticks = Math.ceil((MULTI_WINDOW_MS + 80) / 16);
+    for (let i = 0; i < ticks; i++) sim.step(16);
+    knifeDown(sim, 'a', v2);
+    assert.equal(v2.alive, false);
+    assert.equal(
+      chatOf(state).some((c) => c.text === 'DOUBLE KILL'),
+      false,
+    );
   });
 });
 

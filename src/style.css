@@ -260,7 +260,7 @@ body {
 #chat-dock {
   position: absolute;
   left: 16px;
-  bottom: 88px;
+  bottom: 132px;
   width: min(360px, 46vw);
   pointer-events: none;
   z-index: 20;

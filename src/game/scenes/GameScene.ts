@@ -188,19 +188,17 @@ export class GameScene extends Phaser.Scene {
       .text(
         VIEW_WIDTH - 16,
         VIEW_HEIGHT - 14,
-        this.spectating
-          ? 'DEMO · bots fighting · Tab scores'
-          : 'Tab scores · Shift dash · E pulse · 3 punch · F toss flag · T chat',
+        this.spectating ? 'DEMO  ·  Tab scores' : 'Tab  ·  T chat',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          fontSize: '11px',
+          fontSize: '10px',
           color: COLORS.muted,
         },
       )
       .setOrigin(1, 1)
       .setScrollFactor(0)
       .setDepth(100)
-      .setAlpha(0.7);
+      .setAlpha(0.4);
 
     this.room.onMessage('pong', (sentAt: number) => {
       if (typeof sentAt === 'number') this.room.send('rtt', Date.now() - sentAt);
@@ -1277,7 +1275,8 @@ export class GameScene extends Phaser.Scene {
     if (!log) return;
     const rows: string[] = [];
     this.room.state.chat?.forEach((c) => {
-      const mark = c.kind === 'taunt' ? '!' : c.kind === 'spree' ? '*' : '>';
+      const mark =
+        c.kind === 'taunt' ? '!' : c.kind === 'spree' || c.kind === 'medal' ? '*' : '>';
       rows.push(`${mark} ${displayLabel(c.name, 'Soldier')}: ${displayLabel(c.text)}`);
     });
     const next = rows.slice(0, 6).join('\n');

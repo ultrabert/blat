@@ -90,12 +90,14 @@ export class KillFeedEntry extends Schema {
   @type('string') victim = '';
   @type('string') weapon = '';
   @type('boolean') headshot = false;
+  @type('number') at = 0;
 }
 
 export class ChatEntry extends Schema {
   @type('string') name = '';
   @type('string') text = '';
   @type('string') kind = 'chat';
+  @type('number') at = 0;
 }
 
 export class GameState extends Schema {

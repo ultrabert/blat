@@ -63,6 +63,8 @@ import { pickAntiCampSpawn } from './spawns.js';
 import {
   BONUS,
   isBonusId,
+  MULTI_WINDOW_MS,
+  multiKillLabel,
   spreeLabel,
 } from './bonuses.js';
 import {
@@ -119,6 +121,8 @@ type InternalSoldier = {
   botCookUntil: number;
   lastHitWeapon: string;
   dashCdMs: number;
+  lastKillAt: number;
+  multiCount: number;
 };
 
 type InternalBullet = {
@@ -422,6 +426,8 @@ export class Simulation {
       botCookUntil: 0,
       lastHitWeapon: '',
       dashCdMs: 0,
+      lastKillAt: 0,
+      multiCount: 0,
     });
     return p;
   }
@@ -468,7 +474,9 @@ export class Simulation {
     const row = new ChatEntry();
     row.name = displayLabel(name, 'Soldier').slice(0, 16);
     row.text = clean;
-    row.kind = kind === 'taunt' ? 'taunt' : kind === 'spree' ? 'spree' : 'chat';
+    row.kind =
+      kind === 'taunt' || kind === 'spree' || kind === 'medal' ? kind : 'chat';
+    row.at = this.now;
     this.state.chat.unshift(row);
     while (this.state.chat.length > MATCH.chatKeep) this.state.chat.pop();
   }
@@ -1573,6 +1581,8 @@ export class Simulation {
     soldier.state.reloading = false;
     soldier.state.deaths += 1;
     soldier.state.spree = 0;
+    soldier.multiCount = 0;
+    soldier.lastKillAt = 0;
     soldier.state.bonus = '';
     soldier.state.bonusUntil = 0;
     soldier.state.deathKind =
@@ -1605,6 +1615,9 @@ export class Simulation {
     if (killer && killer !== soldier) {
       killer.state.kills += 1;
       killer.state.spree += 1;
+      if (this.now - killer.lastKillAt <= MULTI_WINDOW_MS) killer.multiCount += 1;
+      else killer.multiCount = 1;
+      killer.lastKillAt = this.now;
       const mode = this.mode();
       if (mode === 'dm' || mode === 'tdm') killer.state.score += 1;
       if (mode === 'tdm') {
@@ -1615,6 +1628,8 @@ export class Simulation {
         this.state.firstBlood = true;
         this.addChat(killer.state.name, 'FIRST BLOOD', 'spree');
       }
+      const multi = multiKillLabel(killer.multiCount);
+      if (multi) this.addChat(killer.state.name, multi, 'medal');
       const spree = spreeLabel(killer.state.spree);
       if (spree) this.addChat(killer.state.name, spree, 'spree');
     }
@@ -1635,6 +1650,7 @@ export class Simulation {
     row.victim = displayLabel(victim.state.name, 'Soldier');
     row.weapon = displayLabel(weapon || (killer ? killer.state.weapon : 'fall'), 'fall');
     row.headshot = headshot;
+    row.at = this.now;
     this.state.killFeed.unshift(row);
     while (this.state.killFeed.length > KILL_FEED_MAX) this.state.killFeed.pop();
   }

@@ -264,14 +264,14 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C3  
 **Tags:** `@mechanic combat-hud`  
-**Description:** Screen-space HP / vest / fuel bars, weapon icon + mag, nade counts, cook meter.  
+**Description:** Labeled HP / vest / jet / pulse / dash meters on a plate, centered weapon well with big mag count, nade chips, match clock up top. Headshot and multi-kill banners punch in the middle of the screen.  
 **Files:** `src/game/hud.ts`, `GameScene`
 
 ## Mechanic: kill-feed
 
 **Phase:** C4  
 **Tags:** `@mechanic kill-feed`  
-**Description:** Nametags over other soldiers. Obituaries `Killer [AK HS] Victim` (or `Victim [FALL]`). Synced `killFeed` array (max 8).  
+**Description:** Nametags over other soldiers. Obituaries `Killer [AK] HS Victim` (or `Victim [FALL]`). Synced `killFeed` array (max 8). Headshot rows highlight gold.  
 **Files:** `shared/schema.ts` (`KillFeedEntry`), `shared/simulation.ts`, `StickSoldier`, `src/game/hud.ts`
 
 ## Mechanic: scoreboard
@@ -366,8 +366,9 @@ Demo room defaults to TDM.
 
 **Phase:** E2  
 **Tags:** `@mechanic kill-sprees`  
-**Description:** Unbroken kill streak. First blood, then 3 Killing Spree / 5 Rampage / 7 Unstoppable / 10 Godlike (chat kind `spree`). Resets on death.  
-**Files:** `shared/bonuses.ts` (`spreeLabel`), `simulation.kill`
+**Description:** Unbroken kill streak. First blood, then 3 Killing Spree / 5 Rampage / 7 Unstoppable / 10 Godlike (chat kind `spree`). Resets on death. Rapid kills within 3.5s also stack **DOUBLE / TRIPLE / QUAD / PENTA / HEXA / UNREAL** (chat kind `medal`). Local player gets a center banner + sting; headshots banner without filling chat. Multiples punch larger.  
+**Tests:** `shared/bonuses.test.ts` (`kill-sprees`)  
+**Files:** `shared/bonuses.ts` (`spreeLabel`, `multiKillLabel`), `simulation.kill`, `src/game/hud.ts`
 
 ## Mechanic: leftover-kit
 
