@@ -26,7 +26,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | 5 | Advanced movement (cannonball, etc.) | **Done** — bhop, kick jump, cannonball, backflip, air momentum |
 | 6 | Grenade cook, richer ragdoll/knockback | **Done** — cook/hold, blast+bullet knockback, death fling |
 | 7 | Weapon arsenal + pickups | **Done** — rifle / sniper / shotgun + map pickups |
-| 8 | Modes / realism toggles / polish | Partial (DM lobby) |
+| 8 | Modes / realism toggles / polish | Partial (DM lobby + spectator demo) |
 
 ## Mechanic: arcade-physics-core
 
@@ -169,6 +169,14 @@ Keys `1/2/3` equip owned weapons. Crosshair reflects weapon cone.
 **Tags:** `@mechanic weapon-pickups`  
 **Description:** Map pads unlock sniper/shotgun (and a mid rifle pad). Touch to grant + equip; pad respawns after `PICKUP_RESPAWN_MS`. Unlocks persist across death.  
 **Files:** `shared/weapons.ts` (`WEAPON_PICKUPS`), `shared/simulation.ts`, `schema.PickupState`
+
+## Mechanic: bot-dm-ai
+
+**Phase:** 8  
+**Tags:** `@mechanic bot-dm-ai`  
+**Description:** Bots pick a sticky target (prefer humans, else other soldiers) and hold it for ~0.7–2.2s, then nearest or random. Close range they strafe / back off / roll instead of always walking into the target. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
+**Trade-offs:** Random retarget + strafe breaks 1v1 mirror loops; bots look less “aimed.” Extra demo bots cost a bit of sim.  
+**Files:** `shared/simulation.ts` (`updateBotBrain`), `shared/constants.ts` (`BOT`, `DEMO_BOTS`), `server/rooms/DmRoom.ts`
 
 ## How agents / humans must edit mechanics
 

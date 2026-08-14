@@ -147,11 +147,18 @@ body {
   text-align: center;
 }
 
-.lobby-status {
-  margin-top: 4px;
-  color: #9aa8c7;
-  font-size: 13px;
-  text-align: center;
+#lobby.lobby-splash .lobby-tag,
+#lobby.lobby-splash .lobby-label,
+#lobby.lobby-splash .lobby-input,
+#lobby.lobby-splash .lobby-btn,
+#lobby.lobby-splash .lobby-row,
+#lobby.lobby-splash .lobby-divider {
+  display: none;
+}
+
+#lobby.lobby-splash .lobby-status {
+  margin-top: 18px;
+  font-size: 15px;
 }
 
 #game-shell {

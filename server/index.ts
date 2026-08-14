@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
-import { Server } from 'colyseus';
+import { matchMaker, Server } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { DmRoom } from './rooms/DmRoom.js';
 import { loadLocalEnv } from './loadEnv.js';
@@ -62,4 +62,8 @@ httpServer.listen(PORT, () => {
   if (serveClient) {
     console.log(`[blat] serving client from ${distDir}`);
   }
+  void matchMaker.onReady
+    .then(() => matchMaker.createRoom('dm', { code: 'DEMO' }))
+    .then((room) => console.log(`[blat] demo room ready ${room.roomId}`))
+    .catch((err) => console.warn('[blat] demo room warmup failed', err));
 });

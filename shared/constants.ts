@@ -63,7 +63,14 @@ export const BOT = {
   aimError: 0.18,
   fireRange: 720,
   thinkIntervalMs: 120,
+  retargetMinMs: 700,
+  retargetMaxMs: 2200,
+  styleMinMs: 280,
+  styleMaxMs: 900,
 } as const;
+
+/** Spectator DEMO room — enough bodies that a 1v1 chase cannot dominate. */
+export const DEMO_BOTS = 5;
 
 export const COLORS = {
   bgTop: 0x1a2744,

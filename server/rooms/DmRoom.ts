@@ -1,5 +1,5 @@
 import { Room, Client } from 'colyseus';
-import { TICK_MS, type PlayerInput } from '../../shared/constants.js';
+import { DEMO_BOTS, TICK_MS, type PlayerInput } from '../../shared/constants.js';
 import { isDemoRoomCode, normalizeRoomCode } from '../../shared/roomCode.js';
 import { GameState } from '../../shared/schema.js';
 import { Simulation } from '../../shared/simulation.js';
@@ -35,11 +35,14 @@ export class DmRoom extends Room<GameState> {
 
     this.roomCode = code;
     this.demo = isDemoRoomCode(code);
-    if (this.demo) this.maxClients = 12;
+    if (this.demo) {
+      this.maxClients = 12;
+      this.autoDispose = false;
+    }
     this.setMetadata({ code, demo: this.demo });
     this.setState(new GameState());
     this.sim = new Simulation(this.state);
-    this.sim.ensureBots(this.demo ? 3 : 2);
+    this.sim.ensureBots(this.demo ? DEMO_BOTS : 2);
 
     this.onMessage('input', (client, message: PlayerInput) => {
       this.sim.setInput(client.sessionId, message);
@@ -52,7 +55,7 @@ export class DmRoom extends Room<GameState> {
     this.setSimulationInterval((deltaTime) => {
       this.sim.step(deltaTime || TICK_MS);
       if (this.demo) {
-        this.sim.ensureBots(3);
+        this.sim.ensureBots(DEMO_BOTS);
         return;
       }
       const humans = [...this.sim.soldiers.values()].filter((s) => !s.state.isBot).length;

@@ -56,6 +56,11 @@ type InternalSoldier = {
   lastGrenadeAt: number;
   respawnAt: number;
   botThinkAt: number;
+  botTargetId: string | null;
+  botRetargetAt: number;
+  botMoveStyle: 0 | 1 | 2;
+  botStrafeDir: -1 | 1;
+  botStyleUntil: number;
   lastQueuedSeq: number;
 };
 
@@ -236,6 +241,11 @@ export class Simulation {
       lastGrenadeAt: 0,
       respawnAt: 0,
       botThinkAt: 0,
+      botTargetId: null,
+      botRetargetAt: 0,
+      botMoveStyle: 0,
+      botStrafeDir: 1,
+      botStyleUntil: 0,
       lastQueuedSeq: 0,
     });
     return p;
@@ -347,6 +357,10 @@ export class Simulation {
     };
   }
 
+  /**
+   * @mechanic bot-dm-ai
+   * Sticky target + strafe/backoff so two bots cannot mirror-chase forever.
+   */
   private updateBotBrain(bot: InternalSoldier): void {
     if (!bot.state.alive) {
       bot.input = idleInput(bot.state.lastProcessedInput);
@@ -355,27 +369,50 @@ export class Simulation {
     if (this.now < bot.botThinkAt) return;
     bot.botThinkAt = this.now + BOT.thinkIntervalMs;
 
-    const target =
-      [...this.soldiers.values()].find(
-        (s) => s !== bot && s.state.alive && !s.state.isBot,
-      ) ?? [...this.soldiers.values()].find((s) => s !== bot && s.state.alive);
+    const others = [...this.soldiers.values()].filter(
+      (s) => s !== bot && s.state.alive,
+    );
+    const humans = others.filter((s) => !s.state.isBot);
+    const pool = humans.length > 0 ? humans : others;
+    const target = this.pickBotTarget(bot, pool);
 
     if (!target) {
       bot.input.move = 0;
       bot.input.jet = false;
       bot.input.fire = false;
+      bot.input.crouch = false;
       return;
     }
 
     const dx = target.state.x - bot.state.x;
     const dy = target.state.y - bot.state.y;
     const dist = Math.hypot(dx, dy);
-    bot.input.move = Math.abs(dx) > 18 ? Math.sign(dx) : 0;
-    bot.input.jet = dy < -40 || (!bot.onGround && dy < 20);
-    bot.input.crouch = false;
+    const toward = Math.abs(dx) > 16 ? (Math.sign(dx) as -1 | 1) : 0;
+
+    if (this.now >= bot.botStyleUntil) {
+      const roll = Math.random();
+      if (dist < 70) bot.botMoveStyle = roll < 0.5 ? 2 : roll < 0.85 ? 1 : 0;
+      else if (dist < 220) bot.botMoveStyle = roll < 0.28 ? 1 : roll < 0.4 ? 2 : 0;
+      else bot.botMoveStyle = roll < 0.18 ? 1 : 0;
+      bot.botStrafeDir = (Math.random() < 0.5 ? -1 : 1) as -1 | 1;
+      bot.botStyleUntil =
+        this.now + BOT.styleMinMs + Math.random() * (BOT.styleMaxMs - BOT.styleMinMs);
+    }
+
+    if (bot.botMoveStyle === 2) {
+      bot.input.move = toward ? ((-toward) as -1 | 1) : bot.botStrafeDir;
+    } else if (bot.botMoveStyle === 1) {
+      bot.input.move = bot.botStrafeDir;
+    } else {
+      bot.input.move = toward || bot.botStrafeDir;
+    }
+
+    bot.input.jet =
+      (dy < -80 && dist > 48 && bot.botMoveStyle !== 2) || (!bot.onGround && dy < -16);
+    bot.input.crouch = bot.botMoveStyle === 1 && bot.onGround && dist < 200;
     bot.input.aimX = dx + (Math.random() * 60 - 30);
     bot.input.aimY = dy + (Math.random() * 30 - 20);
-    bot.input.fire = dist < BOT.fireRange && Math.random() > 0.45;
+    bot.input.fire = dist < BOT.fireRange && dist > 28 && Math.random() > 0.42;
     bot.input.grenade = false;
 
     // Distance-based loadout (unlock all for bots)
@@ -386,9 +423,42 @@ export class Simulation {
     else bot.state.weapon = 'rifle';
 
     // Bots skip cooking — instant full-fuse lob
-    if (dist < 280 && bot.state.grenades > 0 && Math.random() > 0.94) {
+    const nadeChance = dist < 120 ? 0.88 : 0.94;
+    if (dist < 280 && bot.state.grenades > 0 && Math.random() > nadeChance) {
       this.throwGrenade(bot, GRENADE.fuseMs, { consumeInventory: true });
     }
+  }
+
+  private pickBotTarget(
+    bot: InternalSoldier,
+    pool: InternalSoldier[],
+  ): InternalSoldier | undefined {
+    const sticky = bot.botTargetId
+      ? pool.find((s) => s.state.id === bot.botTargetId)
+      : undefined;
+    if (sticky && this.now < bot.botRetargetAt) return sticky;
+
+    if (pool.length === 0) {
+      bot.botTargetId = null;
+      return undefined;
+    }
+
+    let next = pool[0]!;
+    let best = Infinity;
+    for (const s of pool) {
+      const d = Math.hypot(s.state.x - bot.state.x, s.state.y - bot.state.y);
+      if (d < best) {
+        best = d;
+        next = s;
+      }
+    }
+    if (pool.length > 1 && Math.random() < 0.4) {
+      next = pool[Math.floor(Math.random() * pool.length)]!;
+    }
+    bot.botTargetId = next.state.id;
+    bot.botRetargetAt =
+      this.now + BOT.retargetMinMs + Math.random() * (BOT.retargetMaxMs - BOT.retargetMinMs);
+    return next;
   }
 
   private stepSoldier(soldier: InternalSoldier, dt: number): void {

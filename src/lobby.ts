@@ -245,7 +245,8 @@ nameInput.addEventListener('keydown', (event) => {
 async function joinDemo(): Promise<void> {
   showError('');
   setBusy(true);
-  showStatus('Loading demo…');
+  lobby.classList.add('lobby-splash');
+  showStatus('Connecting to demo…');
   try {
     const client = new Client(COLYSEUS_URL);
     const room = await withTimeout(
@@ -259,6 +260,7 @@ async function joinDemo(): Promise<void> {
     enterGame(room, DEMO_ROOM_CODE, true);
   } catch (err) {
     console.error(err);
+    lobby.classList.remove('lobby-splash');
     showError(formatJoinError(err));
     showStatus('');
   } finally {

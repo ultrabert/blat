@@ -153,6 +153,7 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
     this.cameras.main.setRoundPixels(true);
+    if (this.spectating) this.cameras.main.setZoom(1.08);
   }
 
   update(_time: number, delta: number): void {
@@ -162,6 +163,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.spectating) {
       this.syncEntities();
+      this.syncPickups();
       this.watchWounds();
       this.updateHud(undefined);
       this.updateCamera(undefined);
@@ -311,19 +313,31 @@ export class GameScene extends Phaser.Scene {
 
   private updateCamera(serverMe: PlayerState | undefined): void {
     if (this.spectating) {
-      let sx = 0;
-      let sy = 0;
-      let n = 0;
+      const alive: { x: number; y: number }[] = [];
       this.room.state.players?.forEach((p) => {
-        if (!p.alive) return;
-        sx += p.x;
-        sy += p.y;
-        n += 1;
+        if (p.alive) alive.push({ x: p.x, y: p.y });
       });
-      const tx = n > 0 ? sx / n : GAME_WIDTH / 2;
-      const ty = n > 0 ? sy / n : GAME_HEIGHT / 2;
-      this.camX += (tx - this.camX) * 0.08;
-      this.camY += (ty - this.camY) * 0.08;
+      let tx = GAME_WIDTH / 2;
+      let ty = GAME_HEIGHT / 2;
+      if (alive.length === 1) {
+        tx = alive[0]!.x;
+        ty = alive[0]!.y;
+      } else if (alive.length >= 2) {
+        const radius = 780;
+        let best: { x: number; y: number }[] = alive;
+        let bestCount = 0;
+        for (const p of alive) {
+          const group = alive.filter((q) => Math.hypot(q.x - p.x, q.y - p.y) <= radius);
+          if (group.length > bestCount) {
+            bestCount = group.length;
+            best = group;
+          }
+        }
+        tx = best.reduce((s, p) => s + p.x, 0) / best.length;
+        ty = best.reduce((s, p) => s + p.y, 0) / best.length;
+      }
+      this.camX += (tx - this.camX) * 0.12;
+      this.camY += (ty - this.camY) * 0.12;
       this.cameras.main.centerOn(this.camX, this.camY);
       return;
     }
