@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER, PLATFORMS, VIEW_HEIGHT, VIEW_WIDTH } from '../../../shared/constants';
+import { PLAYER, VIEW_HEIGHT, VIEW_WIDTH } from '../../../shared/constants';
 
 const BLOOD = [0x8b0000, 0xb91c1c, 0x7f1d1d, 0xdc2626, 0x4a0e0e];
 const FLESH = [0xc45c5c, 0x9a3412, 0xa16207, 0x7c2d12, 0x881337];
@@ -91,21 +91,34 @@ export class VisceraFx {
   }
 
   wallSpark(x: number, y: number): void {
-    for (let i = 0; i < 5; i++) {
+    const dust = [0xfde68a, 0xd6d3d1, 0xa8a29e, 0x78716c];
+    for (let i = 0; i < 6; i++) {
       const p = this.scene.add.image(x, y, 'particle');
-      p.setTint(0xfde68a);
+      p.setTint(dust[i % dust.length]!);
       p.setDepth(16);
-      p.setScale(0.35 + Math.random() * 0.4);
+      p.setScale(0.28 + Math.random() * 0.4);
       this.scene.tweens.add({
         targets: p,
-        x: x + Phaser.Math.Between(-16, 16),
-        y: y + Phaser.Math.Between(-16, 16),
+        x: x + Phaser.Math.Between(-14, 14),
+        y: y + Phaser.Math.Between(-14, 14),
         alpha: 0,
-        scale: 0.1,
-        duration: 100 + Math.random() * 80,
+        scale: 0.08,
+        duration: 90 + Math.random() * 90,
         onComplete: () => p.destroy(),
       });
     }
+    const chip = this.scene.add.image(x, y, 'particle');
+    chip.setTint(0x44403c);
+    chip.setDepth(3);
+    chip.setScale(0.45 + Math.random() * 0.25);
+    chip.setAlpha(0.55);
+    this.scene.tweens.add({
+      targets: chip,
+      alpha: 0,
+      delay: 420,
+      duration: 380,
+      onComplete: () => chip.destroy(),
+    });
   }
 
   /** Screen-space blood on the lens after taking damage. */
@@ -134,35 +147,6 @@ export class VisceraFx {
         ease: 'Quad.easeOut',
         onComplete: () => p.destroy(),
       });
-    }
-  }
-
-  /** Long-lived blood on world geometry (bullet impact). */
-  wallSplat(x: number, y: number): void {
-    let sx = x;
-    let sy = y;
-    let best = 18;
-    for (const plat of PLATFORMS) {
-      const left = plat.x - plat.w / 2;
-      const right = plat.x + plat.w / 2;
-      const top = plat.y - plat.h / 2;
-      if (x >= left - 8 && x <= right + 8) {
-        const d = Math.abs(y - top);
-        if (d < best) {
-          best = d;
-          sx = x;
-          sy = top - 1;
-        }
-      }
-    }
-    const count = 3 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < count; i++) {
-      this.placeDecal(
-        sx + (Math.random() - 0.5) * 14,
-        sy + (Math.random() - 0.5) * 8,
-        0.35 + Math.random() * 0.7,
-        9000 + Math.random() * 8000,
-      );
     }
   }
 

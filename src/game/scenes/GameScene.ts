@@ -678,7 +678,6 @@ export class GameScene extends Phaser.Scene {
         sound.wetHit();
       } else {
         this.fx.wallSpark(hit.x, hit.y);
-        this.fx.wallSplat(hit.x, hit.y);
         sound.ricochet();
       }
     }
