@@ -31,7 +31,8 @@ import { sound } from '../audio/SoundBus';
 import { VisceraFx } from '../fx/VisceraFx';
 import { CombatHud } from '../hud';
 import { MiniMap } from '../minimap';
-import { MATCH, OBJECTIVES, parseMode } from '../../../shared/match';
+import { MATCH, OBJECTIVES, parseMode, sameTeam } from '../../../shared/match';
+import { BONUS } from '../../../shared/bonuses';
 import { PredictionController } from '../net/PredictionController';
 import { ProjectilePredictor } from '../net/ProjectilePredictor';
 
@@ -53,9 +54,12 @@ export class GameScene extends Phaser.Scene {
   private keyG!: Phaser.Input.Keyboard.Key;
   private key1!: Phaser.Input.Keyboard.Key;
   private key2!: Phaser.Input.Keyboard.Key;
+  private key3!: Phaser.Input.Keyboard.Key;
   private keyR!: Phaser.Input.Keyboard.Key;
   private keyQ!: Phaser.Input.Keyboard.Key;
   private keyV!: Phaser.Input.Keyboard.Key;
+  private keyF!: Phaser.Input.Keyboard.Key;
+  private keyShift!: Phaser.Input.Keyboard.Key;
   private keyTab!: Phaser.Input.Keyboard.Key;
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyT!: Phaser.Input.Keyboard.Key;
@@ -89,6 +93,7 @@ export class GameScene extends Phaser.Scene {
   private lastVest = 0;
   private lastNades = 0;
   private lastReserve = 0;
+  private lastBonus = '';
   private wasRolling = false;
   private aimReadyUntil = 0;
   private spectating = false;
@@ -127,11 +132,15 @@ export class GameScene extends Phaser.Scene {
     this.keyG = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.G);
     this.key1 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
     this.key2 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+    this.key3 = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
     this.keyR = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.keyQ = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
     this.keyV = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.V);
+    this.keyF = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F);
+    this.keyShift = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     keyboard.addCapture([
       Phaser.Input.Keyboard.KeyCodes.TAB,
+      Phaser.Input.Keyboard.KeyCodes.SHIFT,
       Phaser.Input.Keyboard.KeyCodes.F1,
       Phaser.Input.Keyboard.KeyCodes.F2,
       Phaser.Input.Keyboard.KeyCodes.F3,
@@ -175,7 +184,7 @@ export class GameScene extends Phaser.Scene {
         VIEW_HEIGHT - 14,
         this.spectating
           ? 'DEMO · bots fighting · Tab scores'
-          : 'Tab scores · E pulse · T chat · F1–F4 taunt · 1/2 gun/knife · R reload · Q drop',
+          : 'Tab scores · Shift dash · E pulse · 3 punch · F toss flag · T chat',
         {
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           fontSize: '11px',
@@ -225,6 +234,8 @@ export class GameScene extends Phaser.Scene {
     if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyQ)) this.prediction.latchDrop();
     if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyV)) this.prediction.latchNadeCycle();
     if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyE)) this.prediction.latchBlat();
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyShift)) this.prediction.latchDash();
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyF)) this.prediction.latchTossFlag();
     this.handleChatKeys(chatting);
     if (chatting) this.grenadeHeld = false;
     else if (this.keyG.isDown) this.grenadeHeld = true;
@@ -333,6 +344,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (Phaser.Input.Keyboard.JustDown(this.key2)) {
       this.room.send('weapon', { weapon: 'melee' });
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.key3)) {
+      this.room.send('weapon', { weapon: 'punch' });
     }
     if (isWeaponId(serverMe.weapon)) this.localWeapon = serverMe.weapon;
   }
@@ -470,9 +484,20 @@ export class GameScene extends Phaser.Scene {
         this.soldiers.set(id, stick);
       }
 
-      const skin = skinForId(id, !!player.isBot, id === this.sessionId);
+      const skin = skinForId(id, !!player.isBot, id === this.sessionId, player.team);
+      const me = this.room.state.players.get(this.sessionId);
+      const hidden =
+        player.bonus === 'predator' &&
+        id !== this.sessionId &&
+        !sameTeam(me?.team || 0, player.team, parseMode(this.room.state.mode));
+      const visAlpha = hidden ? BONUS.predatorAlpha : player.alive ? 1 : 0.9;
+      const weapon: WeaponId =
+        player.bonus === 'flamegod'
+          ? 'flamer'
+          : isWeaponId(player.weapon)
+            ? player.weapon
+            : DEFAULT_WEAPON;
       const tint = SKINS[skin].tint;
-      const weapon: WeaponId = isWeaponId(player.weapon) ? player.weapon : DEFAULT_WEAPON;
 
       if (id === this.sessionId && this.prediction.predicted) {
         const local = this.prediction.predicted;
@@ -506,7 +531,7 @@ export class GameScene extends Phaser.Scene {
             deathKind: player.deathKind,
             team: player.team,
             tint,
-            alpha: local.alive ? 1 : 0.9,
+            alpha: visAlpha,
           },
           dt,
         );
@@ -544,12 +569,12 @@ export class GameScene extends Phaser.Scene {
             weapon,
             aimReady: true,
             name: player.isBot ? player.name : player.name,
-            showName: true,
+            showName: !hidden,
             vest: player.vest,
             deathKind: player.deathKind,
             team: player.team,
             tint,
-            alpha: view.alive ? view.alpha : 0.9,
+            alpha: hidden ? visAlpha : view.alive ? view.alpha : 0.9,
           },
           dt,
         );
@@ -679,7 +704,8 @@ export class GameScene extends Phaser.Scene {
         (this.lastFirearm && me.firearm !== this.lastFirearm) ||
         me.vest > this.lastVest + 4 ||
         me.grenades > this.lastNades ||
-        me.reserve > this.lastReserve + 8
+        me.reserve > this.lastReserve + 8 ||
+        (!!me.bonus && me.bonus !== this.lastBonus)
       ) {
         sound.pickup();
       }
@@ -687,6 +713,7 @@ export class GameScene extends Phaser.Scene {
       this.lastVest = me.vest;
       this.lastNades = me.grenades;
       this.lastReserve = me.reserve;
+      this.lastBonus = me.bonus || '';
     }
 
     const seen = new Set<string>();
@@ -709,7 +736,13 @@ export class GameScene extends Phaser.Scene {
                 ? 0x713f12
                 : kind === 'nade'
                   ? 0x7c2d12
-                  : 0x0b1020;
+                  : kind === 'bonus'
+                    ? item === 'berserk'
+                      ? 0x7f1d1d
+                      : item === 'predator'
+                        ? 0x3f3f46
+                        : 0x9a3412
+                    : 0x0b1020;
         pad.fillStyle(tint, 0.7);
         pad.fillRoundedRect(-22, -18, 44, 36, 6);
         pad.lineStyle(2, 0xe8eefc, 0.35);
@@ -728,9 +761,15 @@ export class GameScene extends Phaser.Scene {
                   ? 'A'
                   : kind === 'nade'
                     ? (item === 'cluster' ? 'C' : item === 'sting' ? 'S' : 'F')
-                    : isWeaponId(item)
-                      ? WEAPONS[item].short
-                      : '?';
+                    : kind === 'bonus'
+                      ? item === 'berserk'
+                        ? 'B'
+                        : item === 'predator'
+                          ? 'P'
+                          : 'G'
+                      : isWeaponId(item)
+                        ? WEAPONS[item].short
+                        : '?';
           parts.push(
             this.add
               .text(0, 0, label, {
@@ -1228,7 +1267,8 @@ export class GameScene extends Phaser.Scene {
     if (!log) return;
     const rows: string[] = [];
     this.room.state.chat?.forEach((c) => {
-      rows.push(`${c.kind === 'taunt' ? '!' : '>'} ${c.name}: ${c.text}`);
+      const mark = c.kind === 'taunt' ? '!' : c.kind === 'spree' ? '*' : '>';
+      rows.push(`${mark} ${c.name}: ${c.text}`);
     });
     const next = rows.slice(0, 6).join('\n');
     if (next.length === this.lastChatLen && log.childElementCount) return;

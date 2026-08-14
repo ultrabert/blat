@@ -51,6 +51,7 @@ export class MiniMap {
 
     state.players?.forEach((p: PlayerState, id: string) => {
       if (!p.alive && id !== meId) return;
+      if (p.bonus === 'predator' && id !== meId) return;
       const color =
         id === meId
           ? 0xe8eefc

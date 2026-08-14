@@ -38,6 +38,9 @@ One human → bots fill slots. Second human → bots leave.
 | Q | Drop gun |
 | V | Cycle nade |
 | E | Blat pulse (knockback ring) |
+| Shift | Dash / lunge (ground-only in Realistic) |
+| 3 | Punch |
+| F | Toss carried flag |
 | T | Chat |
 | F1–F4 | Taunts |
 | Tab (hold) | Scoreboard |

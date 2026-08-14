@@ -73,6 +73,11 @@ export const PLAYER = {
   backflipVx: 320,
   backflipVy: -360,
   backflipDurationMs: 300,
+  /** Wave E — original air/ground lunge. */
+  dashFuel: 16,
+  dashSpeed: 460,
+  dashCooldownMs: 860,
+  dashDurationMs: 140,
 } as const;
 
 export const BOT = {
@@ -295,6 +300,8 @@ export type PlayerInput = {
   drop: boolean;
   nadeCycle: boolean;
   blat: boolean;
+  dash: boolean;
+  tossFlag: boolean;
 };
 
 export function playerHalfExtents(

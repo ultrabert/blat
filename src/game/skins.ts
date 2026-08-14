@@ -25,7 +25,14 @@ export const BOT_SKIN: SkinId = 'crimson';
 const MULTIPLAYER_POOL: SkinId[] = ['desert', 'urban', 'navy', 'olive'];
 
 /** Stable skin pick from a session id string. */
-export function skinForId(id: string, isBot: boolean, isLocal: boolean): SkinId {
+export function skinForId(
+  id: string,
+  isBot: boolean,
+  isLocal: boolean,
+  team = 0,
+): SkinId {
+  if (team === 1) return 'navy';
+  if (team === 2) return 'crimson';
   if (isLocal) return DEFAULT_SKIN;
   if (isBot) return BOT_SKIN;
   let h = 0;

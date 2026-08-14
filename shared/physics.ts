@@ -5,6 +5,7 @@
  * @mechanic advanced-movement
  * @mechanic realistic-mode
  * @mechanic wind-weather
+ * @mechanic air-dash
  * @tradeoff momentum-vs-control (overspeed coasts; air steer is soft)
  * @tradeoff cannonball-vs-accuracy (dive converts fall→speed, wide spread)
  */
@@ -19,6 +20,7 @@ import {
   TICK_MS,
   playerHalfExtents,
 } from './constants.js';
+import { BONUS } from './bonuses.js';
 import { recoverRecoil } from './accuracy.js';
 
 export type MoveBody = {
@@ -56,6 +58,10 @@ export type MoveBody = {
   realistic?: boolean;
   /** Horizontal wind (px/s) applied while airborne. */
   windVx?: number;
+  /** Wave E — berserker bonus speed. */
+  berserk?: boolean;
+  dashCdMs?: number;
+  dashMs?: number;
 };
 
 export type MoveInput = {
@@ -64,6 +70,7 @@ export type MoveInput = {
   crouch: boolean;
   aimX: number;
   aimY: number;
+  dash?: boolean;
 };
 
 function clamp(v: number, min: number, max: number): number {
@@ -104,11 +111,12 @@ function applyHorizontal(
   if (body.rollMs > 0 || body.cannonballMs > 0 || body.backflipMs > 0) return;
 
   if (grounded) {
-    const wishSpeed = body.prone
-      ? PLAYER.proneSpeed
-      : body.crouching
-        ? PLAYER.crouchSpeed
-        : PLAYER.speed;
+    const wishSpeed =
+      (body.prone
+        ? PLAYER.proneSpeed
+        : body.crouching
+          ? PLAYER.crouchSpeed
+          : PLAYER.speed) * (body.berserk ? BONUS.berserkSpeed : 1);
     if (input.move !== 0) {
       const wish = input.move * wishSpeed;
       const reversing = body.vx !== 0 && Math.sign(body.vx) !== input.move;
@@ -175,6 +183,8 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
 
   if (body.rollCdMs > 0) body.rollCdMs = Math.max(0, body.rollCdMs - dt * 1000);
   if (body.backflipMs > 0) body.backflipMs = Math.max(0, body.backflipMs - dt * 1000);
+  if ((body.dashCdMs ?? 0) > 0) body.dashCdMs = Math.max(0, (body.dashCdMs ?? 0) - dt * 1000);
+  if ((body.dashMs ?? 0) > 0) body.dashMs = Math.max(0, (body.dashMs ?? 0) - dt * 1000);
   if (body.cannonballMs > 0) {
     body.cannonballMs = Math.max(0, body.cannonballMs - dt * 1000);
     body.crouching = true;
@@ -343,6 +353,27 @@ export function stepMovement(body: MoveBody, input: MoveInput, dt: number): void
       ? PLAYER.fuelRegenRate
       : PLAYER.fuelRegenRate * PLAYER.fuelRegenAirMult;
     body.fuel = Math.min(PLAYER.maxFuel, body.fuel + regen * dt);
+  }
+
+  /** @mechanic air-dash */
+  const canDash = !body.realistic || body.onGround;
+  if (
+    input.dash &&
+    canDash &&
+    (body.dashCdMs ?? 0) <= 0 &&
+    body.fuel >= PLAYER.dashFuel &&
+    body.rollMs <= 0 &&
+    body.cannonballMs <= 0
+  ) {
+    const dirX = input.move !== 0 ? input.move : body.aimX >= 0 ? 1 : -1;
+    body.vx = dirX * PLAYER.dashSpeed + body.vx * 0.15;
+    if (!body.onGround) body.vy = body.aimY * PLAYER.dashSpeed * 0.5 + body.vy * 0.2;
+    else body.vy = Math.min(body.vy, -80);
+    body.fuel = Math.max(0, body.fuel - PLAYER.dashFuel);
+    body.dashCdMs = PLAYER.dashCooldownMs;
+    body.dashMs = PLAYER.dashDurationMs;
+    body.crouching = false;
+    body.prone = false;
   }
 
   body.vy += GRAVITY * dt;

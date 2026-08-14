@@ -27,6 +27,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | 6 | Grenade cook, richer ragdoll/knockback | **Done** — cook/hold, blast+bullet knockback, death fling |
 | 7 | Weapon arsenal + pickups | **Done** — Wave B kit, mags, drops, vest, nades |
 | 8 | Modes / realism toggles / polish | **Done** — TDM/CTF/Point/Infil, realistic, chat, browser, minimap, wind, blat pulse |
+| 9 | Bonuses / leftover kit / dash | **Done** — Wave E |
 
 ## Mechanic: arcade-physics-core
 
@@ -349,6 +350,45 @@ Demo room defaults to TDM.
 **Tags:** `@mechanic minimap`  
 **Description:** Bottom-right radar: soldiers, flags, hill, infil. Local pip brighter.  
 **Files:** `src/game/minimap.ts`
+
+## Mechanic: soldat-bonuses
+
+**Phase:** E1  
+**Tags:** `@mechanic soldat-bonuses`  
+**Description:** Timed power-ups on Ridge pads (12s, respawn ~22s). **Berserk** — walk faster, melee ×2.6. **Predator** — near-invisible to enemies (hidden on minimap). **Flame God** — infinite flamer + flame immunity.  
+**Tests:** `shared/bonuses.test.ts`  
+**Files:** `shared/bonuses.ts`, `shared/simulation.ts`, `MAP_PICKUPS`
+
+## Mechanic: kill-sprees
+
+**Phase:** E2  
+**Tags:** `@mechanic kill-sprees`  
+**Description:** Unbroken kill streak. First blood, then 3 Killing Spree / 5 Rampage / 7 Unstoppable / 10 Godlike (chat kind `spree`). Resets on death.  
+**Files:** `shared/bonuses.ts` (`spreeLabel`), `simulation.kill`
+
+## Mechanic: leftover-kit
+
+**Phase:** E3 / E6  
+**Tags:** `@mechanic leftover-kit`  
+**Description:** USSOCOM, Ruger 77, M4A1, Bow on the map. **3** punch (short, shove).  
+**Tests:** `shared/bonuses.test.ts` (`leftover-kit`)  
+**Files:** `shared/weapons.ts`
+
+## Mechanic: throw-flag
+
+**Phase:** E5  
+**Tags:** `@mechanic throw-flag`  
+**Description:** **F** tosses a carried CTF flag along aim (~170px). Return timer starts.  
+**Tests:** `shared/bonuses.test.ts` (`throw-flag`)  
+**Files:** `shared/simulation.ts` (`tossFlag`)
+
+## Mechanic: air-dash
+
+**Phase:** E7  
+**Tags:** `@mechanic air-dash`  
+**Description:** Original blat lunge. **Shift** — burst along move/facing, costs 16 fuel, 860ms cooldown. Arcade: air+ground. Realistic: ground only. Shared `stepMovement` so prediction matches.  
+**Tests:** `shared/bonuses.test.ts` (`air-dash`)  
+**Files:** `shared/physics.ts`, `PLAYER.dash*`
 
 ## How agents / humans must edit mechanics
 

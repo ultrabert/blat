@@ -7,6 +7,7 @@ import {
   VIEW_WIDTH,
 } from '../../shared/constants';
 import { isTeamMode, MATCH, MODE_LABEL, parseMode, TEAM_NAME } from '../../shared/match';
+import { BONUS_LABEL, isBonusId } from '../../shared/bonuses';
 import type { GameState, KillFeedEntry, PlayerState } from '../../shared/schema';
 import {
   DEFAULT_WEAPON,
@@ -136,6 +137,7 @@ export class CombatHud {
       state.realistic ? 'REAL' : '',
       scores,
       `${mm}:${ss}`,
+      frame.me && isBonusId(frame.me.bonus) ? BONUS_LABEL[frame.me.bonus] : '',
       wind ? `WIND ${wind > 0 ? '+' : ''}${wind}` : '',
       state.winner ? `WIN ${state.winner}` : '',
       frame.me && !frame.me.alive ? 'RESPAWNING' : '',
@@ -161,6 +163,9 @@ export class CombatHud {
     y += 14;
     const blatFrac = 1 - Math.min(1, (me.blatCd || 0) / MATCH.blatCooldownMs);
     this.meter(g, x, y, 168, 6, blatFrac, 0xc4b5fd, 0xa78bfa, 0x7c3aed);
+    y += 12;
+    const dashFrac = 1 - Math.min(1, (me.dashCd || 0) / PLAYER.dashCooldownMs);
+    this.meter(g, x, y, 168, 4, dashFrac, 0x67e8f9, 0x22d3ee, 0x0891b2);
     if (frame.cooking) {
       y += 14;
       this.meter(g, x, y, 168, 6, frame.cookFrac, 0xfbbf24, 0xf97316, 0xef4444);
@@ -213,7 +218,7 @@ export class CombatHud {
     this.gunText.setText(`${weapon.name}   ${mag}${rel}`);
     const nade = (me.nadeType || 'frag').toUpperCase();
     this.nadeText.setText(
-      `F ${me.frags}   C ${me.clusters}   S ${me.stings}   [${nade}]   E pulse${
+      `F ${me.frags}   C ${me.clusters}   S ${me.stings}   [${nade}]   E pulse  Shift dash${
         (me.blatCd || 0) > 0 ? '' : '  •'
       }`,
     );

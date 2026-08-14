@@ -24,6 +24,8 @@ function tap(partial: Partial<PlayerInput> = {}): PlayerInput {
     drop: false,
     nadeCycle: false,
     blat: false,
+    dash: false,
+    tossFlag: false,
     ...partial,
   };
 }

@@ -65,6 +65,23 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 
 **D1–D6:** Wave D is in. Playtest modes at **https://blat.fly.dev/** (hard-refresh). `/demo` is TDM.
 
+## Wave E — Soldat leftovers + original dash
+
+The clone is playable. This wave adds the missing Soldat toys and one blat-only move.
+
+| # | Aspect | Soldat | Blat now | Why it matters |
+|---|---|---|---|---|
+| E1 | Bonuses | Berserker, Predator, Flame God | **Shipped** — yellow pads, 12s | Power-up chaos is Soldat |
+| E2 | Sprees | Killing Spree / Rampage / … | **Shipped** — 3/5/7/10 + first blood | Hear the stomp |
+| E3 | Leftover guns | SOCOM, Ruger, M4, Bow | **Shipped** — loot on Ridge | Each gun is a different game |
+| E4 | Team colors | Blue / red kits | **Shipped** — Alpha navy, Bravo crimson | Read teams at range |
+| E5 | Throw flag | Toss along aim | **Shipped** — **F** while carrying | CTF skill, not just run |
+| E6 | Punch | Fist melee | **Shipped** — **3**, shove | Close pile without a knife swing |
+| E7 | Original dash | — | **Shipped** — **Shift** lunge (air in arcade) | Blat movement, not a clone |
+| E8 | Bonus read | Glow / fade | **Shipped** — HUD + predator fade | Know who is juiced |
+
+**E1–E8:** Wave E is in. Hard-refresh **https://blat.fly.dev/**.
+
 ## Locked / not on this list
 
 - Matter / Box2D (needs a netcode redesign)

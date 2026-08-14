@@ -10,16 +10,21 @@ export type FireKind = 'bullet' | 'pellet' | 'rocket' | 'shell' | 'flame' | 'mel
 
 export type WeaponId =
   | 'de'
+  | 'socom'
   | 'mp5'
   | 'ak'
+  | 'm4'
   | 'barrett'
+  | 'ruger'
   | 'spas'
   | 'm79'
   | 'law'
   | 'flamer'
   | 'minigun'
+  | 'bow'
   | 'knife'
-  | 'chainsaw';
+  | 'chainsaw'
+  | 'punch';
 
 export type WeaponDef = {
   id: WeaponId;
@@ -67,6 +72,23 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reserveMax: 35,
     reloadMs: 1400,
   },
+  socom: {
+    id: 'socom',
+    name: 'USSOCOM',
+    short: 'SOC',
+    kind: 'bullet',
+    fireCooldownMs: 125,
+    damage: 28,
+    muzzleSpeed: 760,
+    pellets: 1,
+    spreadMult: 0.55,
+    pelletSpread: 0,
+    recoilKick: 0.05,
+    recoilMax: 0.18,
+    magSize: 12,
+    reserveMax: 48,
+    reloadMs: 1300,
+  },
   mp5: {
     id: 'mp5',
     name: 'MP5',
@@ -101,6 +123,23 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reserveMax: 90,
     reloadMs: 1800,
   },
+  m4: {
+    id: 'm4',
+    name: 'M4A1',
+    short: 'M4',
+    kind: 'bullet',
+    fireCooldownMs: 86,
+    damage: 20,
+    muzzleSpeed: 880,
+    pellets: 1,
+    spreadMult: 0.78,
+    pelletSpread: 0,
+    recoilKick: 0.038,
+    recoilMax: 0.18,
+    magSize: 30,
+    reserveMax: 90,
+    reloadMs: 1650,
+  },
   barrett: {
     id: 'barrett',
     name: 'Barrett',
@@ -118,6 +157,24 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reserveMax: 20,
     reloadMs: 2200,
     headOhk: true,
+  },
+  ruger: {
+    id: 'ruger',
+    name: 'Ruger 77',
+    short: 'RUG',
+    kind: 'bullet',
+    fireCooldownMs: 640,
+    damage: 64,
+    muzzleSpeed: 980,
+    pellets: 1,
+    spreadMult: 0.28,
+    pelletSpread: 0,
+    recoilKick: 0.13,
+    recoilMax: 0.26,
+    magSize: 4,
+    reserveMax: 16,
+    reloadMs: 2000,
+    gravityScale: 0.42,
   },
   spas: {
     id: 'spas',
@@ -219,6 +276,26 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reserveMax: 200,
     reloadMs: 3200,
   },
+  bow: {
+    id: 'bow',
+    name: 'Bow',
+    short: 'BOW',
+    kind: 'bullet',
+    fireCooldownMs: 480,
+    damage: 72,
+    muzzleSpeed: 500,
+    pellets: 1,
+    spreadMult: 0.22,
+    pelletSpread: 0,
+    recoilKick: 0.04,
+    recoilMax: 0.1,
+    magSize: 1,
+    reserveMax: 12,
+    reloadMs: 700,
+    gravityScale: 1.85,
+    dragPerSec: 0.1,
+    lifeMs: 2800,
+  },
   knife: {
     id: 'knife',
     name: 'Knife',
@@ -255,6 +332,24 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reloadMs: 0,
     meleeRange: 44,
   },
+  punch: {
+    id: 'punch',
+    name: 'Punch',
+    short: 'PCH',
+    kind: 'melee',
+    fireCooldownMs: 220,
+    damage: 22,
+    muzzleSpeed: 0,
+    pellets: 0,
+    spreadMult: 0,
+    pelletSpread: 0,
+    recoilKick: 0,
+    recoilMax: 0,
+    magSize: 0,
+    reserveMax: 0,
+    reloadMs: 0,
+    meleeRange: 32,
+  },
 } as const;
 
 export const DEFAULT_WEAPON: WeaponId = 'de';
@@ -267,27 +362,28 @@ export function isWeaponId(v: string): v is WeaponId {
 }
 
 export function isMelee(id: string): boolean {
-  return id === 'knife' || id === 'chainsaw';
+  return id === 'knife' || id === 'chainsaw' || id === 'punch';
 }
 
 export function isFirearm(id: string): boolean {
   return isWeaponId(id) && !isMelee(id);
 }
 
-/** 1 = firearm in hands, 2 = melee. */
-export function weaponBySlot(slot: number): 'firearm' | 'melee' | null {
+/** 1 = firearm, 2 = knife/saw, 3 = punch. */
+export function weaponBySlot(slot: number): 'firearm' | 'melee' | 'punch' | null {
   if (slot === 1) return 'firearm';
   if (slot === 2) return 'melee';
+  if (slot === 3) return 'punch';
   return null;
 }
 
 export function weaponIconKey(id: string): string {
-  if (id === 'barrett') return 'icon_sniper';
+  if (id === 'barrett' || id === 'ruger' || id === 'bow') return 'icon_sniper';
   if (id === 'spas' || id === 'm79' || id === 'law') return 'icon_shotgun';
   return 'icon_rifle';
 }
 
-export type PickupKind = 'weapon' | 'ammo' | 'medkit' | 'vest' | 'nade';
+export type PickupKind = 'weapon' | 'ammo' | 'medkit' | 'vest' | 'nade' | 'bonus';
 
 export type MapPickupSpec = {
   id: string;
@@ -329,6 +425,13 @@ export const MAP_PICKUPS: MapPickupSpec[] = [
   { id: 'ammo_cave_r', kind: 'ammo', item: '', x: 2000, y: 1000 },
   { id: 'vest_cave_l', kind: 'vest', item: '', x: 160, y: 1020 },
   { id: 'nade_cave', kind: 'nade', item: 'frag', x: 2400, y: 1020 },
+  { id: 'w_socom_c', kind: 'weapon', item: 'socom', x: 360, y: 1120 },
+  { id: 'w_ruger_r', kind: 'weapon', item: 'ruger', x: 2360, y: 180 },
+  { id: 'w_m4_h', kind: 'weapon', item: 'm4', x: 680, y: 380 },
+  { id: 'w_bow_l', kind: 'weapon', item: 'bow', x: 400, y: 180 },
+  { id: 'bon_berserk', kind: 'bonus', item: 'berserk', x: 500, y: 540 },
+  { id: 'bon_pred', kind: 'bonus', item: 'predator', x: 1480, y: 250 },
+  { id: 'bon_flame', kind: 'bonus', item: 'flamegod', x: 2060, y: 540 },
 ];
 
 export const PICKUP_RADIUS = 28;

@@ -46,6 +46,10 @@ export class PlayerState extends Schema {
   @type('number') score = 0;
   @type('number') blatReadyAt = 0;
   @type('number') blatCd = 0;
+  @type('string') bonus = '';
+  @type('number') bonusUntil = 0;
+  @type('number') spree = 0;
+  @type('number') dashCd = 0;
 }
 
 export class BulletState extends Schema {
@@ -123,4 +127,5 @@ export class GameState extends Schema {
   @type('number') pulseY = 0;
   @type('number') pulseAt = 0;
   @type('number') now = 0;
+  @type('boolean') firstBlood = false;
 }

@@ -56,6 +56,7 @@ function bodyFromServer(p: PlayerState): MoveBody {
     backflipMs: p.backflip ? 120 : 0,
     prone: !!p.prone,
     proneHoldMs: p.prone ? PLAYER.proneHoldMs : 0,
+    dashCdMs: p.dashCd || 0,
   };
 }
 
@@ -71,6 +72,8 @@ export class PredictionController {
   private dropLatch = false;
   private nadeCycleLatch = false;
   private blatLatch = false;
+  private dashLatch = false;
+  private tossFlagLatch = false;
   private realistic = false;
   private windVx = 0;
   private remotes = new Map<string, RemoteSample[]>();
@@ -95,6 +98,14 @@ export class PredictionController {
     this.blatLatch = true;
   }
 
+  latchDash(): void {
+    this.dashLatch = true;
+  }
+
+  latchTossFlag(): void {
+    this.tossFlagLatch = true;
+  }
+
   setWorld(realistic: boolean, windVx: number): void {
     this.realistic = realistic;
     this.windVx = windVx;
@@ -107,7 +118,10 @@ export class PredictionController {
   /** Fixed-step predict + return inputs that should be sent this frame. */
   tick(
     deltaMs: number,
-    sample: Omit<PlayerInput, 'seq' | 'fire' | 'grenade' | 'reload' | 'drop' | 'nadeCycle' | 'blat'>,
+    sample: Omit<
+      PlayerInput,
+      'seq' | 'fire' | 'grenade' | 'reload' | 'drop' | 'nadeCycle' | 'blat' | 'dash' | 'tossFlag'
+    >,
     serverMe: PlayerState | undefined,
   ): PlayerInput[] {
     const sent: PlayerInput[] = [];
@@ -137,12 +151,16 @@ export class PredictionController {
         drop: this.dropLatch,
         nadeCycle: this.nadeCycleLatch,
         blat: this.blatLatch,
+        dash: this.dashLatch,
+        tossFlag: this.tossFlagLatch,
       };
       this.fireLatch = false;
       this.reloadLatch = false;
       this.dropLatch = false;
       this.nadeCycleLatch = false;
       this.blatLatch = false;
+      this.dashLatch = false;
+      this.tossFlagLatch = false;
 
       this.pending.push(input);
       if (this.pending.length > 64) this.pending.shift();
@@ -150,6 +168,7 @@ export class PredictionController {
       if (this.predicted.alive) {
         this.predicted.realistic = this.realistic;
         this.predicted.windVx = this.windVx;
+        this.predicted.berserk = serverMe.bonus === 'berserk';
         stepMovement(this.predicted, input, TICK_MS / 1000);
         const blockers = [];
         for (const buf of this.remotes.values()) {
@@ -211,6 +230,7 @@ export class PredictionController {
     serverBody.recoil = this.predicted.recoil;
     serverBody.realistic = this.realistic;
     serverBody.windVx = this.windVx;
+    serverBody.berserk = serverMe.bonus === 'berserk';
 
     const dx = this.predicted.x - serverBody.x;
     const dy = this.predicted.y - serverBody.y;

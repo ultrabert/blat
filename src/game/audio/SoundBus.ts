@@ -6,11 +6,11 @@
 export type ShootKind = string;
 
 function shootBuf(kind: string): BufKey {
-  if (kind === 'barrett') return 'shoot_sniper';
+  if (kind === 'barrett' || kind === 'ruger' || kind === 'bow') return 'shoot_sniper';
   if (kind === 'spas') return 'shoot_shotgun';
   if (kind === 'm79' || kind === 'law') return 'explode';
   if (kind === 'flamer') return 'jet_loop';
-  if (kind === 'knife' || kind === 'chainsaw') return 'hit';
+  if (kind === 'knife' || kind === 'chainsaw' || kind === 'punch') return 'hit';
   return 'shoot_rifle';
 }
 

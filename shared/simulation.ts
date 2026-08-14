@@ -60,6 +60,11 @@ import {
 } from './weapons.js';
 import { pickAntiCampSpawn } from './spawns.js';
 import {
+  BONUS,
+  isBonusId,
+  spreeLabel,
+} from './bonuses.js';
+import {
   blatImpulse,
   inRadius,
   isTeamMode,
@@ -112,6 +117,7 @@ type InternalSoldier = {
   botGoalY: number;
   botCookUntil: number;
   lastHitWeapon: string;
+  dashCdMs: number;
 };
 
 type InternalBullet = {
@@ -179,6 +185,8 @@ function toMoveBody(soldier: InternalSoldier): MoveBody {
     backflipMs: soldier.backflipMs,
     prone: soldier.state.prone,
     proneHoldMs: soldier.proneHoldMs,
+    berserk: p.bonus === 'berserk',
+    dashCdMs: soldier.dashCdMs,
   };
 }
 
@@ -211,6 +219,7 @@ function fromMoveBody(soldier: InternalSoldier, body: MoveBody): void {
   soldier.cannonballMs = body.cannonballMs;
   soldier.backflipMs = body.backflipMs;
   soldier.proneHoldMs = body.proneHoldMs;
+  soldier.dashCdMs = body.dashCdMs ?? 0;
 }
 
 function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
@@ -227,6 +236,8 @@ function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
     drop: !!input.drop,
     nadeCycle: !!input.nadeCycle,
     blat: !!input.blat,
+    dash: !!input.dash,
+    tossFlag: !!input.tossFlag,
   };
 }
 
@@ -244,6 +255,8 @@ function idleInput(seq = 0): PlayerInput {
     drop: false,
     nadeCycle: false,
     blat: false,
+    dash: false,
+    tossFlag: false,
   };
 }
 
@@ -366,6 +379,9 @@ export class Simulation {
     p.deathKind = '';
     p.score = 0;
     p.blatReadyAt = 0;
+    p.bonus = '';
+    p.bonusUntil = 0;
+    p.spree = 0;
     p.onGround = false;
     p.crouching = false;
     p.rolling = false;
@@ -404,6 +420,7 @@ export class Simulation {
       botGoalY: spawn.y,
       botCookUntil: 0,
       lastHitWeapon: '',
+      dashCdMs: 0,
     });
     return p;
   }
@@ -450,7 +467,7 @@ export class Simulation {
     const row = new ChatEntry();
     row.name = (name || 'Soldier').slice(0, 16);
     row.text = clean;
-    row.kind = kind === 'taunt' ? 'taunt' : 'chat';
+    row.kind = kind === 'taunt' ? 'taunt' : kind === 'spree' ? 'spree' : 'chat';
     this.state.chat.unshift(row);
     while (this.state.chat.length > MATCH.chatKeep) this.state.chat.pop();
   }
@@ -463,6 +480,10 @@ export class Simulation {
     }
     if (want === 'melee' || want === 'knife') {
       p.weapon = isWeaponId(p.melee) ? p.melee : DEFAULT_MELEE;
+      return;
+    }
+    if (want === 'punch') {
+      p.weapon = 'punch';
       return;
     }
     if (!isWeaponId(want)) return;
@@ -607,6 +628,8 @@ export class Simulation {
       drop: false,
       nadeCycle: false,
       blat: false,
+      dash: false,
+      tossFlag: false,
     };
   }
 
@@ -698,6 +721,12 @@ export class Simulation {
       dist < MATCH.blatRadius &&
       this.now >= p.blatReadyAt &&
       Math.random() > 0.72;
+    bot.input.dash = gdist > 160 && p.fuel > 30 && Math.random() > 0.82;
+    bot.input.tossFlag =
+      (this.state.flagACarrier === p.id || this.state.flagBCarrier === p.id) &&
+      gdist < 90 &&
+      Math.random() > 0.7;
+    if (dist < 38 && Math.random() > 0.45) p.weapon = 'punch';
   }
 
   private botGoal(
@@ -854,9 +883,15 @@ export class Simulation {
     const body = toMoveBody(soldier);
     body.realistic = this.state.realistic;
     body.windVx = this.state.windVx;
+    body.berserk = p.bonus === 'berserk';
     stepMovement(body, soldier.input, dt);
     fromMoveBody(soldier, body);
     p.blatCd = Math.max(0, p.blatReadyAt - this.now);
+    p.dashCd = soldier.dashCdMs;
+    if (p.bonus && this.now >= p.bonusUntil) {
+      p.bonus = '';
+      p.bonusUntil = 0;
+    }
 
     if (!p.alive) {
       if (soldier.respawnAt && this.now >= soldier.respawnAt) {
@@ -872,6 +907,7 @@ export class Simulation {
     }
 
     if (soldier.input.nadeCycle) this.cycleNade(p);
+    if (soldier.input.tossFlag) this.tossFlag(soldier);
     if (soldier.input.drop) this.dropFirearm(soldier);
     this.updateReload(soldier);
     if (soldier.input.reload) this.startReload(soldier);
@@ -881,6 +917,8 @@ export class Simulation {
 
     soldier.input.fire = false;
     soldier.input.blat = false;
+    soldier.input.dash = false;
+    soldier.input.tossFlag = false;
   }
 
   /**
@@ -999,12 +1037,17 @@ export class Simulation {
    */
   private tryFire(soldier: InternalSoldier): void {
     const p = soldier.state;
-    const weaponId = isWeaponId(p.weapon) ? p.weapon : DEFAULT_WEAPON;
+    const flameGod = p.bonus === 'flamegod';
+    const weaponId = flameGod
+      ? 'flamer'
+      : isWeaponId(p.weapon)
+        ? p.weapon
+        : DEFAULT_WEAPON;
     const weapon = WEAPONS[weaponId];
-    if (p.reloading) return;
+    if (p.reloading && !flameGod) return;
     if (this.now < soldier.lastFireAt + weapon.fireCooldownMs) return;
 
-    if (weapon.kind !== 'melee') {
+    if (weapon.kind !== 'melee' && !flameGod) {
       if (p.ammo <= 0) {
         this.startReload(soldier);
         return;
@@ -1012,7 +1055,7 @@ export class Simulation {
     }
 
     soldier.lastFireAt = this.now;
-    if (weapon.kind !== 'melee') {
+    if (weapon.kind !== 'melee' && !flameGod) {
       p.ammo = Math.max(0, p.ammo - 1);
       if (p.ammo <= 0) this.startReload(soldier);
     }
@@ -1098,8 +1141,16 @@ export class Simulation {
     if (hit?.kind !== 'player') return;
     const victim = this.soldiers.get(hit.playerId);
     if (!victim) return;
-    const dmg = Math.round(damage * bodyDamageMult(hit.bodyPart));
+    const dmg = Math.round(
+      damage *
+        bodyDamageMult(hit.bodyPart) *
+        (p.bonus === 'berserk' ? BONUS.berserkMelee : 1),
+    );
     const impulse = bulletImpulse(ax, ay, dmg);
+    if (p.weapon === 'punch') {
+      impulse.vx *= 2.1;
+      impulse.vy *= 1.5;
+    }
     this.damage(victim, dmg, soldier, impulse, hit.bodyPart, p.weapon);
   }
 
@@ -1328,7 +1379,7 @@ export class Simulation {
           this.state.pickups.delete(id);
         } else {
           ps.active = false;
-          pickup.respawnAt = this.now + PICKUP_RESPAWN_MS;
+          pickup.respawnAt = this.now + (ps.kind === 'bonus' ? BONUS.respawnMs : PICKUP_RESPAWN_MS);
         }
         break;
       }
@@ -1380,6 +1431,12 @@ export class Simulation {
       const nk = isNadeKind(ps.item) ? ps.item : 'frag';
       this.setNadeCount(p, nk, this.nadeCount(p, nk) + 1);
       p.nadeType = nk;
+      return true;
+    }
+    if (kind === 'bonus') {
+      if (!isBonusId(ps.item)) return false;
+      p.bonus = ps.item;
+      p.bonusUntil = this.now + BONUS.durationMs;
       return true;
     }
     return false;
@@ -1481,6 +1538,12 @@ export class Simulation {
   ): void {
     if (!soldier.state.alive) return;
     if (killer && sameTeam(killer.state.team, soldier.state.team, this.mode())) return;
+    if (
+      soldier.state.bonus === 'flamegod' &&
+      (weapon === 'flamer' || weapon === 'flame')
+    ) {
+      return;
+    }
     if (impulse) {
       soldier.state.vx += impulse.vx;
       soldier.state.vy += impulse.vy;
@@ -1507,6 +1570,9 @@ export class Simulation {
     soldier.state.cooking = false;
     soldier.state.reloading = false;
     soldier.state.deaths += 1;
+    soldier.state.spree = 0;
+    soldier.state.bonus = '';
+    soldier.state.bonusUntil = 0;
     soldier.state.deathKind =
       soldier.lastHitWeapon === 'fall'
         ? 'fall'
@@ -1536,12 +1602,19 @@ export class Simulation {
     }
     if (killer && killer !== soldier) {
       killer.state.kills += 1;
+      killer.state.spree += 1;
       const mode = this.mode();
       if (mode === 'dm' || mode === 'tdm') killer.state.score += 1;
       if (mode === 'tdm') {
         if (killer.state.team === TEAM.alpha) this.state.alphaScore += 1;
         if (killer.state.team === TEAM.bravo) this.state.bravoScore += 1;
       }
+      if (!this.state.firstBlood) {
+        this.state.firstBlood = true;
+        this.addChat(killer.state.name, 'FIRST BLOOD', 'spree');
+      }
+      const spree = spreeLabel(killer.state.spree);
+      if (spree) this.addChat(killer.state.name, spree, 'spree');
     }
     this.dropCarriedFlags(soldier);
     this.pushKillFeed(killer, soldier, soldier.lastHitWeapon, bodyPart === 'head');
@@ -1595,6 +1668,7 @@ export class Simulation {
     p.backflip = false;
     p.deathKind = '';
     soldier.lastHitWeapon = '';
+    soldier.dashCdMs = 0;
     soldier.botCookUntil = 0;
     soldier.respawnAt = 0;
     soldier.onGround = false;
@@ -1611,7 +1685,33 @@ export class Simulation {
     soldier.cookStartedAt = 0;
     soldier.reloadEndsAt = 0;
     p.cooking = false;
+    p.bonus = '';
+    p.bonusUntil = 0;
     this.clearInputQueue(soldier);
+  }
+
+  private tossFlag(soldier: InternalSoldier): void {
+    const p = soldier.state;
+    const id = p.id;
+    const len = Math.hypot(p.aimX, p.aimY) || 1;
+    const nx = p.aimX / len;
+    const ny = p.aimY / len;
+    const x = Math.max(20, Math.min(GAME_WIDTH - 20, p.x + nx * BONUS.tossFlagDist));
+    const y = Math.max(20, Math.min(GAME_HEIGHT - 20, p.y + ny * BONUS.tossFlagDist));
+    if (this.state.flagACarrier === id) {
+      this.state.flagACarrier = '';
+      this.state.flagAx = x;
+      this.state.flagAy = y;
+      this.state.flagAHome = false;
+      this.flagAReturnAt = this.now + MATCH.flagReturnMs;
+    }
+    if (this.state.flagBCarrier === id) {
+      this.state.flagBCarrier = '';
+      this.state.flagBx = x;
+      this.state.flagBy = y;
+      this.state.flagBHome = false;
+      this.flagBReturnAt = this.now + MATCH.flagReturnMs;
+    }
   }
 
   private clearInputQueue(soldier: InternalSoldier): void {
