@@ -394,25 +394,16 @@ export type MapPickupSpec = {
 };
 
 /**
- * Map pads — one of each gun, off spawn points. Kits/nades/bonuses still
- * respawn on a shorter timer; guns are a destination.
+ * Map pads — a handful of power guns as destinations. Kits/nades/bonuses
+ * still respawn on a shorter timer.
  */
 export const MAP_PICKUPS: MapPickupSpec[] = [
-  // Rim decks — not the bowl run
   { id: 'w_ak_l', kind: 'weapon', item: 'ak', x: 340, y: 297 },
   { id: 'w_minigun_r', kind: 'weapon', item: 'minigun', x: 2220, y: 297 },
-  // Bowl ledges / cave rooms
-  { id: 'w_spas_l', kind: 'weapon', item: 'spas', x: 1120, y: 697 },
-  { id: 'w_m4_h', kind: 'weapon', item: 'm4', x: 2075, y: 1100 },
   { id: 'w_flamer_m', kind: 'weapon', item: 'flamer', x: 560, y: 1100 },
   { id: 'w_barrett_r', kind: 'weapon', item: 'barrett', x: 2000, y: 1100 },
-  { id: 'w_socom_c', kind: 'weapon', item: 'socom', x: 240, y: 1128 },
-  // Fight pads
   { id: 'w_m79_m', kind: 'weapon', item: 'm79', x: 1380, y: 497 },
   { id: 'w_law_sky', kind: 'weapon', item: 'law', x: 1280, y: 137 },
-  { id: 'w_bow_l', kind: 'weapon', item: 'bow', x: 1080, y: 257 },
-  { id: 'w_saw_l', kind: 'weapon', item: 'chainsaw', x: 360, y: 538 },
-  { id: 'w_ruger_r', kind: 'weapon', item: 'ruger', x: 2200, y: 538 },
   { id: 'med_l', kind: 'medkit', item: '', x: 580, y: 218 },
   { id: 'med_r', kind: 'medkit', item: '', x: 1980, y: 218 },
   { id: 'med_v', kind: 'medkit', item: '', x: 1200, y: 838 },
@@ -434,7 +425,7 @@ export const MAP_PICKUPS: MapPickupSpec[] = [
 export const PICKUP_RADIUS = 28;
 export const PICKUP_RESPAWN_MS = 16000;
 /** Guns stay gone long enough that holding one is map control. */
-export const WEAPON_RESPAWN_MS = 50000;
+export const WEAPON_RESPAWN_MS = 90000;
 /** Dropped guns are not collected until this elapses (avoids instant re-grab). */
 export const PICKUP_ARM_MS = 480;
 export const MEDKIT_HEAL = 50;

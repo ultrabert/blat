@@ -184,8 +184,8 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 7 — **B3 retune**  
 **Tags:** `@mechanic weapon-pickups`  
-**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Map pads are sparse (one of each gun, off spawn). Weapon pads respawn on `WEAPON_RESPAWN_MS` (~50s); kits/nades stay on `PICKUP_RESPAWN_MS`. Drops are ephemeral.  
-**Trade-offs:** Getting a Barrett or LAW is a trip and a hold. Losing it (death drop) is the other way to contest it.  
+**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Six power pads (AK, minigun, LAW, Barrett, M79, flamer) sit on decks/caves/sky — off spawn, not on the bowl run. Weapon pads respawn on `WEAPON_RESPAWN_MS` (90s); kits/nades stay on `PICKUP_RESPAWN_MS`. Drops are ephemeral.  
+**Trade-offs:** Getting a Barrett or LAW is a trip and a hold. Losing it (death drop) is the other way to contest it. SPAS / M4 / bow / etc. stay in the arsenal but are not map pads.  
 **Tests:** `shared/weapons.test.ts` (`weapon-pickups`)  
 **Files:** `shared/weapons.ts` (`MAP_PICKUPS`), `shared/simulation.ts`, `schema.PickupState`
 
@@ -193,7 +193,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** B4  
 **Tags:** `@mechanic melee`  
-**Description:** Knife always (key `2`). Short trace, high damage. Chainsaw pickup replaces the melee slot (hold-fire ticks).  
+**Description:** Knife always (key `2`). Short trace, high damage. Chainsaw is in the arsenal (hold-fire ticks) but has no map pad.  
 **Files:** `shared/weapons.ts`, `shared/simulation.ts` (`resolveMelee`)
 
 ## Mechanic: vest-medkits
@@ -375,7 +375,7 @@ Demo room defaults to TDM.
 
 **Phase:** E3 / E6  
 **Tags:** `@mechanic leftover-kit`  
-**Description:** USSOCOM, Ruger 77, M4A1, Bow on the map. **3** punch (short, shove).  
+**Description:** USSOCOM, Ruger 77, M4A1, Bow exist in the arsenal. **3** punch (short, shove). They are not map pads — the six power guns are the destinations.  
 **Tests:** `shared/bonuses.test.ts` (`leftover-kit`)  
 **Files:** `shared/weapons.ts`
 

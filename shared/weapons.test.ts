@@ -160,14 +160,14 @@ describe('magazines-reload', () => {
 describe('weapon-pickups', () => {
   it('weapon-pads-are-sparse-unique-and-off-spawn', () => {
     const guns = MAP_PICKUPS.filter((p) => p.kind === 'weapon');
-    assert.ok(guns.length <= 12, `too many gun pads: ${guns.length}`);
+    assert.ok(guns.length <= 6, `too many gun pads: ${guns.length}`);
     const items = guns.map((g) => g.item);
     assert.equal(new Set(items).size, items.length, 'one pad per gun');
     assert.ok(!MAP_PICKUPS.some((p) => p.kind === 'ammo'));
-    for (const id of ['socom', 'ruger', 'm4', 'bow'] as const) {
-      assert.ok(items.includes(id), `${id} should stay on the map`);
+    for (const id of ['ak', 'minigun', 'law', 'barrett', 'm79', 'flamer'] as const) {
+      assert.ok(items.includes(id), `${id} should stay a map destination`);
     }
-    assert.ok(WEAPON_RESPAWN_MS >= 40000);
+    assert.ok(WEAPON_RESPAWN_MS >= 80000);
     assert.ok(WEAPON_RESPAWN_MS > PICKUP_RESPAWN_MS);
     for (const gun of guns) {
       for (const spawn of SPAWNS) {
