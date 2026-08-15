@@ -142,6 +142,46 @@ export class BootScene extends Phaser.Scene {
       g.generateTexture('prop_flag', 32, 48);
       g.clear();
     }
+    this.paintTile(g, 'dirt_tile', 64, 64, 0x6b4e32, 0x4a3422, 0x8a6a48);
+    this.paintTile(g, 'sand_tile', 64, 64, 0xc4a574, 0xa68554, 0xd8c08a);
+    if (!this.textures.exists('grass_cap')) {
+      g.fillStyle(0x3f6b2a, 1);
+      g.fillRect(0, 8, 64, 8);
+      g.fillStyle(0x5a8f38, 1);
+      g.fillRect(0, 4, 64, 6);
+      g.fillStyle(0x6fa344, 1);
+      for (let x = 2; x < 64; x += 5) {
+        g.fillTriangle(x, 8, x + 3, 8, x + 1.5, 0);
+      }
+      g.generateTexture('grass_cap', 64, 16);
+      g.clear();
+    }
     g.destroy();
+  }
+
+  private paintTile(
+    g: Phaser.GameObjects.Graphics,
+    key: string,
+    w: number,
+    h: number,
+    base: number,
+    dark: number,
+    light: number,
+  ): void {
+    if (this.textures.exists(key)) return;
+    g.fillStyle(base, 1);
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 28; i++) {
+      const x = (i * 17 + 3) % w;
+      const y = (i * 11 + 5) % h;
+      g.fillStyle(i % 2 ? dark : light, 0.55);
+      g.fillRect(x, y, 3 + (i % 3), 2);
+    }
+    g.lineStyle(1, dark, 0.25);
+    for (let x = 0; x < w; x += 8) {
+      g.lineBetween(x, 0, x - 6, h);
+    }
+    g.generateTexture(key, w, h);
+    g.clear();
   }
 }

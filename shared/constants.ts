@@ -183,7 +183,7 @@ export const RAMPS: RampSpec[] = [
 /** Filled Soldat-style hills — solid dirt, not a visual-only overlay. */
 export type TerrainPoly = { x: number; y: number }[];
 
-export const TERRAIN_POLYS: TerrainPoly[] = [
+export const TERRAIN_BOWLS: TerrainPoly[] = [
   // Left bowl — cave door under the rim so the under-hill tunnel is reachable
   [
     { x: 400, y: 309 },
@@ -206,14 +206,16 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
     { x: 2040, y: 1020 },
     { x: 2160, y: 960 },
   ],
-  // Pit bed
-  [
-    { x: 900, y: 849 },
-    { x: 1660, y: 849 },
-    { x: 1660, y: GAME_HEIGHT },
-    { x: 900, y: GAME_HEIGHT },
-  ],
-  // Cave floor slabs (dirt below the walkable cave decks)
+];
+
+export const TERRAIN_PIT: TerrainPoly = [
+  { x: 900, y: 849 },
+  { x: 1660, y: 849 },
+  { x: 1660, y: GAME_HEIGHT },
+  { x: 900, y: GAME_HEIGHT },
+];
+
+export const TERRAIN_CAVE_FLOORS: TerrainPoly[] = [
   [
     { x: 0, y: 1142 },
     { x: 600, y: 1142 },
@@ -228,6 +230,12 @@ export const TERRAIN_POLYS: TerrainPoly[] = [
   ],
 ];
 
+export const TERRAIN_POLYS: TerrainPoly[] = [
+  ...TERRAIN_BOWLS,
+  TERRAIN_PIT,
+  ...TERRAIN_CAVE_FLOORS,
+];
+
 /** Waist-high cover + cliff faces (full AABB collision). */
 export type CoverMaterial = 'sand' | 'wood' | 'stone';
 export type CoverSpec = { x: number; y: number; w: number; h: number; mat: CoverMaterial };
@@ -238,12 +246,12 @@ export const COVERS: CoverSpec[] = [
   // Pit floor sandbags (open middle, covered flanks)
   { x: 1180, y: 832, w: 56, h: 36, mat: 'sand' },
   { x: 1380, y: 832, w: 56, h: 36, mat: 'sand' },
-  // Left rim crates (kept off the loft spawn/flag at 180,280)
+  // Left rim: crate on the outer edge so the flag can run onto the bowl
   { x: 96, y: 292, w: 52, h: 34, mat: 'wood' },
-  { x: 280, y: 292, w: 52, h: 34, mat: 'wood' },
-  // Right rim crates (kept off the loft spawn/flag at 2380,280)
-  { x: 2280, y: 292, w: 52, h: 34, mat: 'wood' },
+  { x: 36, y: 392, w: 52, h: 34, mat: 'wood' },
+  // Right rim: same runoff toward the bowl
   { x: 2464, y: 292, w: 52, h: 34, mat: 'wood' },
+  { x: 2524, y: 392, w: 52, h: 34, mat: 'wood' },
   // Map-edge cliff faces
   { x: 40, y: 560, w: 48, h: 280, mat: 'stone' },
   { x: 2520, y: 560, w: 48, h: 280, mat: 'stone' },
@@ -286,7 +294,9 @@ export const WAYPOINTS = [
   { x: 1280, y: 140 },
   { x: 1080, y: 260 },
   { x: 1480, y: 260 },
+  { x: 460, y: 1100 },
   { x: 560, y: 1092 },
+  { x: 2100, y: 1100 },
   { x: 2000, y: 1092 },
   { x: 220, y: 300 },
   { x: 2340, y: 300 },

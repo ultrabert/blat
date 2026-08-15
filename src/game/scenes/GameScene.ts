@@ -9,6 +9,9 @@ import {
   PLATFORMS,
   PLAYER,
   RAMPS,
+  TERRAIN_BOWLS,
+  TERRAIN_CAVE_FLOORS,
+  TERRAIN_PIT,
   TERRAIN_POLYS,
   VIEW_HEIGHT,
   VIEW_WIDTH,
@@ -1090,17 +1093,18 @@ export class GameScene extends Phaser.Scene {
   private drawPlatforms(): void {
     const useArt = this.textures.exists('terrain_dirt') && this.textures.exists('terrain_edge');
     for (const p of PLATFORMS) {
+      const sky = p.y < 180;
+      const cave = p.y > 980;
+      const pit = p.y >= 800 && p.y <= 980;
+      const rim = !sky && !cave && !pit && (p.x < 520 || p.x > 2040);
       if (useArt) {
-        // Fill body with tiled dirt
         const fillH = Math.max(p.h, p.w > 800 ? 48 : 28);
         const body = this.add.tileSprite(p.x, p.y + 4, p.w, fillH, 'terrain_dirt');
         body.setDepth(1);
-        body.setTint(0xc4a574);
-        // Cap edge on top
+        body.setTint(sky ? 0x8a9bb5 : pit ? 0xd2b48c : cave ? 0x6b5340 : 0xc4a574);
         const edge = this.add.image(p.x, p.y - fillH / 2 + 6, 'terrain_edge');
         edge.setDisplaySize(p.w + 4, Math.min(22, 14 + p.h * 0.2));
         edge.setDepth(1.1);
-        // Dark outline for Soldat readability
         const outline = this.add.graphics().setDepth(0.9);
         outline.lineStyle(2, 0x1a1208, 0.65);
         outline.strokeRect(p.x - p.w / 2, p.y - fillH / 2 + 4, p.w, fillH);
@@ -1108,18 +1112,25 @@ export class GameScene extends Phaser.Scene {
         const plat = this.add.image(p.x, p.y, 'platform');
         plat.setDisplaySize(p.w, p.h);
         plat.setDepth(1);
+        if (sky) plat.setTint(0x8a9bb5);
+        if (pit) plat.setTint(0xd4b896);
+        if (cave) plat.setTint(0x6b5340);
+      }
+      if (rim || pit) {
+        const top = p.y - p.h / 2;
+        const cap = this.add.tileSprite(p.x, top - 2, p.w + 6, 12, 'grass_cap');
+        cap.setDepth(1.2);
+        if (pit) cap.setTint(0xc9a86c);
       }
     }
   }
 
   private drawRamps(): void {
     const g = this.add.graphics().setDepth(0.85);
-    g.lineStyle(3, 0x1a1208, 0.7);
+    g.lineStyle(3, 0x2a2118, 0.55);
     for (const r of RAMPS) {
-      g.beginPath();
-      g.moveTo(r.ax, r.ay);
-      g.lineTo(r.bx, r.by);
-      g.strokePath();
+      if (Math.max(r.ay, r.by) <= 860) continue;
+      g.lineBetween(r.ax, r.ay, r.bx, r.by);
     }
   }
 
@@ -1163,19 +1174,133 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawTerrain(): void {
-    const g = this.add.graphics().setDepth(-5);
+    this.paintCaves();
+    this.paintMaskedFill(TERRAIN_BOWLS, 'dirt_tile', 0x9a7a52, -5);
+    this.paintMaskedFill([TERRAIN_PIT], 'sand_tile', 0xd2b48c, -5);
+    this.paintMaskedFill(TERRAIN_CAVE_FLOORS, 'dirt_tile', 0x4a3728, -5);
+    this.paintHillShade();
+    this.paintOutlines();
+    this.paintGrassCaps();
+    this.paintCaveMouths();
+  }
+
+  private fillPoly(
+    g: Phaser.GameObjects.Graphics,
+    poly: { x: number; y: number }[],
+  ): void {
+    if (poly.length < 3) return;
+    g.beginPath();
+    g.moveTo(poly[0]!.x, poly[0]!.y);
+    for (let i = 1; i < poly.length; i++) g.lineTo(poly[i]!.x, poly[i]!.y);
+    g.closePath();
+    g.fillPath();
+  }
+
+  private paintMaskedFill(
+    polys: { x: number; y: number }[][],
+    tileKey: string,
+    tint: number,
+    depth: number,
+  ): void {
+    const key = this.textures.exists(tileKey)
+      ? tileKey
+      : this.textures.exists('terrain_dirt')
+        ? 'terrain_dirt'
+        : 'dirt_tile';
+    const maskG = this.add.graphics().setVisible(false);
+    maskG.fillStyle(0xffffff, 1);
+    for (const poly of polys) this.fillPoly(maskG, poly);
+    const tile = this.add.tileSprite(
+      GAME_WIDTH / 2,
+      GAME_HEIGHT / 2,
+      GAME_WIDTH,
+      GAME_HEIGHT,
+      key,
+    );
+    tile.setDepth(depth);
+    tile.setTint(tint);
+    tile.setMask(maskG.createGeometryMask());
+  }
+
+  private paintCaves(): void {
+    const g = this.add.graphics().setDepth(-6);
+    g.fillStyle(0x0c0a08, 0.94);
+    g.fillRect(0, 328, 412, 820);
+    g.fillRect(2148, 328, 412, 820);
+    g.fillStyle(0x090706, 0.9);
+    g.beginPath();
+    g.moveTo(400, 960);
+    g.lineTo(520, 1020);
+    g.lineTo(700, 1000);
+    g.lineTo(920, 849);
+    g.lineTo(920, GAME_HEIGHT);
+    g.lineTo(400, GAME_HEIGHT);
+    g.closePath();
+    g.fillPath();
+    g.beginPath();
+    g.moveTo(2160, 960);
+    g.lineTo(2040, 1020);
+    g.lineTo(1860, 1000);
+    g.lineTo(1640, 849);
+    g.lineTo(1640, GAME_HEIGHT);
+    g.lineTo(2160, GAME_HEIGHT);
+    g.closePath();
+    g.fillPath();
+  }
+
+  private paintHillShade(): void {
+    const g = this.add.graphics().setDepth(-4.85);
+    g.fillStyle(0x1a120c, 0.32);
+    g.fillTriangle(400, 960, 720, 1008, 430, 520);
+    g.fillTriangle(2160, 960, 1840, 1008, 2130, 520);
+  }
+
+  private paintOutlines(): void {
+    const g = this.add.graphics().setDepth(-4.7);
+    g.lineStyle(3, 0x1a1208, 0.8);
     for (const poly of TERRAIN_POLYS) {
       if (poly.length < 3) continue;
-      g.fillStyle(0x3d2a1a, 0.92);
       g.beginPath();
       g.moveTo(poly[0]!.x, poly[0]!.y);
-      for (let i = 1; i < poly.length; i++) {
-        g.lineTo(poly[i]!.x, poly[i]!.y);
-      }
+      for (let i = 1; i < poly.length; i++) g.lineTo(poly[i]!.x, poly[i]!.y);
       g.closePath();
-      g.fillPath();
-      g.lineStyle(2, 0x1a1208, 0.35);
       g.strokePath();
+    }
+  }
+
+  private paintGrassCaps(): void {
+    const g = this.add.graphics().setDepth(-4.4);
+    for (const r of RAMPS) {
+      if (Math.max(r.ay, r.by) > 860) continue;
+      const dx = r.bx - r.ax;
+      const dy = r.by - r.ay;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (dy / len) * 5;
+      const ny = (-dx / len) * 5;
+      g.lineStyle(11, 0x2f541c, 1);
+      g.lineBetween(r.ax + nx, r.ay + ny, r.bx + nx, r.by + ny);
+      g.lineStyle(6, 0x5a8f38, 1);
+      g.lineBetween(r.ax + nx * 1.4, r.ay + ny * 1.4, r.bx + nx * 1.4, r.by + ny * 1.4);
+      const steps = Math.max(4, Math.round(len / 36));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = r.ax + dx * t + nx * 1.2;
+        const y = r.ay + dy * t + ny * 1.2;
+        g.fillStyle(i % 2 ? 0x6fa344 : 0x4e7c2e, 1);
+        g.fillTriangle(x - 5, y, x + 5, y, x, y - 11);
+      }
+    }
+  }
+
+  private paintCaveMouths(): void {
+    const g = this.add.graphics().setDepth(-4.3);
+    for (const x of [400, 2160]) {
+      g.fillStyle(0x050403, 0.96);
+      g.fillEllipse(x, 1054, 86, 168);
+      g.lineStyle(7, 0x3a2c20, 0.95);
+      g.strokeEllipse(x, 1054, 86, 168);
+      g.lineStyle(2, 0x1a1208, 0.8);
+      g.strokeEllipse(x, 1054, 86, 168);
     }
   }
 

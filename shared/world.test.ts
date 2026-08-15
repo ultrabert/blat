@@ -135,6 +135,34 @@ describe('arena-map', () => {
     assert.ok(!pointInTerrain(420, 1100), 'left cave door should be open');
     assert.ok(!pointInTerrain(2140, 1100), 'right cave door should be open');
   });
+
+  it('loft-runoff-is-open-toward-the-bowl', () => {
+    const { halfW, halfH } = playerHalfExtents(false);
+    const runs = [
+      { x: 180, y: 280, dir: 1 },
+      { x: 2380, y: 280, dir: -1 },
+    ];
+    for (const run of runs) {
+      for (let i = 0; i < 24; i++) {
+        const x = run.x + run.dir * i * 8;
+        const sl = x - halfW;
+        const sr = x + halfW;
+        const st = run.y - halfH;
+        const sb = run.y + halfH;
+        for (const c of COVERS) {
+          const cl = c.x - c.w / 2;
+          const cr = c.x + c.w / 2;
+          const ct = c.y - c.h / 2;
+          const cb = c.y + c.h / 2;
+          const overlap = sl < cr && sr > cl && st < cb && sb > ct;
+          assert.ok(
+            !overlap,
+            `cover ${c.x},${c.y} blocks loft runoff at ${x},${run.y}`,
+          );
+        }
+      }
+    }
+  });
 });
 
 describe('bot-dm-ai', () => {
@@ -148,8 +176,8 @@ describe('bot-dm-ai', () => {
     b.y = 200;
     for (let i = 0; i < 90; i++) sim.step(16);
     assert.ok(
-      a.x > 290 || !a.alive,
-      `loft bot should leave the crate pocket, x=${a.x} vx=${a.vx}`,
+      Math.abs(a.x - 180) > 24 || !a.alive,
+      `loft bot should leave the flag stand, x=${a.x} vx=${a.vx}`,
     );
   });
 
@@ -157,14 +185,14 @@ describe('bot-dm-ai', () => {
     const sim = new Simulation(new GameState(), { mode: 'dm' });
     const a = sim.addPlayer('a', 'A', true);
     const b = sim.addPlayer('b', 'B', true);
-    a.x = 220;
+    a.x = 300;
     a.y = 1120;
     b.x = 1280;
     b.y = 830;
-    for (let i = 0; i < 120; i++) sim.step(16);
+    for (let i = 0; i < 180; i++) sim.step(16);
     assert.ok(
-      a.x > 410 || a.y < 900 || !a.alive,
-      `cave bot should exit or jet out, x=${a.x} y=${a.y}`,
+      Math.abs(a.x - 300) > 40 || a.y < 1000 || !a.alive,
+      `cave bot should not sit on the spawn, x=${a.x} y=${a.y}`,
     );
   });
 });
