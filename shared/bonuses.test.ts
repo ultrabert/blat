@@ -97,8 +97,8 @@ describe('soldat-bonuses', () => {
     const state = new GameState();
     const sim = new Simulation(state, { mode: 'dm' });
     const p = sim.addPlayer('a', 'A');
-    p.x = 640;
-    p.y = 450;
+    p.x = 1010;
+    p.y = 250;
     for (let i = 0; i < 8; i++) sim.step(16);
     assert.equal(p.bonus, 'berserk');
     assert.ok(p.bonusUntil > 0);

@@ -765,7 +765,12 @@ export class GameScene extends Phaser.Scene {
         pad.strokeRoundedRect(-22, -18, 44, 36, 6);
         parts.push(pad);
         if (hasIcon) {
-          const icon = this.add.image(0, -2, iconKey).setDisplaySize(36, 36);
+          const icon = this.add.image(0, -2, iconKey);
+          const src = this.textures.get(iconKey).getSourceImage() as { width: number; height: number };
+          const iw = src.width || 36;
+          const ih = src.height || 16;
+          const s = Math.min(34 / iw, 16 / ih);
+          icon.setDisplaySize(iw * s, ih * s);
           parts.push(icon);
         } else {
           const label =
@@ -1165,6 +1170,7 @@ export class GameScene extends Phaser.Scene {
     for (const s of SCENERY) {
       if (!this.textures.exists(s.key)) continue;
       const img = this.add.image(s.x, s.y, s.key);
+      img.setOrigin(0.5, s.originY ?? 1);
       img.setScale(s.scale);
       img.setDepth(s.depth ?? 0);
       img.setScrollFactor(s.scroll ?? 1);
@@ -1181,7 +1187,6 @@ export class GameScene extends Phaser.Scene {
     this.paintHillShade();
     this.paintOutlines();
     this.paintGrassCaps();
-    this.paintCaveMouths();
   }
 
   private fillPoly(
@@ -1281,26 +1286,6 @@ export class GameScene extends Phaser.Scene {
       g.lineBetween(r.ax + nx, r.ay + ny, r.bx + nx, r.by + ny);
       g.lineStyle(6, 0x5a8f38, 1);
       g.lineBetween(r.ax + nx * 1.4, r.ay + ny * 1.4, r.bx + nx * 1.4, r.by + ny * 1.4);
-      const steps = Math.max(4, Math.round(len / 36));
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const x = r.ax + dx * t + nx * 1.2;
-        const y = r.ay + dy * t + ny * 1.2;
-        g.fillStyle(i % 2 ? 0x6fa344 : 0x4e7c2e, 1);
-        g.fillTriangle(x - 5, y, x + 5, y, x, y - 11);
-      }
-    }
-  }
-
-  private paintCaveMouths(): void {
-    const g = this.add.graphics().setDepth(-4.3);
-    for (const x of [400, 2160]) {
-      g.fillStyle(0x050403, 0.96);
-      g.fillEllipse(x, 1054, 86, 168);
-      g.lineStyle(7, 0x3a2c20, 0.95);
-      g.strokeEllipse(x, 1054, 86, 168);
-      g.lineStyle(2, 0x1a1208, 0.8);
-      g.strokeEllipse(x, 1054, 86, 168);
     }
   }
 

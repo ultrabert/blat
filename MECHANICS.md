@@ -248,7 +248,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C1  
 **Tags:** `@mechanic arena-map`  
-**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (solid dirt, same shape the client paints): dirt bowls with grass caps, a sand pit bed, dark cave chambers with door mouths. Loft crates sit on the outer edge so the flag has a walk lane onto the bowl. Caves are air under the rim decks (`x<400` / `x>2160`) plus a door through each bowl so the under-hill tunnel connects.  
+**Description:** Arena homage (chakapoko's default DM): rim decks, a sloped pit you can run, a mid span, sky pads, and side caves under the bowl. Center floor at y=850 (x=1280) stays solid so cover/prone tests hold. Arcade `PLATFORMS` + `RAMPS` + `COVERS` — not Box2D. `TERRAIN_POLYS` are the filled Soldat-style hills (solid dirt, same shape the client paints): dirt bowls with grass caps, a sand pit bed, dark cave chambers. Gun and kit pads sit on decks/pads, not strung along the bowl run. Loft crates sit on the outer edge so the flag has a walk lane onto the bowl. Caves are air under the rim decks (`x<400` / `x>2160`) plus a door through each bowl so the under-hill tunnel connects.  
 **Trade-offs:** One authored map, not a map pack. Caves punish spawn-campers who sit in the pit. Not a vertex-perfect Arena port — layout and slopes, painted to read as places.  
 **Tests:** `shared/world.test.ts` (`arena-map`)  
 **Files:** `shared/constants.ts`, `src/game/scenes/GameScene.ts` (`drawTerrain`), `BootScene`
@@ -293,7 +293,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C7  
 **Tags:** `@mechanic scenery-parallax`  
-**Description:** Parallax ridges/clouds plus world props (flags, barrels, antennas, hillside scrub, cave-mouth ruins). No collision.  
+**Description:** Parallax ridges/clouds plus grounded world props (flags, barrels, antennas). `bg_scrub` is a painted horizon plate, not a bush — do not stamp it on the playfield. No collision.  
 **Files:** `src/game/scenery.ts`, `BootScene`, `GameScene.drawBackground`
 
 ## Mechanic: match-modes

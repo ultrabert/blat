@@ -136,6 +136,18 @@ describe('arena-map', () => {
     assert.ok(!pointInTerrain(2140, 1100), 'right cave door should be open');
   });
 
+  it('pickups-sit-on-pads-not-bowl-slopes', () => {
+    for (const pad of MAP_PICKUPS) {
+      const onPad = PLATFORMS.some((p) => {
+        const left = p.x - p.w / 2;
+        const right = p.x + p.w / 2;
+        const top = p.y - p.h / 2;
+        return pad.x >= left && pad.x <= right && pad.y <= top && top - pad.y <= 24;
+      });
+      assert.ok(onPad, `${pad.id} at ${pad.x},${pad.y} is not on a platform`);
+    }
+  });
+
   it('loft-runoff-is-open-toward-the-bowl', () => {
     const { halfW, halfH } = playerHalfExtents(false);
     const runs = [
