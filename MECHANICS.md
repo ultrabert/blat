@@ -184,7 +184,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 7 — **B3 retune**  
 **Tags:** `@mechanic weapon-pickups`  
-**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Six power pads (AK, minigun, LAW, Barrett, M79, flamer) sit on decks/caves/sky — off spawn, not on the bowl run. Weapon pads respawn on `WEAPON_RESPAWN_MS` (90s); kits/nades stay on `PICKUP_RESPAWN_MS`. Drops are ephemeral.  
+**Description:** Touching a weapon **swaps** (drops the gun you were holding behind you). Death drops your firearm (and chainsaw). `Q` throws the gun. Drops cannot be grabbed for `PICKUP_ARM_MS` so you do not immediately re-collect the crate. Unlocks do **not** persist across death — you respawn with DE + knife. Six power pads (AK, minigun, LAW, Barrett, M79, flamer) sit on decks, open cave rooms, and sky — off spawn, not under the bowl. Client hides pickups the hill occludes. Drops `sitOnWalkable` so they do not stick inside dirt. Weapon pads respawn on `WEAPON_RESPAWN_MS` (90s); kits/nades stay on `PICKUP_RESPAWN_MS`. Drops are ephemeral.  
 **Trade-offs:** Getting a Barrett or LAW is a trip and a hold. Losing it (death drop) is the other way to contest it. SPAS / M4 / bow / etc. stay in the arsenal but are not map pads.  
 **Tests:** `shared/weapons.test.ts` (`weapon-pickups`)  
 **Files:** `shared/weapons.ts` (`MAP_PICKUPS`), `shared/simulation.ts`, `schema.PickupState`

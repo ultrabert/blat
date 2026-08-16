@@ -14,7 +14,7 @@ import {
 } from './constants.js';
 import { bodyDamageMult } from './accuracy.js';
 import { fellOutOfWorld, stepMovement, type MoveBody } from './physics.js';
-import { terrainBandsAt, segmentHitsTerrain } from './terrain.js';
+import { terrainBandsAt, segmentHitsTerrain, sitOnWalkable } from './terrain.js';
 import { ballisticDamage, stepBallistic } from './ballistics.js';
 import {
   applyVestDamage,
@@ -1525,6 +1525,7 @@ export class Simulation {
     armedAt = 0,
   ): void {
     const id = eid('drop');
+    const seated = sitOnWalkable(x, y);
     const ps = new PickupState();
     ps.id = id;
     ps.kind = 'weapon';
@@ -1532,8 +1533,8 @@ export class Simulation {
     ps.weapon = weapon;
     ps.ammo = ammo;
     ps.reserve = reserve;
-    ps.x = x;
-    ps.y = y;
+    ps.x = seated.x;
+    ps.y = seated.y;
     ps.active = true;
     this.state.pickups.set(id, ps);
     this.pickups.set(id, { state: ps, respawnAt: 0, ephemeral: true, armedAt });

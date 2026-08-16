@@ -148,3 +148,13 @@ export function sitOnWalkable(x: number, y: number, hover = 12): { x: number; y:
   if (best !== null) return { x, y: best - hover };
   return { x, y };
 }
+
+/** Dirt slab between two points on the same column (pickup behind a hill). */
+export function hillOccludes(px: number, py: number, vy: number): boolean {
+  const y0 = Math.min(vy, py);
+  const y1 = Math.max(vy, py);
+  for (const band of terrainBandsAt(px)) {
+    if (band.top < y1 - 8 && band.bottom > y0 + 8) return true;
+  }
+  return false;
+}

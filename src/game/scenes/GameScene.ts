@@ -17,6 +17,7 @@ import {
   VIEW_WIDTH,
 } from '../../../shared/constants';
 import { GRENADE, remainingFuse } from '../../../shared/grenades';
+import { hillOccludes } from '../../../shared/terrain';
 import type { GameState, PlayerState } from '../../../shared/schema';
 import type { TraceTarget } from '../../../shared/trace';
 import {
@@ -805,7 +806,8 @@ export class GameScene extends Phaser.Scene {
         this.pickupSprites.set(id, box);
       }
       box.setPosition(p.x, p.y - 8);
-      box.setVisible(!!p.active);
+      const behindHill = hillOccludes(p.x, p.y, this.camY);
+      box.setVisible(!!p.active && !behindHill);
       box.setAlpha(0.8 + Math.sin(this.nowMs / 280) * 0.15);
       box.y = p.y - 8 + Math.sin(this.nowMs / 400) * 3;
     });

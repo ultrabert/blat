@@ -18,7 +18,7 @@ import {
 } from './constants.js';
 import { pickAntiCampSpawn } from './spawns.js';
 import { traceBullet } from './trace.js';
-import { pointInTerrain } from './terrain.js';
+import { hillOccludes, pointInTerrain } from './terrain.js';
 import { MAP_PICKUPS } from './weapons.js';
 import { Simulation } from './simulation.js';
 import { GameState } from './schema.js';
@@ -134,6 +134,17 @@ describe('arena-map', () => {
     assert.ok(pointInTerrain(800, 720), 'bowl mass should stay solid dirt');
     assert.ok(!pointInTerrain(420, 1100), 'left cave door should be open');
     assert.ok(!pointInTerrain(2140, 1100), 'right cave door should be open');
+  });
+
+  it('pickups-are-not-under-the-bowl', () => {
+    for (const pad of MAP_PICKUPS) {
+      assert.ok(
+        !hillOccludes(pad.x, pad.y, 400),
+        `${pad.id} at ${pad.x},${pad.y} sits under the hill`,
+      );
+    }
+    assert.ok(hillOccludes(560, 1100, 400), 'left tunnel stays behind the bowl');
+    assert.ok(hillOccludes(2000, 1100, 400), 'right tunnel stays behind the bowl');
   });
 
   it('pickups-sit-on-pads-not-bowl-slopes', () => {
