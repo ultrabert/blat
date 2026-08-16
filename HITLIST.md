@@ -12,7 +12,7 @@ The “is this Soldat?” test. If these are wrong, extra guns will not save it.
 | # | Aspect | Soldat | Blat now | Why it matters |
 |---|---|---|---|---|
 | A1 | Jet as hover-strafe | Feather thrust, hang, ceiling slide, long air time | **Shipped** — thrust > gravity, ~5s fuel, jet strafe, ceiling slide. Grounded later if preferred. | Soldat’s fun *is* aerial gunplay. |
-| A2 | Inertia + slopes | Polygon ramps; you slide, kick, carry speed | **Shipped** — arcade `RAMPS` you stand/slide on; bullets hit the slope | Movement skill ceiling without Box2D. |
+| A2 | Inertia + slopes | Polygon ramps; you slide, kick, carry speed | **Shipped** — arcade `RAMPS`; one downhill slide (not doubled); mild slopes no longer stick | Movement skill ceiling without Box2D. |
 | A3 | Mouse-lead camera | Screen pulled toward cursor; aim is the mouse | **Shipped** — camera pulled toward cursor (capped) | How you *look* while flying and spraying. |
 | A4 | Snappy sim | ~60 fps local, tight hits | **Shipped** — `TICK_MS` 16 (~62 Hz), `INTERP_DELAY_MS` 50 | Rubber, late hits, sluggish jets. |
 | A5 | Body blocking | Players collide / stack / boost | **Shipped** — pairwise AABB separate; stand-on | Close fights, nade boosts, spawn piles. |

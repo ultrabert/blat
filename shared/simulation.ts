@@ -46,6 +46,7 @@ import {
 import {
   DEFAULT_MELEE,
   DEFAULT_WEAPON,
+  DESTINATION_GUNS,
   isFirearm,
   isMelee,
   isWeaponId,
@@ -705,11 +706,13 @@ export class Simulation {
 
     const blocked =
       bot.onGround && toward !== 0 && Math.abs(p.vx) < 36 && p.fuel > 8;
+    const caveFloor = p.y > 980;
+    const goalInCave = goal.y > 980;
     bot.input.jet =
       blocked ||
       (gdy < -70 && gdist > 40) ||
       (!bot.onGround && gdy < -12) ||
-      (p.y > 980 && gdist > 80 && p.fuel > 20);
+      (caveFloor && !goalInCave && gdist > 80 && p.fuel > 20);
     bot.input.crouch = bot.botMoveStyle === 1 && bot.onGround && dist < 200 && gdist < 160;
     bot.input.aimX = dx + (Math.random() * 60 - 30);
     bot.input.aimY = dy + (Math.random() * 30 - 20);
@@ -775,7 +778,15 @@ export class Simulation {
         const tDist = target
           ? Math.hypot(target.state.x - p.x, target.state.y - p.y)
           : 9999;
-        if (gunDist < tDist * 0.7) return { x: gun.x, y: gun.y };
+        const destination = isWeaponId(gun.item) && DESTINATION_GUNS.includes(gun.item);
+        const take =
+          destination ? gunDist < 720 && tDist > 130 : gunDist < tDist * 0.7;
+        if (take) {
+          if (segmentHitsTerrain(p.x, p.y, gun.x, gun.y)) {
+            return this.steerViaWaypoint(p.x, p.y, gun.x, gun.y);
+          }
+          return { x: gun.x, y: gun.y };
+        }
       }
     }
     if (!target) {
@@ -801,7 +812,7 @@ export class Simulation {
       const ps = pickup.state;
       if (!ok(ps)) continue;
       const d = Math.hypot(ps.x - bot.state.x, ps.y - bot.state.y);
-      if (d < bestD && !segmentHitsTerrain(bot.state.x, bot.state.y, ps.x, ps.y)) {
+      if (d < bestD) {
         bestD = d;
         best = ps;
       }
@@ -862,7 +873,8 @@ export class Simulation {
     bot.input.grenade = false;
     if (!target || p.grenades <= 0) return;
     if (dist < BOT.nadeMinDist || dist > BOT.nadeMaxDist) return;
-    if (Math.random() > 0.08) return;
+    const flush = !!target.state.crouching || !!target.state.prone;
+    if (Math.random() > (flush ? 0.28 : 0.1)) return;
     bot.botCookUntil = this.now + 280 + Math.random() * 520;
     bot.input.grenade = true;
     bot.input.fire = false;

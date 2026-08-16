@@ -35,8 +35,8 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Buried bodies eject to the hill top unless they are rising into a cave roof. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
-**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; slow falls land; dirt ejects to the surface; jet near a ramp does not snap on.  
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Standing on a ramp slides downhill once (`PLAYER.slopeSlide`, weaker `slopeDrag`) — not applied in both terrain seat and ramp collide. Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Buried bodies eject to the hill top unless they are rising into a cave roof. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
+**Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; idle bowl slides downhill; slow falls land; dirt ejects to the surface; jet near a ramp does not snap on.  
 **Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/terrain.ts`, `shared/simulation.ts`
 
 ## Mechanic: ballistic-projectiles
@@ -56,20 +56,20 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 1/3 — **A1 retune**  
 **Tags:** `@mechanic limited-jetpack`  
-**Description:** Fuel-limited thrust that **beats gravity**. Hold W/Space to climb; feather to hover; strafe in air while jetting. Jetting into a platform underside (or the sky bound) dumps upward speed so you can slide along the ceiling. Fuel lasts ~5s continuous; regenerates on ground and slower while gliding (not while thrusting). Grounded W/Space is still a jump, then jets.  
+**Description:** Fuel-limited thrust that **beats gravity**. Hold W/Space to climb; feather to hover; strafe in air while jetting. Jetting into a platform underside (or the sky bound) dumps upward speed so you can slide along the ceiling. Fuel lasts ~5s continuous; ground regen is slower than the burn (a pad touch is not a full tank) and glide regen is a trickle so feathering still empties. Grounded W/Space is still a jump, then jets.  
 **Trade-offs:** Aerial duels dominate if fuel is too generous; spread is still worse while jetting (`state-accuracy`). Can retune toward grounded later without a netcode change. Realistic mode disables air jet/backflip (ground jump stays).  
-**Tests:** `shared/movement.test.ts` (`limited-jetpack`)  
+**Tests:** `shared/movement.test.ts` (`limited-jetpack`, `ground-fuel-refill-is-not-instant`)  
 **Files:** `shared/physics.ts`, `shared/constants.ts` (`PLAYER.jet*`, fuel), HUD in `GameScene`
 
 ## Mechanic: throwable-grenades
 
 **Phase:** 6  
 **Tags:** `@mechanic throwable-grenades`  
-**Description:** Hold RMB/G to cook; release to throw with remaining fuse (`fuseMs − cook`). Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill, blast damage + knockback.  
+**Description:** Hold RMB/G to cook; release to throw with remaining fuse (`fuseMs − cook`). Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill, blast damage + knockback. Frag radius 128 reaches behind the mid sandbag so a cooked nade flushes crouch-cover; blast ignores cover (bullets do not).  
 **Trade-offs:**
 - Blast radius vs crouch-cover — grenades are the intended flush  
 - Cook-vs-safety — longer cook = less flight time, risk of self-blast  
-**Tests:** `shared/grenades.test.ts`  
+**Tests:** `shared/grenades.test.ts` (`frag-blast-reaches-behind-mid-cover`)  
 **Files:** `shared/grenades.ts`, `shared/simulation.ts`, `ProjectilePredictor`, `GameScene`
 
 ## Mechanic: knockback
@@ -160,7 +160,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Description:** Soldat-ish kit. Spawn with Desert Eagle. Map guns are objects. `1` firearm / `2` melee.
 - **DE** — 7-round tap cannon; 2-tap torso, head deletes  
 - **MP5 / AK / minigun** — spray vs mid vs hose  
-- **Barrett** — bolt, body chunky, head OHK  
+- **Barrett** — bolt, body chunky (88, still sub-lethal), head OHK; cave pad is the pilgrimage  
 - **SPAS-12** — 7-pellet pump  
 - **M79 / LAW** — arcing shell / flat rocket, explode on hit  
 - **Flamer** — short-life particles  
@@ -223,7 +223,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 8  
 **Tags:** `@mechanic bot-dm-ai`  
-**Description:** Bots pick a sticky target (prefer humans), steer via `WAYPOINTS` (jet to high pads / drop into caves), skip paths that clip solid hills, jump when a crate or wall pins them, seek medkits when hurt and guns when still on DE, cook nades in mid range, and strafe/backoff up close. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
+**Description:** Bots pick a sticky target (prefer humans), steer via `WAYPOINTS` (jet to high pads / drop into caves), skip paths that clip solid hills, jump when a crate or wall pins them, seek medkits when hurt and `DESTINATION_GUNS` when still on DE (Barrett/LAW/AK even through dirt, via waypoints). Cave-floor jets only when the goal is outside the cave. Cook nades more often at crouched targets. Demo spectator room keeps `DEMO_BOTS` (5) fighting.  
 **Trade-offs:** Waypoint greedy-steer is not a navmesh — bots can still take odd paths around bunkers. Extra demo bots cost a bit of sim.  
 **Tests:** `shared/world.test.ts` (`arena-map`, `bot-dm-ai`)  
 **Files:** `shared/simulation.ts` (`updateBotBrain`), `shared/constants.ts` (`BOT`, `WAYPOINTS`, `DEMO_BOTS`), `server/rooms/DmRoom.ts`

@@ -204,17 +204,32 @@ describe('bot-dm-ai', () => {
     );
   });
 
+  it('cave-bot-walks-the-barrett-pad', () => {
+    const sim = new Simulation(new GameState(), { mode: 'dm' });
+    const a = sim.addPlayer('a', 'A', true);
+    const b = sim.addPlayer('b', 'B', true);
+    a.x = 2000;
+    a.y = 1120;
+    b.x = 180;
+    b.y = 280;
+    for (let i = 0; i < 90; i++) sim.step(16);
+    assert.ok(
+      a.x > 2080 || a.firearm === 'barrett' || !a.alive,
+      `cave DE bot should pilgrimage toward Barrett, x=${a.x} gun=${a.firearm}`,
+    );
+  });
+
   it('cave-bot-can-leave-through-the-door', () => {
     const sim = new Simulation(new GameState(), { mode: 'dm' });
     const a = sim.addPlayer('a', 'A', true);
     const b = sim.addPlayer('b', 'B', true);
-    a.x = 300;
+    a.x = 1100;
     a.y = 1120;
     b.x = 1280;
-    b.y = 830;
+    b.y = 400;
     for (let i = 0; i < 180; i++) sim.step(16);
     assert.ok(
-      Math.abs(a.x - 300) > 40 || a.y < 1000 || !a.alive,
+      Math.abs(a.x - 1100) > 40 || a.y < 1000 || !a.alive,
       `cave bot should not sit on the spawn, x=${a.x} y=${a.y}`,
     );
   });

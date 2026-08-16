@@ -14,7 +14,7 @@ export function isNadeKind(v: string): v is NadeKind {
 }
 
 export const NADE = {
-  frag: { fuseMs: 2000, blastRadius: 110, blastDamage: 55, knockback: 1 },
+  frag: { fuseMs: 2000, blastRadius: 128, blastDamage: 55, knockback: 1 },
   cluster: { fuseMs: 2000, blastRadius: 62, blastDamage: 26, knockback: 0.7, children: 5 },
   sting: { fuseMs: 1800, blastRadius: 88, blastDamage: 16, knockback: 0.45, pellets: 12, pelletDamage: 10 },
 } as const;
@@ -29,8 +29,8 @@ export const GRENADE = {
   blastRadius: PLAYER.grenadeBlastRadius,
   blastDamage: PLAYER.grenadeDamage,
   /** Impulse scale at point-blank. */
-  blastKnockback: 420,
-  blastLift: 140,
+  blastKnockback: 500,
+  blastLift: 190,
   bounce: 0.45,
   bounceFriction: 0.85,
   clusterChildFuseMs: 320,

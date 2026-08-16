@@ -30,9 +30,14 @@ export const PLAYER = {
   maxFuel: 100,
   /** ~5s continuous burn — long enough to cross the arena. */
   fuelBurnRate: 20,
-  fuelRegenRate: 24,
-  /** Gliding still recovers; jetting does not. */
-  fuelRegenAirMult: 0.5,
+  /** Ground refill is slower than the burn so a pad touch is not a full tank. */
+  fuelRegenRate: 15,
+  /** Glide recovers a trickle; feathering still empties the tank. */
+  fuelRegenAirMult: 0.22,
+  /** Gravity along walkable ramps (applied once after collide). */
+  slopeSlide: 1.08,
+  /** Standing drag on a real slope — low enough that you slide downhill. */
+  slopeDrag: 360,
   maxHealth: 100,
   maxVest: 100,
   width: 22,
@@ -44,7 +49,7 @@ export const PLAYER = {
   grenadeCooldownMs: 900,
   grenadeSpeed: 420,
   grenadeDamage: 55,
-  grenadeBlastRadius: 110,
+  grenadeBlastRadius: 128,
   respawnDelayMs: 2000,
   maxGrenades: 3,
   maxVelocityX: 520,

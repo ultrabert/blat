@@ -4,10 +4,12 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { COVERS } from './constants.js';
 import {
   blastImpulse,
   bulletImpulse,
   GRENADE,
+  NADE,
   remainingFuse,
 } from './grenades.js';
 
@@ -17,6 +19,17 @@ describe('throwable-grenades', () => {
     assert.ok(remainingFuse(800) < GRENADE.fuseMs);
     assert.equal(remainingFuse(GRENADE.fuseMs), GRENADE.minFuseMs);
     assert.equal(remainingFuse(GRENADE.fuseMs + 500), GRENADE.minFuseMs);
+  });
+
+  it('frag-blast-reaches-behind-mid-cover', () => {
+    const cover = COVERS.find((c) => c.x === 1280 && c.y === 492)!;
+    const crouchedX = cover.x + 18;
+    const nadeX = cover.x - 80;
+    const dist = Math.hypot(crouchedX - nadeX, 0);
+    assert.ok(dist < NADE.frag.blastRadius, `flush dist ${dist} vs r=${NADE.frag.blastRadius}`);
+    assert.ok(dist < GRENADE.blastRadius);
+    const shove = blastImpulse(nadeX, cover.y, crouchedX, cover.y, 1 - dist / GRENADE.blastRadius);
+    assert.ok(shove.vx > 40, `should pop them out of the bag, vx=${shove.vx}`);
   });
 });
 

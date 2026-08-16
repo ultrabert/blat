@@ -145,7 +145,9 @@ function applyHorizontal(
       }
       body.facing = input.move > 0 ? 1 : -1;
     } else {
-      const drag = PLAYER.dragX * dt * (body.crouching ? 1.4 : 1);
+      const slope = Math.abs(rampSlopeAt(body.x, body.y + playerHalfExtents(body.crouching, body.prone).halfH));
+      const dragRate = slope > 0.12 ? PLAYER.slopeDrag : PLAYER.dragX;
+      const drag = dragRate * dt * (body.crouching ? 1.4 : 1);
       if (Math.abs(body.vx) <= drag) body.vx = 0;
       else body.vx -= Math.sign(body.vx) * drag;
     }
@@ -469,6 +471,7 @@ function collideBody(body: MoveBody, dt: number): void {
 
   collideTerrain(body, wasGrounded, dt);
   collideRamps(body, wasGrounded, dt);
+  applySlopeSlide(body, dt);
 
   // Map sky — hang and strafe under the world ceiling
   const sky = halfH + 8;
@@ -554,7 +557,7 @@ function collideTerrain(body: MoveBody, wasGrounded: boolean, dt: number): void 
       const followDown =
         wasGrounded && !climbing && feetY <= band.top && band.top - feetY < 18;
       if ((crossedTop || followDown) && !climbing) {
-        seatOnY(body, band.top, halfH, dt);
+        seatOnY(body, band.top, halfH);
       }
       const prevHead = headY - body.vy * dt;
       const crossedBot =
@@ -584,25 +587,42 @@ function collideTerrain(body: MoveBody, wasGrounded: boolean, dt: number): void 
       continue;
     }
     if (climbing && distTop < 22) continue;
-    seatOnY(body, band.top, halfH, dt);
+    seatOnY(body, band.top, halfH);
   }
 }
 
-function seatOnY(body: MoveBody, surfaceY: number, halfH: number, dt: number): void {
+function seatOnY(body: MoveBody, surfaceY: number, halfH: number): void {
   body.y = surfaceY - halfH;
   body.vy = 0;
   body.onGround = true;
-  if (body.jetting) return;
+}
+
+/** Downhill slope under the feet (dy/dx). 0 on flats / air. */
+export function rampSlopeAt(x: number, feetY: number): number {
+  let best = 0;
+  let bestDist = 14;
   for (const r of RAMPS) {
     const lo = Math.min(r.ax, r.bx);
     const hi = Math.max(r.ax, r.bx);
-    if (body.x < lo || body.x > hi) continue;
+    if (x < lo || x > hi) continue;
     const span = r.bx - r.ax || 1;
-    const y = r.ay + ((body.x - r.ax) / span) * (r.by - r.ay);
-    if (Math.abs(y - surfaceY) > 8) continue;
-    body.vx += GRAVITY * ((r.by - r.ay) / span) * dt * 0.85;
-    break;
+    const surfaceY = r.ay + ((x - r.ax) / span) * (r.by - r.ay);
+    if (surfaceIsCeiling(x, surfaceY)) continue;
+    const dist = Math.abs(surfaceY - feetY);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = (r.by - r.ay) / span;
+    }
   }
+  return best;
+}
+
+function applySlopeSlide(body: MoveBody, dt: number): void {
+  if (!body.onGround || body.jetting || body.rollMs > 0 || body.cannonballMs > 0) return;
+  const { halfH } = playerHalfExtents(body.crouching, body.prone);
+  const slope = rampSlopeAt(body.x, body.y + halfH);
+  if (Math.abs(slope) < 0.12) return;
+  body.vx += GRAVITY * slope * PLAYER.slopeSlide * dt;
 }
 
 function collideRamps(body: MoveBody, wasGrounded: boolean, dt: number): void {
@@ -615,7 +635,6 @@ function collideRamps(body: MoveBody, wasGrounded: boolean, dt: number): void {
   const slop = (wasGrounded ? 22 : 10) + travel;
 
   let bestY = 0;
-  let bestSlope = 0;
   let bestPen = Infinity;
   let found = false;
   for (const r of RAMPS) {
@@ -633,7 +652,6 @@ function collideRamps(body: MoveBody, wasGrounded: boolean, dt: number): void {
     if (Math.abs(pen) < bestPen || crossed) {
       bestPen = Math.abs(pen);
       bestY = surfaceY;
-      bestSlope = (r.by - r.ay) / span;
       found = true;
     }
   }
@@ -641,9 +659,6 @@ function collideRamps(body: MoveBody, wasGrounded: boolean, dt: number): void {
   body.y = bestY - halfH;
   body.vy = 0;
   body.onGround = true;
-  if (!body.jetting) {
-    body.vx += GRAVITY * bestSlope * dt * 0.85;
-  }
 }
 
 export type Blocker = {

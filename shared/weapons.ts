@@ -146,7 +146,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     short: 'SR',
     kind: 'bullet',
     fireCooldownMs: 820,
-    damage: 80,
+    damage: 88,
     muzzleSpeed: 1280,
     pellets: 1,
     spreadMult: 0.18,
@@ -354,6 +354,15 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 
 export const DEFAULT_WEAPON: WeaponId = 'de';
 export const DEFAULT_MELEE: WeaponId = 'knife';
+/** Power pads worth a detour — the 10-second loop's destinations. */
+export const DESTINATION_GUNS: readonly WeaponId[] = [
+  'ak',
+  'minigun',
+  'barrett',
+  'law',
+  'm79',
+  'flamer',
+];
 
 const IDS = new Set<string>(Object.keys(WEAPONS));
 

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { GRAVITY, PLAYER, RAMPS, TICK_MS, playerHalfExtents } from './constants.js';
-import { separateFromSolids, stepMovement, type MoveBody, type MoveInput } from './physics.js';
+import { rampSlopeAt, separateFromSolids, stepMovement, type MoveBody, type MoveInput } from './physics.js';
 
 function body(partial: Partial<MoveBody> = {}): MoveBody {
   return {
@@ -262,6 +262,27 @@ describe('ground-inertia-and-slopes', () => {
     assert.ok(b.y + halfH < surfaceY - 2, `should leave the slope, feet=${b.y + halfH} surface=${surfaceY}`);
   });
 
+  it('idle-on-bowl-slides-downhill', () => {
+    const ramp = RAMPS[2]!;
+    const x = (ramp.ax + ramp.bx) / 2;
+    const t = (x - ramp.ax) / (ramp.bx - ramp.ax);
+    const surfaceY = ramp.ay + t * (ramp.by - ramp.ay);
+    const { halfH } = playerHalfExtents(false);
+    const slope = rampSlopeAt(x, surfaceY);
+    assert.ok(Math.abs(slope) > 0.4, `expected a steep bowl, slope=${slope}`);
+    const b = body({
+      x,
+      y: surfaceY - halfH,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+    });
+    for (let i = 0; i < 12; i++) stepMovement(b, input({}), DT);
+    assert.equal(b.onGround, true);
+    assert.ok((b.x - x) * slope > 16, `should travel downhill, x=${b.x} from ${x}`);
+    assert.ok(Math.abs(b.vx) > 40, `should pick up downhill speed, vx=${b.vx}`);
+  });
+
   it('overlapping-ramps-do-not-yoyo', () => {
     // x=1000 sits under the left bowl and near the cave drop in X.
     const x = 1000;
@@ -360,6 +381,13 @@ describe('limited-jetpack', () => {
       stepMovement(b, input({ jet: true }), DT);
     }
     assert.ok(b.fuel > 10, `expected remaining fuel after ${seconds}s, got ${b.fuel}`);
+  });
+
+  it('ground-fuel-refill-is-not-instant', () => {
+    const b = body({ onGround: true, x: 80, y: 280, fuel: 0 });
+    for (let i = 0; i < Math.round(3 / DT); i++) stepMovement(b, input({}), DT);
+    assert.ok(b.fuel < PLAYER.maxFuel * 0.7, `3s on a pad should not refill the tank, fuel=${b.fuel}`);
+    assert.ok(b.fuel > 20, `should still recover, fuel=${b.fuel}`);
   });
 
   it('jet-strafe-adds-more-than-air-accel', () => {
