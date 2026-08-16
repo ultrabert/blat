@@ -3,7 +3,7 @@
  * @mechanic knockback
  * @tradeoff cook-vs-safety (longer cook = less air time, risk of self-blast)
  */
-import { GRAVITY, PLAYER } from './constants.js';
+import { GRAVITY, PLAYER, playerHalfExtents } from './constants.js';
 
 export type NadeKind = 'frag' | 'cluster' | 'sting';
 
@@ -45,6 +45,10 @@ export const GRENADE = {
   bounce: 0.45,
   bounceFriction: 0.85,
   clusterChildFuseMs: 320,
+  /** Nade body vs player AABB. */
+  hitRadius: 10,
+  /** Leaves the hand before it can stick a player (including the thrower). */
+  armMs: 80,
 } as const;
 
 /** Aim dir for a short lob. Downward clicks still go forward. */
@@ -101,6 +105,26 @@ export function stepGrenadeFlight(
   vx *= Math.max(0, 1 - GRENADE.airDrag * dt);
   vx += windVx * GRENADE.windCoupling * dt;
   return { vx, vy };
+}
+
+export function grenadeArmed(ageMs: number): boolean {
+  return ageMs >= GRENADE.armMs;
+}
+
+/** Point-in-expanded-AABB: nade body overlapping a player. */
+export function grenadeHitsPlayer(
+  nadeX: number,
+  nadeY: number,
+  playerX: number,
+  playerY: number,
+  crouching: boolean,
+  prone = false,
+): boolean {
+  const { halfW, halfH } = playerHalfExtents(crouching, prone);
+  return (
+    Math.abs(nadeX - playerX) <= halfW + GRENADE.hitRadius &&
+    Math.abs(nadeY - playerY) <= halfH + GRENADE.hitRadius
+  );
 }
 
 export const KNOCKBACK = {

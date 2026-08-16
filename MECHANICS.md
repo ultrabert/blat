@@ -65,12 +65,13 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 6  
 **Tags:** `@mechanic throwable-grenades`  
-**Description:** Right-click / G throws a short lob (hold to cook; release to throw with remaining fuse). A tap still leaves the hand. Downward aim is lofted so the nade does not plant at your feet. Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill, blast damage + knockback. Frag radius 128 reaches behind the mid sandbag so a cooked nade flushes crouch-cover; blast ignores cover (bullets do not).  
+**Description:** Right-click / G throws a short lob (hold to cook; release to throw with remaining fuse). A tap still leaves the hand. Downward aim is lofted so the nade does not plant at your feet. Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill. **Impact:** after `armMs` the nade detonates if its body overlaps a living player (including the thrower). Fuse still booms if nobody is hit. Blast damage + knockback. Frag radius 128 reaches behind the mid sandbag so a cooked nade flushes crouch-cover; blast ignores cover (bullets do not).  
 **Trade-offs:**
 - Blast radius vs crouch-cover — grenades are the intended flush  
 - Cook-vs-safety — longer cook = less flight time, risk of self-blast  
 - Short throw vs map-wide bombs — air drag is light (~0.35/s); range is the throw vector, not a dump  
-**Tests:** `shared/grenades.test.ts` (`frag-blast-reaches-behind-mid-cover`, `forward-lob-is-short-range`)  
+- Impact vs bounce-at-feet — arming delay so the throw does not stick in your own AABB; a rolling nade still pops on contact  
+**Tests:** `shared/grenades.test.ts` (`frag-blast-reaches-behind-mid-cover`, `forward-lob-is-short-range`, `impact-detonates-on-player`)  
 **Files:** `shared/grenades.ts`, `shared/simulation.ts`, `ProjectilePredictor`, `GameScene`
 
 ## Mechanic: knockback

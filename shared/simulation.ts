@@ -25,6 +25,8 @@ import {
   blastImpulse,
   bulletImpulse,
   GRENADE,
+  grenadeArmed,
+  grenadeHitsPlayer,
   grenadeThrowOrigin,
   grenadeThrowVelocity,
   isNadeKind,
@@ -147,6 +149,7 @@ type InternalBullet = {
 type InternalGrenade = {
   state: GrenadeState;
   explodeAt: number;
+  bornAt: number;
   kind: NadeKind;
   cluster: boolean;
 };
@@ -1057,6 +1060,7 @@ export class Simulation {
     this.grenades.set(id, {
       state: g,
       explodeAt: this.now + fuseMs,
+      bornAt: this.now,
       kind,
       cluster,
     });
@@ -1324,6 +1328,18 @@ export class Simulation {
         g.y = band.bottom + 8;
         g.vy *= -GRENADE.bounce;
         g.vx *= GRENADE.bounceFriction;
+      }
+    }
+
+    if (!grenade.cluster && grenadeArmed(this.now - grenade.bornAt)) {
+      for (const soldier of this.soldiers.values()) {
+        const p = soldier.state;
+        if (!p.alive) continue;
+        const crouched = !!p.crouching || soldier.rollMs > 0 || soldier.cannonballMs > 0;
+        if (grenadeHitsPlayer(g.x, g.y, p.x, p.y, crouched, !!p.prone)) {
+          this.explodeGrenade(grenade);
+          return;
+        }
       }
     }
 

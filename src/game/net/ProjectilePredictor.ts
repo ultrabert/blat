@@ -9,6 +9,8 @@ import { planFire, stanceFromBody } from '../../../shared/fire';
 import { stepBallistic } from '../../../shared/ballistics';
 import {
   GRENADE,
+  grenadeArmed,
+  grenadeHitsPlayer,
   grenadeThrowOrigin,
   grenadeThrowVelocity,
   stepGrenadeFlight,
@@ -220,6 +222,7 @@ export class ProjectilePredictor {
     this.bullets = kept;
 
     // Unmatched grenades simulate locally; matched ones follow server in match().
+    const impactBooms: PredGrenade[] = [];
     for (const g of this.grenades) {
       if (g.serverId) continue;
       const flight = stepGrenadeFlight(g.vx, g.vy, dt, windVx);
@@ -228,6 +231,18 @@ export class ProjectilePredictor {
       g.x += g.vx * dt;
       g.y += g.vy * dt;
       this.bounceGrenade(g);
+      if (grenadeArmed(now - g.bornAt)) {
+        for (const t of targets) {
+          if (!t.alive) continue;
+          if (grenadeHitsPlayer(g.x, g.y, t.x, t.y, !!t.crouching, !!t.prone)) {
+            impactBooms.push(g);
+            break;
+          }
+        }
+      }
+    }
+    for (const g of impactBooms) {
+      this.explosions.push({ x: g.x, y: g.y });
     }
 
     this.bullets = this.bullets.filter((b) => {
@@ -240,6 +255,7 @@ export class ProjectilePredictor {
     });
 
     this.grenades = this.grenades.filter((g) => {
+      if (impactBooms.includes(g)) return false;
       if (g.serverId) return true;
       if (now - g.bornAt > MATCH_TIMEOUT_MS) return false;
       if (now - g.bornAt > g.fuseMs) {
