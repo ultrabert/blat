@@ -135,32 +135,67 @@ export class SoundBus {
   }
 
   shoot(kind: ShootKind = 'de'): void {
+    this.report(kind, 1, 0);
+  }
+
+  /** Distant / other-player report. Attenuates and pans from the listener. */
+  shootAt(
+    kind: ShootKind,
+    x: number,
+    y: number,
+    listenerX: number,
+    listenerY: number,
+  ): void {
+    const dist = Math.hypot(x - listenerX, y - listenerY);
+    const atten = Math.max(0.16, Math.min(1, 1.02 - dist / 1280));
+    const pan = Math.max(-0.82, Math.min(0.82, (x - listenerX) / 620));
+    this.report(kind, atten, pan);
+  }
+
+  private report(kind: ShootKind, atten: number, pan: number): void {
     const key = shootBuf(kind);
     const gain =
-      kind === 'barrett' || kind === 'ruger'
-        ? 0.92
-        : kind === 'spas' || kind === 'law'
-          ? 0.88
-          : kind === 'de' || kind === 'socom'
-            ? 0.8
-            : kind === 'mp5' || kind === 'minigun'
-              ? 0.58
-              : kind === 'flamer'
-                ? 0.48
-                : kind === 'bow'
-                  ? 0.7
-                  : kind === 'punch'
-                    ? 0.78
-                    : kind === 'knife' || kind === 'chainsaw'
-                      ? 0.72
-                      : 0.74;
+      (kind === 'barrett' || kind === 'ruger'
+        ? 0.96
+        : kind === 'law'
+          ? 0.94
+          : kind === 'spas' || kind === 'm79'
+            ? 0.88
+            : kind === 'de' || kind === 'socom'
+              ? 0.82
+              : kind === 'minigun'
+                ? 0.7
+                : kind === 'mp5'
+                  ? 0.56
+                  : kind === 'ak'
+                    ? 0.8
+                    : kind === 'flamer'
+                      ? 0.5
+                      : kind === 'bow'
+                        ? 0.7
+                        : kind === 'punch'
+                          ? 0.78
+                          : kind === 'knife' || kind === 'chainsaw'
+                            ? 0.72
+                            : 0.74) * atten;
     const rate =
-      kind === 'mp5' || kind === 'minigun'
-        ? 1.02 + Math.random() * 0.1
-        : kind === 'flamer'
-          ? 0.92 + Math.random() * 0.16
-          : 0.97 + Math.random() * 0.06;
-    if (this.play(key, { gain, rate })) return;
+      kind === 'minigun'
+        ? 0.84 + Math.random() * 0.08
+        : kind === 'mp5'
+          ? 1.04 + Math.random() * 0.1
+          : kind === 'ak'
+            ? 0.93 + Math.random() * 0.05
+            : kind === 'flamer'
+              ? 0.9 + Math.random() * 0.16
+              : kind === 'law'
+                ? 0.88 + Math.random() * 0.04
+                : 0.97 + Math.random() * 0.06;
+    if (this.play(key, { gain, rate, pan })) {
+      if (kind === 'law' && atten > 0.35) {
+        this.play('explode', { gain: 0.28 * atten, rate: 0.7 + Math.random() * 0.06, pan });
+      }
+      return;
+    }
     this.fallbackShoot(kind);
   }
 
@@ -367,7 +402,10 @@ export class SoundBus {
     return list[idx] ?? null;
   }
 
-  private play(key: BufKey, opts: { gain?: number; rate?: number } = {}): boolean {
+  private play(
+    key: BufKey,
+    opts: { gain?: number; rate?: number; pan?: number } = {},
+  ): boolean {
     const ctx = this.ensure();
     const buf = this.pick(key);
     if (!ctx || !this.master || !buf) return false;
@@ -377,7 +415,14 @@ export class SoundBus {
     const g = ctx.createGain();
     g.gain.value = opts.gain ?? 0.7;
     src.connect(g);
-    g.connect(this.master);
+    if (opts.pan !== undefined && Math.abs(opts.pan) > 0.01 && ctx.createStereoPanner) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = opts.pan;
+      g.connect(panner);
+      panner.connect(this.master);
+    } else {
+      g.connect(this.master);
+    }
     src.start();
     return true;
   }

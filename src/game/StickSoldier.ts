@@ -193,6 +193,7 @@ export class StickSoldier {
   /** Smoothed carry/aim angle for less twitchy gun. */
   private holdAim = 0;
   private holdAimInit = false;
+  private airPhase = 0;
   private readonly nameTag: Phaser.GameObjects.Text;
 
   private static readonly STRIDE_PX = 30;
@@ -260,6 +261,8 @@ export class StickSoldier {
       this.sticks = [];
       this.lastGroundX = null;
       this.holdAimInit = false;
+      this.rollSpin = 0;
+      this.airPhase = 0;
     }
     this.wasAlive = true;
 
@@ -273,8 +276,16 @@ export class StickSoldier {
     if (this.landMs > 0) this.landMs = Math.max(0, this.landMs - dtMs);
     this.squash += (1 - this.squash) * Math.min(1, dtMs / 140);
 
+    const spinning = view.rolling || view.cannonball || view.backflip;
+    if (!spinning) {
+      this.rollSpin *= Math.exp(-dtMs / 55);
+      if (Math.abs(this.rollSpin) < 0.03) this.rollSpin = 0;
+    } else if (this.rollSpin > Math.PI * 3 || this.rollSpin < -Math.PI * 3) {
+      this.rollSpin = ((this.rollSpin + Math.PI) % (Math.PI * 2)) - Math.PI;
+    }
+
     const pose = this.computePose(view, dtMs);
-    this.drawPose(pose, view);
+    this.drawPose(pose, view, spinning);
   }
 
   destroy(): void {
@@ -479,21 +490,22 @@ export class StickSoldier {
       rFoot = { x: 7, y: 14 };
       lKnee = { x: -6, y: 11 };
       rKnee = { x: 6, y: 11 };
-    } else if (view.jetting && !view.onGround) {
-      this.lastGroundX = null;
-      const trail = face * 0.35;
-      lFoot = { x: -6 + trail * 4, y: 18 };
-      rFoot = { x: 5 + trail * 4, y: 17 };
-      lKnee = { x: -5 + trail * 2, y: 12 };
-      rKnee = { x: 4 + trail * 2, y: 11 };
-      this.runPhase *= 0.85;
     } else if (!view.onGround) {
       this.lastGroundX = null;
-      lFoot = { x: -5, y: 17 };
-      rFoot = { x: 6, y: 16 };
-      lKnee = { x: -4, y: 11 };
-      rKnee = { x: 5, y: 10 };
-      this.runPhase *= 0.9;
+      this.runPhase *= 0.88;
+      this.airPhase += _dtMs * (view.jetting ? 0.014 : 0.008);
+      const lean = Math.max(-0.32, Math.min(0.32, view.vx / 440));
+      const trail = Math.max(-7, Math.min(7, -view.vx * 0.018));
+      const tuck = view.jetting ? 2.4 : 0.6;
+      const flutter = view.jetting ? Math.sin(this.airPhase) * 1.1 : 0;
+      hip.x = lean * 3.5;
+      shoulder.x = face * 1.2 + lean * 2.4;
+      shoulder.y = shoulderY + Math.sin(aimA) * 0.35;
+      head.x = face * 0.8 + lean * 1.2;
+      lFoot = { x: -6 + trail - 1.2, y: 14.5 + tuck + flutter };
+      rFoot = { x: 5 + trail + 1.2, y: 15.5 + tuck - flutter };
+      lKnee = { x: -4 + trail * 0.45, y: 9.5 + tuck * 0.45 };
+      rKnee = { x: 4 + trail * 0.45, y: 10.5 + tuck * 0.45 };
     } else if (moving) {
       if (this.lastGroundX === null) this.lastGroundX = view.x;
       const dx = view.x - this.lastGroundX;
@@ -551,14 +563,10 @@ export class StickSoldier {
     };
   }
 
-  private drawPose(pose: Pose, view: StickView): void {
+  private drawPose(pose: Pose, view: StickView, spinning = false): void {
     this.root.setPosition(view.x, view.y);
     this.root.setAlpha(view.alpha);
-    this.root.setRotation(
-      view.rolling || view.cannonball || view.backflip
-        ? this.rollSpin
-        : this.rollSpin * 0.15,
-    );
+    this.root.setRotation(spinning ? this.rollSpin : 0);
     const sy = view.rolling ? 0.85 : view.prone ? 0.58 : pose.squash;
     const sx = view.rolling ? 0.85 : view.prone ? 1.38 : 1 + (1 - pose.squash) * 0.55;
     this.root.setScale(sx, sy);

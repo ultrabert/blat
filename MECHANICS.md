@@ -286,8 +286,15 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** C6  
 **Tags:** `@mechanic soldier-read`  
-**Description:** Painted kits with a thin dark edge so figures read on dirt. Held guns are blued-steel vector props with a small brass muzzle. Local barrel snaps to the cursor; remotes ease slightly. Vest is a cool shade, not a pale wash. Cosmetic only — hitboxes stay on the sim capsule.  
+**Description:** Painted kits with a thin dark edge so figures read on dirt. Held guns are blued-steel vector props with a small brass muzzle. Local barrel snaps to the cursor; remotes ease slightly. Vest is a cool shade, not a pale wash. In the air the body stays upright (jet lean into travel, legs trail); roll/cannonball/backflip spin dies when the move ends so flyers do not stay twisted. Cosmetic only — hitboxes stay on the sim capsule.  
 **Files:** `src/game/StickSoldier.ts`, `src/game/skins.ts`
+
+## Mechanic: combat-sfx
+
+**Phase:** 8  
+**Tags:** `@mechanic combat-sfx`  
+**Description:** Sampled gun reports (CC0). Local shots play dry. Other players' / bots' shots play when a new server bullet appears (pellet-debounced), quieter and panned from the camera. LAW layers a short boom. Falls back to synth if a clip is missing.  
+**Files:** `src/game/audio/SoundBus.ts`, `GameScene`
 
 ## Mechanic: scenery-parallax
 

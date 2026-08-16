@@ -109,6 +109,9 @@ export class GameScene extends Phaser.Scene {
   private shakeMs = 0;
   private shakeAmp = 0;
   private lastPingAt = 0;
+  private heardShots = new Set<string>();
+  private shotsPrimed = false;
+  private lastRemoteShotAt = new Map<string, number>();
 
   constructor() {
     super('Game');
@@ -623,6 +626,17 @@ export class GameScene extends Phaser.Scene {
     this.room.state.bullets?.forEach((bullet, id) => {
       if (this.projectiles.shouldHideServerBullet(id)) return;
       seenBullets.add(id);
+      if (!this.shotsPrimed) this.heardShots.add(id);
+      else if (!this.heardShots.has(id) && bullet.ownerId !== this.sessionId) {
+        this.heardShots.add(id);
+        const last = this.lastRemoteShotAt.get(bullet.ownerId) ?? 0;
+        if (this.nowMs - last > 26) {
+          this.lastRemoteShotAt.set(bullet.ownerId, this.nowMs);
+          sound.shootAt(bullet.weapon || 'de', bullet.x, bullet.y, this.camX, this.camY);
+        }
+      } else {
+        this.heardShots.add(id);
+      }
       tracers.push({
         id,
         x: bullet.x,
@@ -632,6 +646,10 @@ export class GameScene extends Phaser.Scene {
         weapon: bullet.weapon || 'rifle',
       });
     });
+    this.shotsPrimed = true;
+    for (const id of [...this.heardShots]) {
+      if (!seenBullets.has(id)) this.heardShots.delete(id);
+    }
 
     for (const pred of this.projectiles.visibleBullets()) {
       seenBullets.add(pred.id);
