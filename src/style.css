@@ -212,6 +212,25 @@ body {
   margin: 0 auto;
 }
 
+#sound-gate {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 10px 18px;
+  border: 1px solid #3d4f6f;
+  border-radius: 999px;
+  background: rgba(18, 26, 46, 0.92);
+  color: #e8eefc;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+#sound-gate[hidden] {
+  display: none !important;
+}
+
 .lobby-check {
   display: flex;
   align-items: center;

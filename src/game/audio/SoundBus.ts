@@ -1,9 +1,11 @@
+import { rankSfxExts } from '../../../shared/sfxExts';
 import type { ImpactSurface } from './surfaces';
 
 /**
  * Sample-based SFX bus. Bundled CC0 clips live in /assets/sfx (see CREDITS.txt).
  * Falls back to short procedural synthesis if a buffer isn't loaded yet.
  * Call unlock() from a user gesture (lobby click / first pointer).
+ * iOS Safari: Ogg will not decode — we ship .m4a siblings and resume on tap.
  */
 export type ShootKind = string;
 
@@ -50,40 +52,41 @@ function shootBuf(kind: string): BufKey {
   return 'shoot_rifle';
 }
 
-function clips(stem: string, tags: readonly string[]): string[] {
-  return tags.map((t) => `/assets/sfx/${stem}${t}.ogg`);
-}
-
-const ASSET: Record<BufKey, readonly string[]> = {
-  shoot_pistol: clips('shoot_pistol', ['', '_b', '_c', '_d']),
-  shoot_rifle: clips('shoot_rifle', ['', '_b', '_c', '_d']),
-  shoot_smg: clips('shoot_smg', ['', '_b', '_c', '_d']),
-  shoot_sniper: clips('shoot_sniper', ['', '_b', '_c', '_d']),
-  shoot_shotgun: clips('shoot_shotgun', ['', '_b', '_c', '_d']),
-  shoot_bow: clips('shoot_bow', ['', '_b', '_c', '_d']),
-  shoot_rocket: clips('shoot_rocket', ['', '_b', '_c']),
-  shoot_flamer: clips('shoot_flamer', ['', '_b', '_c']),
-  melee: clips('melee', ['', '_b', '_c', '_d', '_e']),
-  punch: clips('punch', ['', '_b', '_c', '_d']),
-  explode: clips('explode', ['', '_b', '_c', '_d']),
-  grenade: clips('grenade', ['', '_b', '_c']),
-  land: clips('land', ['', '_b', '_c']),
-  land_soft: clips('land_soft', ['', '_b', '_c']),
-  footstep: clips('footstep', ['_0', '_1', '_2', '_3', '_4']),
-  hit: clips('hit', ['', '_b', '_c', '_d']),
-  wet_hit: clips('wet_hit', ['', '_b', '_c', '_d', '_e']),
-  death: clips('death', ['', '_b', '_c']),
-  pickup: clips('pickup', ['', '_b', '_c', '_d']),
-  cook_tick: clips('cook_tick', ['', '_b', '_c', '_d']),
-  jet_loop: clips('jet_loop', ['']),
-  roll: clips('roll', ['', '_b', '_c']),
-  impact_dirt: clips('impact_dirt', ['', '_b', '_c', '_d']),
-  impact_sand: clips('impact_sand', ['', '_b', '_c']),
-  impact_wood: clips('impact_wood', ['', '_b', '_c', '_d']),
-  impact_stone: clips('impact_stone', ['', '_b', '_c']),
-  dash: clips('dash', ['', '_b', '_c']),
-  pulse: clips('pulse', ['', '_b', '_c']),
+const VARIANTS: Record<BufKey, readonly string[]> = {
+  shoot_pistol: ['', '_b', '_c', '_d'],
+  shoot_rifle: ['', '_b', '_c', '_d'],
+  shoot_smg: ['', '_b', '_c', '_d'],
+  shoot_sniper: ['', '_b', '_c', '_d'],
+  shoot_shotgun: ['', '_b', '_c', '_d'],
+  shoot_bow: ['', '_b', '_c', '_d'],
+  shoot_rocket: ['', '_b', '_c'],
+  shoot_flamer: ['', '_b', '_c'],
+  melee: ['', '_b', '_c', '_d', '_e'],
+  punch: ['', '_b', '_c', '_d'],
+  explode: ['', '_b', '_c', '_d'],
+  grenade: ['', '_b', '_c'],
+  land: ['', '_b', '_c'],
+  land_soft: ['', '_b', '_c'],
+  footstep: ['_0', '_1', '_2', '_3', '_4'],
+  hit: ['', '_b', '_c', '_d'],
+  wet_hit: ['', '_b', '_c', '_d', '_e'],
+  death: ['', '_b', '_c'],
+  pickup: ['', '_b', '_c', '_d'],
+  cook_tick: ['', '_b', '_c', '_d'],
+  jet_loop: [''],
+  roll: ['', '_b', '_c'],
+  impact_dirt: ['', '_b', '_c', '_d'],
+  impact_sand: ['', '_b', '_c'],
+  impact_wood: ['', '_b', '_c', '_d'],
+  impact_stone: ['', '_b', '_c'],
+  dash: ['', '_b', '_c'],
+  pulse: ['', '_b', '_c'],
 };
+
+function sfxExts(): string[] {
+  const probe = typeof Audio !== 'undefined' ? new Audio() : null;
+  return rankSfxExts((mime) => (probe ? probe.canPlayType(mime) : ''));
+}
 
 export class SoundBus {
   private ctx: AudioContext | null = null;
@@ -93,45 +96,122 @@ export class SoundBus {
   private jetGain: GainNode | null = null;
   private jetSrc: AudioBufferSourceNode | OscillatorNode | null = null;
   private jetting = false;
-  private unlocked = false;
   private lastCookTickAt = 0;
+  private gesturesBound = false;
+  private listeners = new Set<() => void>();
+  private bornSuspended = false;
+  private createdAt = 0;
+
+  running(): boolean {
+    return !!this.ctx && this.ctx.state === 'running';
+  }
+
+  onState(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  bindGestures(): void {
+    if (this.gesturesBound || typeof window === 'undefined') return;
+    this.gesturesBound = true;
+    const kick = () => this.unlock();
+    window.addEventListener('touchstart', kick, { capture: true, passive: true });
+    window.addEventListener('pointerdown', kick, { capture: true });
+    window.addEventListener('keydown', kick);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void this.ctx?.resume();
+    });
+  }
 
   unlock(): void {
-    if (this.unlocked) {
-      void this.ctx?.resume();
-      return;
-    }
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    this.ctx = new Ctx({ latencyHint: 'interactive' });
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.58;
-    this.master.connect(this.ctx.destination);
-    this.unlocked = true;
-    void this.ctx.resume();
-    void this.loadAll();
+    if (!Ctx) return;
+    const stale =
+      !!this.ctx &&
+      this.ctx.state === 'suspended' &&
+      this.bornSuspended &&
+      performance.now() - this.createdAt > 400;
+    if (stale && this.ctx) {
+      try {
+        this.ctx.onstatechange = null;
+        void this.ctx.close();
+      } catch {
+        /* ignore */
+      }
+      this.ctx = null;
+      this.master = null;
+      this.buffers.clear();
+      this.bornSuspended = false;
+    }
+    if (!this.ctx) {
+      this.ctx = new Ctx({ latencyHint: 'interactive' });
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.58;
+      this.master.connect(this.ctx.destination);
+      this.ctx.onstatechange = () => this.emitState();
+      this.createdAt = performance.now();
+      this.bornSuspended = this.ctx.state !== 'running';
+      void this.loadAll();
+    }
+    this.prime(this.ctx);
+    void this.ctx.resume().then(() => {
+      if (this.ctx?.state === 'running') this.bornSuspended = false;
+      this.emitState();
+    });
+    this.emitState();
+  }
+
+  private emitState(): void {
+    for (const fn of this.listeners) fn();
+  }
+
+  /** iOS only starts Web Audio if a buffer plays in the same user gesture. */
+  private prime(ctx: AudioContext): void {
+    try {
+      const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch {
+      /* ignore */
+    }
   }
 
   private async loadAll(): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return;
+    const exts = sfxExts();
     await Promise.all(
-      (Object.keys(ASSET) as BufKey[]).map(async (key) => {
+      (Object.keys(VARIANTS) as BufKey[]).map(async (key) => {
         const loaded: AudioBuffer[] = [];
-        for (const url of ASSET[key]) {
-          try {
-            const res = await fetch(url);
-            if (!res.ok) continue;
-            const raw = await res.arrayBuffer();
-            loaded.push(await ctx.decodeAudioData(raw.slice(0)));
-          } catch {
-            /* skip missing variant */
-          }
+        for (const tag of VARIANTS[key]) {
+          const buf = await this.decodeFirst(ctx, `/assets/sfx/${key}${tag}`, exts);
+          if (buf) loaded.push(buf);
         }
         if (loaded.length) this.buffers.set(key, loaded);
       }),
     );
+  }
+
+  private async decodeFirst(
+    ctx: AudioContext,
+    stem: string,
+    exts: string[],
+  ): Promise<AudioBuffer | null> {
+    for (const ext of exts) {
+      try {
+        const res = await fetch(`${stem}.${ext}`);
+        if (!res.ok) continue;
+        const raw = await res.arrayBuffer();
+        return await ctx.decodeAudioData(raw.slice(0));
+      } catch {
+        /* try next container */
+      }
+    }
+    return null;
   }
 
   shoot(kind: ShootKind = 'de'): void {
@@ -447,7 +527,7 @@ export class SoundBus {
   }
 
   private ensure(): AudioContext | null {
-    if (!this.unlocked || !this.ctx) return null;
+    if (!this.ctx) return null;
     if (this.ctx.state === 'suspended') void this.ctx.resume();
     return this.ctx;
   }

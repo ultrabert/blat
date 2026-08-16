@@ -1,4 +1,6 @@
 Bundled sound effects (all CC0 / public domain). Trimmed and normalized for blat.
+Each clip is served as .ogg (Vorbis) and .m4a (AAC transcode of the same file) so
+iOS Safari can decode them. Do not replace the AAC copies with different takes.
 
 Firearms (real recordings)
   Free Firearm Sound Library

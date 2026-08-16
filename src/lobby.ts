@@ -33,6 +33,7 @@ const roomList = document.querySelector<HTMLElement>('#room-list')!;
 const roomBarCode = document.querySelector<HTMLElement>('#room-bar-code')!;
 const errorEl = document.querySelector<HTMLElement>('#lobby-error')!;
 const statusEl = document.querySelector<HTMLElement>('#lobby-status')!;
+const soundGate = document.querySelector<HTMLButtonElement>('#sound-gate')!;
 
 nameInput.value = localStorage.getItem(NAME_KEY) || '';
 passwordInput.value = localStorage.getItem(PASSWORD_KEY) || '';
@@ -184,6 +185,14 @@ async function joinRoom(rawCode: string): Promise<void> {
   }
 }
 
+function syncSoundGate(): void {
+  soundGate.hidden = !lobby.hidden || sound.running();
+}
+
+sound.bindGestures();
+sound.onState(syncSoundGate);
+soundGate.addEventListener('click', () => sound.unlock());
+
 function enterGame(room: Room<GameState>, code: string, spectate = false): void {
   sound.unlock();
   if (spectate || isDemoRoomCode(code)) {
@@ -196,6 +205,7 @@ function enterGame(room: Room<GameState>, code: string, spectate = false): void 
   gameShell.hidden = false;
   showStatus('');
   showError('');
+  syncSoundGate();
   startGame(room, code, { spectate: spectate || isDemoRoomCode(code) });
 }
 

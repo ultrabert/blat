@@ -293,8 +293,9 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 8  
 **Tags:** `@mechanic combat-sfx`  
-**Description:** Sampled gun reports (CC0). Local shots play dry. Other players' / bots' shots play when a new server bullet appears (pellet-debounced), quieter and panned from the camera. LAW layers a short boom. Falls back to synth if a clip is missing.  
-**Files:** `src/game/audio/SoundBus.ts`, `GameScene`
+**Description:** Sampled gun reports (CC0). Local shots play dry. Other players' / bots' shots play when a new server bullet appears (pellet-debounced), quieter and panned from the camera. LAW layers a short boom. Falls back to synth if a clip is missing. Clips ship as `.ogg` and `.m4a` (same CC0 source); Safari/iOS picks AAC because it cannot decode Vorbis. `/demo` auto-joins without a tap, so iPhone stays silent until a gesture — first tap resumes Web Audio (silent buffer + `resume`) and a "Tap for sound" chip shows while the context is suspended.  
+**Files:** `src/game/audio/SoundBus.ts`, `shared/sfxExts.ts`, `GameScene`, lobby  
+**Tests:** `shared/sfxExts.test.ts`
 
 ## Mechanic: scenery-parallax
 
