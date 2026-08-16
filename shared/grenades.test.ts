@@ -9,8 +9,10 @@ import {
   blastImpulse,
   bulletImpulse,
   GRENADE,
+  grenadeThrowVelocity,
   NADE,
   remainingFuse,
+  stepGrenadeFlight,
 } from './grenades.js';
 
 describe('throwable-grenades', () => {
@@ -30,6 +32,41 @@ describe('throwable-grenades', () => {
     assert.ok(dist < GRENADE.blastRadius);
     const shove = blastImpulse(nadeX, cover.y, crouchedX, cover.y, 1 - dist / GRENADE.blastRadius);
     assert.ok(shove.vx > 40, `should pop them out of the bag, vx=${shove.vx}`);
+  });
+
+  it('air-drag-does-not-kill-horizontal-speed', () => {
+    let vx = 600;
+    let vy = -200;
+    const dt = 0.016;
+    for (let i = 0; i < 4; i++) {
+      const next = stepGrenadeFlight(vx, vy, dt);
+      vx = next.vx;
+      vy = next.vy;
+    }
+    assert.ok(vx > 550, `nade should still be flying, vx=${vx}`);
+  });
+
+  it('forward-lob-is-short-range', () => {
+    const v = grenadeThrowVelocity(1, 0, 0, 0, 1);
+    let x = 0;
+    let y = 0;
+    let vx = v.vx;
+    let vy = v.vy;
+    const dt = 0.016;
+    for (let i = 0; i < 180 && y < 80; i++) {
+      const next = stepGrenadeFlight(vx, vy, dt);
+      vx = next.vx;
+      vy = next.vy;
+      x += vx * dt;
+      y += vy * dt;
+    }
+    assert.ok(x > 260 && x < 700, `short lob should land ~300–500px out, x=${x.toFixed(1)}`);
+  });
+
+  it('downward-aim-still-lobs-forward', () => {
+    const v = grenadeThrowVelocity(0.15, 0.99, 0, 0, 1);
+    assert.ok(v.vx > 200, `should throw forward, vx=${v.vx}`);
+    assert.ok(v.vy < 0, `should loft, vy=${v.vy}`);
   });
 });
 

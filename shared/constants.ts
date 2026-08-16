@@ -47,7 +47,7 @@ export const PLAYER = {
   bulletSpeed: 820,
   bulletDamage: 9,
   grenadeCooldownMs: 900,
-  grenadeSpeed: 420,
+  grenadeSpeed: 760,
   grenadeDamage: 55,
   grenadeBlastRadius: 128,
   respawnDelayMs: 2000,

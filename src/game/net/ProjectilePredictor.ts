@@ -2,13 +2,17 @@ import {
   COVERS,
   GAME_HEIGHT,
   GAME_WIDTH,
-  GRAVITY,
   PLAYER,
   PLATFORMS,
 } from '../../../shared/constants';
 import { planFire, stanceFromBody } from '../../../shared/fire';
 import { stepBallistic } from '../../../shared/ballistics';
-import { GRENADE } from '../../../shared/grenades';
+import {
+  GRENADE,
+  grenadeThrowOrigin,
+  grenadeThrowVelocity,
+  stepGrenadeFlight,
+} from '../../../shared/grenades';
 import type { MoveBody } from '../../../shared/physics';
 import type { BulletState, GrenadeState } from '../../../shared/schema';
 import { DEFAULT_WEAPON, isWeaponId, WEAPONS } from '../../../shared/weapons';
@@ -45,10 +49,6 @@ type PredGrenade = {
 
 /** Drop ghost shots if the server never confirms. */
 const MATCH_TIMEOUT_MS = 700;
-
-function aimLen(x: number, y: number): number {
-  return Math.hypot(x, y) || 1;
-}
 
 export class ProjectilePredictor {
   private bullets: PredBullet[] = [];
@@ -182,15 +182,14 @@ export class ProjectilePredictor {
     if (now < this.lastGrenadeAt + PLAYER.grenadeCooldownMs) return false;
     this.lastGrenadeAt = now;
 
-    const len = aimLen(body.aimX, body.aimY);
-    const ax = body.aimX / len;
-    const ay = body.aimY / len;
+    const origin = grenadeThrowOrigin(body.x, body.y, body.aimX, body.aimY, body.facing);
+    const vel = grenadeThrowVelocity(body.aimX, body.aimY, body.vx, body.vy, body.facing);
     this.grenades.push({
       id: `pg_${this.nextId++}`,
-      x: body.x + ax * 16,
-      y: body.y - 8,
-      vx: ax * GRENADE.throwSpeed + body.vx * 0.35,
-      vy: ay * GRENADE.throwSpeed - 180 + body.vy * 0.2,
+      x: origin.x,
+      y: origin.y,
+      vx: vel.vx,
+      vy: vel.vy,
       bornAt: now,
       fuseMs: Math.max(GRENADE.minFuseMs, fuseMs),
       serverId: null,
@@ -198,7 +197,7 @@ export class ProjectilePredictor {
     return true;
   }
 
-  step(dt: number, now: number, targets: TraceTarget[] = [], ownerId = ''): void {
+  step(dt: number, now: number, targets: TraceTarget[] = [], ownerId = '', windVx = 0): void {
     const kept: PredBullet[] = [];
     for (const b of this.bullets) {
       const { x0, y0, x1, y1 } = stepBallistic(b, dt, b.gravityScale, b.dragPerSec);
@@ -223,8 +222,9 @@ export class ProjectilePredictor {
     // Unmatched grenades simulate locally; matched ones follow server in match().
     for (const g of this.grenades) {
       if (g.serverId) continue;
-      g.vy += GRAVITY * dt;
-      g.vx *= Math.max(0, 1 - 40 * dt);
+      const flight = stepGrenadeFlight(g.vx, g.vy, dt, windVx);
+      g.vx = flight.vx;
+      g.vy = flight.vy;
       g.x += g.vx * dt;
       g.y += g.vy * dt;
       this.bounceGrenade(g);

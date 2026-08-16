@@ -3,7 +3,7 @@
  * @mechanic knockback
  * @tradeoff cook-vs-safety (longer cook = less air time, risk of self-blast)
  */
-import { PLAYER } from './constants.js';
+import { GRAVITY, PLAYER } from './constants.js';
 
 export type NadeKind = 'frag' | 'cluster' | 'sting';
 
@@ -26,6 +26,17 @@ export const GRENADE = {
   minFuseMs: 60,
   /** Self-blast uses same radius/damage as thrown. */
   throwSpeed: PLAYER.grenadeSpeed,
+  /** Light air drag / sec — old 40/sec killed vx in ~50ms so nades dumped at feet. */
+  airDrag: 0.35,
+  /** Mixed into aim so a ground-click still lobs instead of planting. */
+  loft: 0.5,
+  /** Clamp downward aim (positive y) before loft. */
+  maxDownAim: 0.22,
+  bodyVxInherit: 0.35,
+  bodyVyInherit: 0.2,
+  spawnForward: 18,
+  spawnLift: 10,
+  windCoupling: 0.7,
   blastRadius: PLAYER.grenadeBlastRadius,
   blastDamage: PLAYER.grenadeDamage,
   /** Impulse scale at point-blank. */
@@ -35,6 +46,62 @@ export const GRENADE = {
   bounceFriction: 0.85,
   clusterChildFuseMs: 320,
 } as const;
+
+/** Aim dir for a short lob. Downward clicks still go forward. */
+export function grenadeThrowDir(
+  aimX: number,
+  aimY: number,
+  facing = 1,
+): { ax: number; ay: number } {
+  const len = Math.hypot(aimX, aimY) || 1;
+  let ax = aimX / len;
+  let ay = aimY / len;
+  if (ay > GRENADE.maxDownAim) {
+    const side = Math.sign(ax || facing) || 1;
+    ax = side * Math.max(Math.abs(ax), 0.55);
+    ay = GRENADE.maxDownAim;
+  }
+  ay -= GRENADE.loft;
+  const n = Math.hypot(ax, ay) || 1;
+  return { ax: ax / n, ay: ay / n };
+}
+
+export function grenadeThrowOrigin(
+  x: number,
+  y: number,
+  aimX: number,
+  aimY: number,
+  facing = 1,
+): { x: number; y: number } {
+  const { ax } = grenadeThrowDir(aimX, aimY, facing);
+  return { x: x + ax * GRENADE.spawnForward, y: y - GRENADE.spawnLift };
+}
+
+export function grenadeThrowVelocity(
+  aimX: number,
+  aimY: number,
+  bodyVx: number,
+  bodyVy: number,
+  facing = 1,
+): { vx: number; vy: number } {
+  const { ax, ay } = grenadeThrowDir(aimX, aimY, facing);
+  return {
+    vx: ax * GRENADE.throwSpeed + bodyVx * GRENADE.bodyVxInherit,
+    vy: ay * GRENADE.throwSpeed + bodyVy * GRENADE.bodyVyInherit,
+  };
+}
+
+export function stepGrenadeFlight(
+  vx: number,
+  vy: number,
+  dt: number,
+  windVx = 0,
+): { vx: number; vy: number } {
+  vy += GRAVITY * dt;
+  vx *= Math.max(0, 1 - GRENADE.airDrag * dt);
+  vx += windVx * GRENADE.windCoupling * dt;
+  return { vx, vy };
+}
 
 export const KNOCKBACK = {
   /** Per damage point from bullets. */

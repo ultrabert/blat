@@ -71,6 +71,7 @@ export class PredictionController {
   private wasAlive = true;
   private fireLatch = false;
   private grenadeHeld = false;
+  private grenadePulse = false;
   private reloadLatch = false;
   private dropLatch = false;
   private nadeCycleLatch = false;
@@ -118,6 +119,15 @@ export class PredictionController {
     this.grenadeHeld = held;
   }
 
+  /** One-tick cook so an RMB/G tap still leaves the hand. */
+  pulseGrenade(): void {
+    this.grenadePulse = true;
+  }
+
+  grenadePending(): boolean {
+    return this.grenadeHeld || this.grenadePulse;
+  }
+
   /** Fixed-step predict + return inputs that should be sent this frame. */
   tick(
     deltaMs: number,
@@ -150,7 +160,7 @@ export class PredictionController {
         aimX: sample.aimX,
         aimY: sample.aimY,
         fire: this.fireLatch || !!sample.fireHeld,
-        grenade: this.grenadeHeld,
+        grenade: this.grenadeHeld || this.grenadePulse,
         reload: this.reloadLatch,
         drop: this.dropLatch,
         nadeCycle: this.nadeCycleLatch,
@@ -159,6 +169,7 @@ export class PredictionController {
         tossFlag: this.tossFlagLatch,
       };
       this.fireLatch = false;
+      this.grenadePulse = false;
       this.reloadLatch = false;
       this.dropLatch = false;
       this.nadeCycleLatch = false;

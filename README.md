@@ -44,7 +44,7 @@ One human → bots fill slots. Second human → bots leave.
 | T | Chat |
 | F1–F4 | Taunts |
 | Tab (hold) | Scoreboard |
-| Hold Right click or G | Cook grenade (release to throw; max cook = boom in hand) |
+| Right click or G | Throw grenade (hold to cook; release to throw; max cook = boom in hand) |
 
 ## Play live
 

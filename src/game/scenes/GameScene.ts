@@ -166,8 +166,10 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       sound.unlock();
-      if (pointer.rightButtonDown() || pointer.button === 2) this.grenadeHeld = true;
-      else {
+      if (pointer.rightButtonDown() || pointer.button === 2) {
+        this.grenadeHeld = true;
+        this.prediction.pulseGrenade();
+      } else {
         this.fireHeld = true;
         if (!this.chatFocused()) this.prediction.latchFire();
       }
@@ -248,6 +250,7 @@ export class GameScene extends Phaser.Scene {
     this.handleChatKeys(chatting);
     if (chatting) this.grenadeHeld = false;
     else if (this.keyG.isDown) this.grenadeHeld = true;
+    if (!chatting && Phaser.Input.Keyboard.JustDown(this.keyG)) this.prediction.pulseGrenade();
     if (Phaser.Input.Keyboard.JustUp(this.keyG) && !this.input.activePointer.rightButtonDown()) {
       this.grenadeHeld = false;
     }
@@ -333,7 +336,13 @@ export class GameScene extends Phaser.Scene {
         prone: !!(s?.prone ?? p.prone),
       });
     });
-    this.projectiles.step(delta / 1000, this.nowMs, bulletTargets, this.sessionId);
+    this.projectiles.step(
+      delta / 1000,
+      this.nowMs,
+      bulletTargets,
+      this.sessionId,
+      this.room.state.windVx || 0,
+    );
     this.projectiles.match(this.room.state.bullets, this.room.state.grenades, this.sessionId);
 
     this.syncEntities();
@@ -366,7 +375,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Local cook timer + predicted throw on release. */
   private updateGrenadeCookPredict(serverMe: PlayerState | undefined): void {
-    const holding = this.grenadeHeld && !!serverMe?.alive;
+    const holding = this.prediction.grenadePending() && !!serverMe?.alive;
     const nades = serverMe?.grenades ?? 0;
 
     if (!this.wasGrenadeHeld && holding && (nades > 0 || serverMe?.cooking)) {

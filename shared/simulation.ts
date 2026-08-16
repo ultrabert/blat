@@ -3,7 +3,6 @@ import {
   COVERS,
   GAME_HEIGHT,
   GAME_WIDTH,
-  GRAVITY,
   MAP_NAME,
   PLAYER,
   PLATFORMS,
@@ -26,10 +25,13 @@ import {
   blastImpulse,
   bulletImpulse,
   GRENADE,
+  grenadeThrowOrigin,
+  grenadeThrowVelocity,
   isNadeKind,
   NADE,
   NADE_KINDS,
   remainingFuse,
+  stepGrenadeFlight,
   type NadeKind,
 } from './grenades.js';
 import { traceBullet } from './trace.js';
@@ -959,7 +961,7 @@ export class Simulation {
   /**
    * @mechanic throwable-grenades
    * Hold grenade to cook; release to throw with remaining fuse.
-   * Max cook → explode in hand.
+   * A one-tick tap still throws. Max cook → explode in hand.
    */
   private updateGrenadeCook(soldier: InternalSoldier): void {
     const p = soldier.state;
@@ -1018,15 +1020,14 @@ export class Simulation {
       soldier.lastGrenadeAt = this.now;
     }
 
-    const len = Math.hypot(p.aimX, p.aimY) || 1;
-    const ax = p.aimX / len;
-    const ay = p.aimY / len;
+    const origin = grenadeThrowOrigin(p.x, p.y, p.aimX, p.aimY, p.facing);
+    const vel = grenadeThrowVelocity(p.aimX, p.aimY, p.vx, p.vy, p.facing);
     this.spawnGrenade(
       p.id,
-      p.x + ax * 16,
-      p.y - 8,
-      ax * GRENADE.throwSpeed + p.vx * 0.35,
-      ay * GRENADE.throwSpeed - 180 + p.vy * 0.2,
+      origin.x,
+      origin.y,
+      vel.vx,
+      vel.vy,
       Math.max(GRENADE.minFuseMs, fuseMs),
       kind,
       false,
@@ -1262,9 +1263,9 @@ export class Simulation {
 
   private stepGrenade(grenade: InternalGrenade, dt: number): void {
     const g = grenade.state;
-    g.vy += GRAVITY * dt;
-    g.vx *= Math.max(0, 1 - 40 * dt);
-    g.vx += this.state.windVx * 0.7 * dt;
+    const flight = stepGrenadeFlight(g.vx, g.vy, dt, this.state.windVx);
+    g.vx = flight.vx;
+    g.vy = flight.vy;
     g.x += g.vx * dt;
     g.y += g.vy * dt;
 
