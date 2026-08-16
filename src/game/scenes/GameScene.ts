@@ -182,7 +182,10 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerup', () => {
       if (!this.input.activePointer.rightButtonDown()) this.grenadeHeld = false;
     });
-    this.input.keyboard?.on('keydown', () => sound.unlock());
+    this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      sound.unlock();
+    });
     this.input.mouse?.disableContextMenu();
 
     this.hud = new CombatHud(this);

@@ -187,6 +187,7 @@ export class SoundBus {
   private bornSuspended = false;
   private createdAt = 0;
   private htmlReady = false;
+  private htmlUnlocking = false;
   private htmlSlots: HTMLAudioElement[] = [];
   private htmlCursor = 0;
   private htmlBeep = '';
@@ -207,7 +208,10 @@ export class SoundBus {
   bindGestures(): void {
     if (this.gesturesBound || typeof window === 'undefined') return;
     this.gesturesBound = true;
-    const kick = () => this.unlock();
+    const kick = (ev?: Event) => {
+      if (ev && 'repeat' in ev && (ev as KeyboardEvent).repeat) return;
+      this.unlock();
+    };
     window.addEventListener('touchstart', kick, { capture: true, passive: true });
     window.addEventListener('touchend', kick, { capture: true, passive: true });
     window.addEventListener('pointerdown', kick, { capture: true });
@@ -228,6 +232,7 @@ export class SoundBus {
 
   private unlockHtml(): void {
     if (typeof Audio === 'undefined') return;
+    if (this.htmlReady || this.htmlUnlocking) return;
     if (!this.htmlSlots.length) {
       this.htmlBeep = beepWavUri();
       for (let i = 0; i < 8; i++) {
@@ -236,6 +241,7 @@ export class SoundBus {
         this.htmlSlots.push(el);
       }
     }
+    this.htmlUnlocking = true;
     const audible = this.htmlSlots[0]!;
     audible.src = this.htmlBeep;
     audible.volume = 0.5;
@@ -252,10 +258,12 @@ export class SoundBus {
           this.htmlSlots[i]!.pause();
           this.htmlSlots[i]!.currentTime = 0;
         }
+        this.htmlUnlocking = false;
         this.htmlReady = true;
         this.emitState();
       })
       .catch(() => {
+        this.htmlUnlocking = false;
         this.htmlSlots = [];
         this.htmlReady = false;
         this.emitState();
@@ -298,6 +306,7 @@ export class SoundBus {
       this.bornSuspended = this.ctx.state !== 'running';
       void this.loadAll();
     }
+    if (this.ctx.state === 'running') return;
     this.prime(this.ctx);
     void this.ctx.resume().then(() => {
       if (this.ctx?.state === 'running') this.bornSuspended = false;
