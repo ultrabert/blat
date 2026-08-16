@@ -1265,6 +1265,7 @@ export class Simulation {
     }
   }
 
+  /** @mechanic throwable-grenades */
   private stepGrenade(grenade: InternalGrenade, dt: number): void {
     const g = grenade.state;
     const flight = stepGrenadeFlight(g.vx, g.vy, dt, this.state.windVx);

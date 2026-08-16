@@ -39,6 +39,11 @@ function tap(partial: Partial<PlayerInput> = {}): PlayerInput {
   };
 }
 
+function readyThrow(sim: Simulation, id: string): void {
+  const s = sim.soldiers.get(id);
+  if (s) s.lastGrenadeAt = -PLAYER.grenadeCooldownMs;
+}
+
 describe('throwable-grenades', () => {
   it('cook-shortens-fuse', () => {
     assert.equal(remainingFuse(0), GRENADE.fuseMs);
@@ -111,6 +116,7 @@ describe('throwable-grenades', () => {
     a.aimY = 0;
     b.x = 720;
     b.y = 400;
+    readyThrow(sim, 'a');
     sim.setInput('a', tap({ grenade: true, aimX: 1, seq: 1 }));
     sim.step(TICK_MS);
     sim.setInput('a', tap({ grenade: false, aimX: 1, seq: 2 }));
@@ -136,6 +142,7 @@ describe('throwable-grenades', () => {
     a.y = 400;
     a.aimX = 1;
     a.aimY = 0;
+    readyThrow(sim, 'a');
     sim.setInput('a', tap({ grenade: true, aimX: 1, seq: 1 }));
     sim.step(TICK_MS);
     sim.setInput('a', tap({ grenade: false, aimX: 1, seq: 2 }));
