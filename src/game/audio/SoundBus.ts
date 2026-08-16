@@ -100,14 +100,7 @@ function armAudioEl(el: HTMLAudioElement): void {
   el.preload = 'auto';
 }
 
-function beepWavUri(): string {
-  const sr = 22050;
-  const n = Math.floor(sr * 0.16);
-  const pcm = new Int16Array(n);
-  for (let i = 0; i < n; i++) {
-    const env = Math.min(1, i / 90) * (1 - i / n);
-    pcm[i] = Math.sin((2 * Math.PI * 880 * i) / sr) * env * 0.42 * 32767;
-  }
+function encodePcmWavUri(pcm: Int16Array, sr: number): string {
   const bytes = pcm.length * 2;
   const buf = new ArrayBuffer(44 + bytes);
   const v = new DataView(buf);
@@ -136,6 +129,50 @@ function beepWavUri(): string {
   return `data:audio/wav;base64,${btoa(bin)}`;
 }
 
+function beepWavUri(): string {
+  const sr = 22050;
+  const n = Math.floor(sr * 0.16);
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / 90) * (1 - i / n);
+    pcm[i] = Math.sin((2 * Math.PI * 880 * i) / sr) * env * 0.42 * 32767;
+  }
+  return encodePcmWavUri(pcm, sr);
+}
+
+/** Quiet looping whoosh — no oscillator ping. */
+function fillJetHiss(out: Float32Array): void {
+  const n = out.length;
+  let b0 = 0;
+  let b1 = 0;
+  let b2 = 0;
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99765 * b0 + white * 0.099046;
+    b1 = 0.963 * b1 + white * 0.2965164;
+    b2 = 0.57 * b2 + white * 1.0526913;
+    const pink = b0 + b1 + b2;
+    lp += 0.12 * (pink - lp);
+    out[i] = lp * 0.045;
+  }
+  const fade = Math.min(Math.floor(n * 0.12), n >> 2);
+  for (let i = 0; i < fade; i++) {
+    const a = i / fade;
+    out[i] = out[i]! * a + out[n - fade + i]! * (1 - a);
+  }
+}
+
+function jetHissWavUri(): string {
+  const sr = 22050;
+  const n = Math.floor(sr * 0.85);
+  const samples = new Float32Array(n);
+  fillJetHiss(samples);
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) pcm[i] = samples[i]! * 32767;
+  return encodePcmWavUri(pcm, sr);
+}
+
 export class SoundBus {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -154,6 +191,8 @@ export class SoundBus {
   private htmlCursor = 0;
   private htmlBeep = '';
   private jetAudio: HTMLAudioElement | null = null;
+  private jetHissUri = '';
+  private jetHissBuf: AudioBuffer | null = null;
 
   running(): boolean {
     if (this.htmlReady) return true;
@@ -528,10 +567,11 @@ export class SoundBus {
         this.jetAudio = null;
         return;
       }
-      const jet = new Audio('/assets/sfx/jet_loop.m4a');
+      if (!this.jetHissUri) this.jetHissUri = jetHissWavUri();
+      const jet = new Audio(this.jetHissUri);
       armAudioEl(jet);
       jet.loop = true;
-      jet.volume = 0.22;
+      jet.volume = 0.1;
       void jet.play().catch(() => {});
       this.jetAudio = jet;
       return;
@@ -559,37 +599,26 @@ export class SoundBus {
     const t = ctx.currentTime;
     this.jetGain = ctx.createGain();
     this.jetGain.gain.setValueAtTime(0.001, t);
-    this.jetGain.gain.exponentialRampToValueAtTime(0.26, t + 0.05);
+    this.jetGain.gain.exponentialRampToValueAtTime(0.09, t + 0.08);
     this.jetGain.connect(this.master);
 
-    const loop = this.pick('jet_loop');
-    if (loop) {
-      this.jetSrc = ctx.createBufferSource();
-      this.jetSrc.buffer = loop;
-      this.jetSrc.loop = true;
-      this.jetSrc.connect(this.jetGain);
-      this.jetSrc.start(t);
-      return;
+    if (!this.jetHissBuf || this.jetHissBuf.sampleRate !== ctx.sampleRate) {
+      const n = Math.floor(ctx.sampleRate * 0.85);
+      const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      fillJetHiss(buf.getChannelData(0));
+      this.jetHissBuf = buf;
     }
-
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = 55;
-    const lfo = ctx.createOscillator();
-    const lfoG = ctx.createGain();
-    lfo.frequency.value = 28;
-    lfoG.gain.value = 8;
-    lfo.connect(lfoG);
-    lfoG.connect(osc.frequency);
-    lfo.start(t);
+    const src = ctx.createBufferSource();
+    src.buffer = this.jetHissBuf;
+    src.loop = true;
     const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 400;
-    filter.Q.value = 2;
-    osc.connect(filter);
+    filter.type = 'lowpass';
+    filter.frequency.value = 1400;
+    filter.Q.value = 0.4;
+    src.connect(filter);
     filter.connect(this.jetGain);
-    osc.start(t);
-    this.jetSrc = osc;
+    src.start(t);
+    this.jetSrc = src;
   }
 
   private pick(key: BufKey): AudioBuffer | null {

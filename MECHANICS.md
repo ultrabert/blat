@@ -65,13 +65,13 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 6  
 **Tags:** `@mechanic throwable-grenades`  
-**Description:** Right-click / G throws a short lob (hold to cook; release to throw with remaining fuse). A tap still leaves the hand. Downward aim is lofted so the nade does not plant at your feet. Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill. **Impact:** after `armMs` the nade detonates if its body overlaps a living player (including the thrower). Fuse still booms if nobody is hit. Blast damage + knockback. Frag radius 128 reaches behind the mid sandbag so a cooked nade flushes crouch-cover; blast ignores cover (bullets do not).  
+**Description:** Right-click / G throws a short lob (hold to cook; release to throw with remaining fuse). A tap still leaves the hand. Downward aim is lofted so the nade does not plant at your feet. Max cook detonates in hand. Arcs, bounces on platforms/covers/ramps/terrain fill. Fuse detonates — nades do not explode on player contact. Blast damage + knockback. Frag radius 128 reaches behind the mid sandbag so a cooked nade flushes crouch-cover; blast ignores cover (bullets do not).  
 **Trade-offs:**
 - Blast radius vs crouch-cover — grenades are the intended flush  
 - Cook-vs-safety — longer cook = less flight time, risk of self-blast  
 - Short throw vs map-wide bombs — air drag is light (~0.35/s); range is the throw vector, not a dump  
-- Impact vs bounce-at-feet — arming delay so the throw does not stick in your own AABB; a rolling nade still pops on contact  
-**Tests:** `shared/grenades.test.ts` (`frag-blast-reaches-behind-mid-cover`, `forward-lob-is-short-range`, `impact-detonates-on-player`)  
+- Impact fuse was too strong (point-blank stick), so nades bounce until the timer  
+**Tests:** `shared/grenades.test.ts` (`frag-blast-reaches-behind-mid-cover`, `forward-lob-is-short-range`)  
 **Files:** `shared/grenades.ts`, `shared/simulation.ts`, `ProjectilePredictor`, `GameScene`
 
 ## Mechanic: knockback
@@ -295,7 +295,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** 8  
 **Tags:** `@mechanic combat-sfx`  
-**Description:** Sampled gun reports (CC0). Local shots play dry. Other players' / bots' shots play when a new server bullet appears (pellet-debounced), quieter and panned from the camera. LAW layers a short boom. Falls back to synth if a clip is missing. Clips ship as `.ogg` and `.m4a`. iPhone/iPad play AAC through HTMLAudio (`playsinline`) after a tap — Web Audio stays suspended on `/demo` auto-join and a silent buffer does not unlock Safari. A full-screen "Tap to hear" gate stays up until a clip actually plays; the Ring switch still mutes Safari. Desktop keeps the Web Audio bus.  
+**Description:** Sampled gun reports (CC0). Local shots play dry. Other players' / bots' shots play when a new server bullet appears (pellet-debounced), quieter and panned from the camera. LAW layers a short boom. Jet is a quiet hiss loop (not a tonal ping). Falls back to synth if a clip is missing. Clips ship as `.ogg` and `.m4a`. iPhone/iPad play AAC through HTMLAudio (`playsinline`) after a tap — Web Audio stays suspended on `/demo` auto-join and a silent buffer does not unlock Safari. A full-screen "Tap to hear" gate stays up until a clip actually plays; the Ring switch still mutes Safari. Desktop keeps the Web Audio bus.  
 **Files:** `src/game/audio/SoundBus.ts`, `shared/sfxExts.ts`, `GameScene`, lobby  
 **Tests:** `shared/sfxExts.test.ts`
 

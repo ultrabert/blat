@@ -211,20 +211,22 @@ def gen_cook_tick() -> None:
 
 
 def gen_jet_loop() -> None:
-    """Seamless-ish jet hiss loop (~0.4s)."""
-    n = int(0.4 * SR)
-    rumble = tone(52, n, 0.22, "saw")
-    # LFO amplitude on rumble
+    """Seamless pink-ish hiss. No sawtooth / LFO ping."""
+    n = int(0.85 * SR)
+    b0 = b1 = b2 = lp = 0.0
+    out = [0.0] * n
     for i in range(n):
-        rumble[i] *= 0.7 + 0.3 * math.sin(2 * math.pi * 28 * i / SR)
-    hiss = bandpass_noise(n, 650, 1.4, 0.35)
-    # crossfade ends for looping
-    fade = int(0.02 * SR)
-    out = mix(rumble, hiss)
+        white = random.uniform(-1.0, 1.0)
+        b0 = 0.99765 * b0 + white * 0.099046
+        b1 = 0.963 * b1 + white * 0.2965164
+        b2 = 0.57 * b2 + white * 1.0526913
+        pink = b0 + b1 + b2
+        lp += 0.12 * (pink - lp)
+        out[i] = lp * 0.22
+    fade = int(0.08 * SR)
     for i in range(fade):
         a = i / fade
         out[i] = out[i] * a + out[n - fade + i] * (1 - a)
-    out = out[:-fade]
     write_wav("jet_loop.wav", out)
 
 
