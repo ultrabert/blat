@@ -192,9 +192,12 @@ function syncSoundGate(): void {
 sound.bindGestures();
 sound.onState(syncSoundGate);
 soundGate.addEventListener('click', () => sound.unlock());
+soundGate.addEventListener('touchend', (event) => {
+  event.preventDefault();
+  sound.unlock();
+});
 
 function enterGame(room: Room<GameState>, code: string, spectate = false): void {
-  sound.unlock();
   if (spectate || isDemoRoomCode(code)) {
     history.replaceState(null, '', '/demo');
   } else {

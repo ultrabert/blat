@@ -1,4 +1,4 @@
-import { rankSfxExts } from '../../../shared/sfxExts';
+import { isIosClient, rankSfxExts } from '../../../shared/sfxExts';
 import type { ImpactSurface } from './surfaces';
 
 /**
@@ -88,6 +88,54 @@ function sfxExts(): string[] {
   return rankSfxExts((mime) => (probe ? probe.canPlayType(mime) : ''));
 }
 
+function onIos(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return isIosClient(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
+}
+
+function armAudioEl(el: HTMLAudioElement): void {
+  (el as HTMLAudioElement & { playsInline: boolean }).playsInline = true;
+  el.setAttribute('playsinline', 'true');
+  el.setAttribute('webkit-playsinline', 'true');
+  el.preload = 'auto';
+}
+
+function beepWavUri(): string {
+  const sr = 22050;
+  const n = Math.floor(sr * 0.16);
+  const pcm = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const env = Math.min(1, i / 90) * (1 - i / n);
+    pcm[i] = Math.sin((2 * Math.PI * 880 * i) / sr) * env * 0.42 * 32767;
+  }
+  const bytes = pcm.length * 2;
+  const buf = new ArrayBuffer(44 + bytes);
+  const v = new DataView(buf);
+  const ascii = (o: number, s: string) => {
+    for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+  };
+  ascii(0, 'RIFF');
+  v.setUint32(4, 36 + bytes, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  ascii(36, 'data');
+  v.setUint32(40, bytes, true);
+  new Int16Array(buf, 44).set(pcm);
+  const raw = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < raw.length; i += 0x8000) {
+    bin += String.fromCharCode(...raw.subarray(i, i + 0x8000));
+  }
+  return `data:audio/wav;base64,${btoa(bin)}`;
+}
+
 export class SoundBus {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -101,8 +149,14 @@ export class SoundBus {
   private listeners = new Set<() => void>();
   private bornSuspended = false;
   private createdAt = 0;
+  private htmlReady = false;
+  private htmlSlots: HTMLAudioElement[] = [];
+  private htmlCursor = 0;
+  private htmlBeep = '';
+  private jetAudio: HTMLAudioElement | null = null;
 
   running(): boolean {
+    if (this.htmlReady) return true;
     return !!this.ctx && this.ctx.state === 'running';
   }
 
@@ -116,14 +170,60 @@ export class SoundBus {
     this.gesturesBound = true;
     const kick = () => this.unlock();
     window.addEventListener('touchstart', kick, { capture: true, passive: true });
+    window.addEventListener('touchend', kick, { capture: true, passive: true });
     window.addEventListener('pointerdown', kick, { capture: true });
+    window.addEventListener('click', kick, { capture: true });
     window.addEventListener('keydown', kick);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') void this.ctx?.resume();
+      if (document.visibilityState === 'visible') {
+        void this.ctx?.resume();
+        if (this.htmlReady && this.jetting && this.jetAudio?.paused) void this.jetAudio.play();
+      }
     });
   }
 
   unlock(): void {
+    this.unlockHtml();
+    if (!onIos()) this.unlockWeb();
+  }
+
+  private unlockHtml(): void {
+    if (typeof Audio === 'undefined') return;
+    if (!this.htmlSlots.length) {
+      this.htmlBeep = beepWavUri();
+      for (let i = 0; i < 8; i++) {
+        const el = new Audio();
+        armAudioEl(el);
+        this.htmlSlots.push(el);
+      }
+    }
+    const audible = this.htmlSlots[0]!;
+    audible.src = this.htmlBeep;
+    audible.volume = 0.5;
+    const plays = this.htmlSlots.map((el, i) => {
+      if (i > 0) {
+        el.src = this.htmlBeep;
+        el.volume = 0.001;
+      }
+      return el.play();
+    });
+    void Promise.all(plays)
+      .then(() => {
+        for (let i = 1; i < this.htmlSlots.length; i++) {
+          this.htmlSlots[i]!.pause();
+          this.htmlSlots[i]!.currentTime = 0;
+        }
+        this.htmlReady = true;
+        this.emitState();
+      })
+      .catch(() => {
+        this.htmlSlots = [];
+        this.htmlReady = false;
+        this.emitState();
+      });
+  }
+
+  private unlockWeb(): void {
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -146,7 +246,11 @@ export class SoundBus {
       this.bornSuspended = false;
     }
     if (!this.ctx) {
-      this.ctx = new Ctx({ latencyHint: 'interactive' });
+      try {
+        this.ctx = new Ctx({ latencyHint: 'interactive' });
+      } catch {
+        this.ctx = new Ctx();
+      }
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.58;
       this.master.connect(this.ctx.destination);
@@ -167,10 +271,12 @@ export class SoundBus {
     for (const fn of this.listeners) fn();
   }
 
-  /** iOS only starts Web Audio if a buffer plays in the same user gesture. */
+  /** iOS only starts Web Audio if a non-silent buffer plays in the same gesture. */
   private prime(ctx: AudioContext): void {
     try {
-      const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.05)), ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (1 - i / data.length) * 0.08;
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.connect(ctx.destination);
@@ -416,6 +522,20 @@ export class SoundBus {
   setJetting(on: boolean): void {
     if (on === this.jetting) return;
     this.jetting = on;
+    if (this.htmlReady) {
+      if (!on) {
+        this.jetAudio?.pause();
+        this.jetAudio = null;
+        return;
+      }
+      const jet = new Audio('/assets/sfx/jet_loop.m4a');
+      armAudioEl(jet);
+      jet.loop = true;
+      jet.volume = 0.22;
+      void jet.play().catch(() => {});
+      this.jetAudio = jet;
+      return;
+    }
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
 
@@ -482,10 +602,27 @@ export class SoundBus {
     return list[idx] ?? null;
   }
 
+  private playHtml(key: BufKey, gain: number): boolean {
+    if (!onIos() || !this.htmlReady || !this.htmlSlots.length) return false;
+    const tags = VARIANTS[key];
+    let idx = Math.floor(Math.random() * tags.length);
+    const prev = this.lastVariant.get(key);
+    if (tags.length > 1 && idx === prev) idx = (idx + 1) % tags.length;
+    this.lastVariant.set(key, idx);
+    const el = this.htmlSlots[this.htmlCursor++ % this.htmlSlots.length]!;
+    el.pause();
+    el.src = `/assets/sfx/${key}${tags[idx] ?? ''}.m4a`;
+    el.volume = Math.max(0.06, Math.min(1, gain));
+    void el.play().catch(() => {});
+    return true;
+  }
+
   private play(
     key: BufKey,
     opts: { gain?: number; rate?: number; pan?: number } = {},
   ): boolean {
+    const gain = opts.gain ?? 0.7;
+    if (this.playHtml(key, gain)) return true;
     const ctx = this.ensure();
     const buf = this.pick(key);
     if (!ctx || !this.master || !buf) return false;

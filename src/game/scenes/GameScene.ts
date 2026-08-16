@@ -182,7 +182,6 @@ export class GameScene extends Phaser.Scene {
     });
     this.input.keyboard?.on('keydown', () => sound.unlock());
     this.input.mouse?.disableContextMenu();
-    sound.unlock();
 
     this.hud = new CombatHud(this);
     this.miniMap = new MiniMap(this);

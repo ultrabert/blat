@@ -4,6 +4,16 @@ export const SFX_FORMATS = [
   { ext: 'ogg', mime: 'audio/ogg; codecs=vorbis' },
 ] as const;
 
+/** iPhone / iPad (including iPadOS desktop UA). Web Audio is unreliable there. */
+export function isIosClient(
+  ua: string,
+  platform = '',
+  maxTouchPoints = 0,
+): boolean {
+  if (/iPad|iPhone|iPod/.test(ua)) return true;
+  return platform === 'MacIntel' && maxTouchPoints > 1;
+}
+
 /** Playable first (Safari → m4a, Firefox → ogg), then the rest as decode fallbacks. */
 export function rankSfxExts(canPlayType: (mime: string) => string): string[] {
   const playable = SFX_FORMATS.filter((f) => canPlayType(f.mime) !== '').map((f) => f.ext);
