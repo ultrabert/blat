@@ -91,17 +91,17 @@ describe('state-accuracy', () => {
       rolling: false,
     };
     const { dirs } = shotgunBlastDirections(1, 0, still, 0, 42, {
-      pellets: 7,
+      pellets: WEAPONS.spas.pellets,
       spreadMult: WEAPONS.spas.spreadMult,
       pelletSpread: WEAPONS.spas.pelletSpread,
       recoilKick: WEAPONS.spas.recoilKick,
       recoilMax: WEAPONS.spas.recoilMax,
     });
-    assert.equal(dirs.length, 7);
+    assert.equal(dirs.length, WEAPONS.spas.pellets);
     const angles = dirs.map((d) => Math.atan2(d.aimY, d.aimX));
     const span = Math.max(...angles) - Math.min(...angles);
-    assert.ok(span > 0.15, `cone too tight: ${span}`);
-    assert.ok(span < 0.55, `cone too wide: ${span}`);
+    assert.ok(span > 0.35, `cone too tight: ${span}`);
+    assert.ok(span < 0.95, `cone too wide: ${span}`);
     assert.ok(angles[0]! < angles[angles.length - 1]!);
   });
 });

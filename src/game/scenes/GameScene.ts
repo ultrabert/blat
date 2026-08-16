@@ -710,6 +710,8 @@ export class GameScene extends Phaser.Scene {
     for (const flash of this.projectiles.takeMuzzleFlashes()) {
       if (flash.weapon === 'spas') {
         this.fx.shotgunMuzzle(flash.x, flash.y, flash.aimX, flash.aimY);
+      } else if (flash.weapon === 'flamer') {
+        this.fx.flameMuzzle(flash.x, flash.y, flash.aimX, flash.aimY);
       }
     }
     for (const hit of this.projectiles.takeImpacts()) {
@@ -847,7 +849,7 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Rifle: streaming tracers. Shotgun: short cone pellets.
-   * Sniper: long fast streak + brief persistence-of-vision trail (no beam).
+   * Flamer: rising fire puffs. Sniper: long streak + POV trail.
    */
   private drawTracers(
     tracers: { id: string; x: number; y: number; vx: number; vy: number; weapon: string }[],
@@ -861,7 +863,7 @@ export class GameScene extends Phaser.Scene {
       const isSniper = t.weapon === 'barrett';
       const isFlame = t.weapon === 'flamer';
       const isRocket = t.weapon === 'law' || t.weapon === 'm79';
-      const trailLen = isShot ? 3 : isSniper ? 8 : isFlame ? 4 : 5;
+      const trailLen = isShot ? 4 : isSniper ? 8 : isFlame ? 7 : 5;
 
       let trail = this.bulletTrails.get(t.id);
       if (!trail) {
@@ -869,35 +871,53 @@ export class GameScene extends Phaser.Scene {
         this.bulletTrails.set(t.id, trail);
       }
       const last = trail[trail.length - 1];
-      const minStep = isSniper ? 6 : 2;
+      const minStep = isFlame ? 5 : isSniper ? 6 : 2;
       if (!last || Math.hypot(last.x - t.x, last.y - t.y) > minStep) {
         trail.push({ x: t.x, y: t.y });
         if (trail.length > trailLen) trail.shift();
       }
 
       const speed = Math.hypot(t.vx, t.vy) || 1;
+      if (isFlame) {
+        const grow = Math.min(1, 1 - speed / 540);
+        const puff = 5 + grow * 11;
+        for (let i = 0; i < trail.length; i++) {
+          const p = trail[i]!;
+          const k = (i + 1) / trail.length;
+          g.fillStyle(0x7c2d12, 0.1 * k);
+          g.fillCircle(p.x, p.y, puff * (0.55 + k * 0.7));
+          g.fillStyle(0xea580c, 0.18 * k);
+          g.fillCircle(p.x, p.y, puff * (0.4 + k * 0.45));
+        }
+        g.fillStyle(0xf97316, 0.42);
+        g.fillCircle(t.x, t.y, puff);
+        g.fillStyle(0xfbbf24, 0.55);
+        g.fillCircle(t.x, t.y, puff * 0.62);
+        g.fillStyle(0xfff7ed, 0.8);
+        g.fillCircle(t.x, t.y, puff * 0.28);
+        continue;
+      }
+
       const ux = t.vx / speed;
       const uy = t.vy / speed;
       const streak = Math.min(
-        isSniper ? 72 : isShot ? 16 : 40,
-        Math.max(isSniper ? 36 : isShot ? 8 : 18, speed * (isSniper ? 0.055 : isShot ? 0.018 : 0.036)),
+        isSniper ? 72 : isShot ? 12 : 40,
+        Math.max(isSniper ? 36 : isShot ? 6 : 18, speed * (isSniper ? 0.055 : isShot ? 0.012 : 0.036)),
       );
       const x1 = t.x;
       const y1 = t.y;
       const x0 = x1 - ux * streak;
       const y0 = y1 - uy * streak;
 
-      const glow = isFlame
-        ? 0xf97316
-        : isRocket
-          ? 0xfacc15
-          : isSniper
-            ? 0xa5f3fc
-            : isShot
-              ? 0xfb923c
-              : 0xfbbf24;
-      const core = isFlame ? 0xffedd5 : isSniper ? 0xecfeff : isShot ? 0xffedd5 : 0xfff7c2;
-      g.lineStyle(isShot ? 2.6 : isSniper ? 2.4 : 3.4, glow, isShot ? 0.4 : isSniper ? 0.22 : 0.28);
+      const glow = isRocket
+        ? 0xfacc15
+        : isSniper
+          ? 0xa5f3fc
+          : isShot
+            ? 0xfb923c
+            : 0xfbbf24;
+      const core = isSniper ? 0xecfeff : isShot ? 0xffedd5 : 0xfff7c2;
+      g.lineStyle(isShot ? 2.1 : isSniper ? 2.4 : 3.4, glow, isShot ? 0.5 : isSniper ? 0.22 : 0.28);
       g.beginPath();
       g.moveTo(x0, y0);
       g.lineTo(x1, y1);
@@ -911,7 +931,7 @@ export class GameScene extends Phaser.Scene {
       g.lineTo(x1, y1);
       g.strokePath();
       g.fillStyle(0xfffbeb, isSniper ? 0.75 : 1);
-      g.fillCircle(x1, y1, isShot ? 1.6 : isSniper ? 1.1 : 1.35);
+      g.fillCircle(x1, y1, isShot ? 2.35 : isSniper ? 1.1 : 1.35);
 
       // Persistence-of-vision ghost (stronger / longer for sniper)
       if (!isShot && trail.length > 1) {

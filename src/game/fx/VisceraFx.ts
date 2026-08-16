@@ -200,24 +200,55 @@ export class VisceraFx {
     const state = { a: 1 };
     const paint = () => {
       g.clear();
-      for (let i = 0; i < 7; i++) {
-        const u = (i / 6) * 2 - 1;
-        const ang = base + u * 0.16;
-        const reach = 28 + Math.abs(u) * 10;
-        g.lineStyle(2.4 - Math.abs(u), 0xfdba74, state.a * (0.55 - Math.abs(u) * 0.2));
+      for (let i = 0; i < 11; i++) {
+        const u = (i / 10) * 2 - 1;
+        const ang = base + u * 0.34;
+        const reach = 22 + (1 - Math.abs(u)) * 16;
+        g.lineStyle(2.2 - Math.abs(u), 0xfdba74, state.a * (0.6 - Math.abs(u) * 0.22));
         g.beginPath();
         g.moveTo(x, y);
         g.lineTo(x + Math.cos(ang) * reach, y + Math.sin(ang) * reach);
         g.strokePath();
+        g.fillStyle(0xfff7ed, state.a * (0.45 - Math.abs(u) * 0.2));
+        g.fillCircle(x + Math.cos(ang) * reach, y + Math.sin(ang) * reach, 1.6);
       }
-      g.fillStyle(0xfff7ed, state.a * 0.8);
-      g.fillCircle(x, y, 3.5);
+      g.fillStyle(0xfff7ed, state.a * 0.85);
+      g.fillCircle(x, y, 4.2);
     };
     paint();
     this.scene.tweens.add({
       targets: state,
       a: 0,
-      duration: 90,
+      duration: 100,
+      ease: 'Quad.easeOut',
+      onUpdate: paint,
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  /** Soft fire bloom at the flamer nozzle. */
+  flameMuzzle(x: number, y: number, aimX: number, aimY: number): void {
+    const len = Math.hypot(aimX, aimY) || 1;
+    const ax = aimX / len;
+    const ay = aimY / len;
+    const g = this.scene.add.graphics().setDepth(10);
+    const state = { a: 1 };
+    const paint = () => {
+      g.clear();
+      g.fillStyle(0xea580c, state.a * 0.35);
+      g.fillCircle(x + ax * 10, y + ay * 10, 14);
+      g.fillStyle(0xf97316, state.a * 0.5);
+      g.fillCircle(x + ax * 6, y + ay * 6, 9);
+      g.fillStyle(0xfde68a, state.a * 0.75);
+      g.fillCircle(x, y, 5);
+      g.fillStyle(0xfff7ed, state.a * 0.9);
+      g.fillCircle(x, y, 2.4);
+    };
+    paint();
+    this.scene.tweens.add({
+      targets: state,
+      a: 0,
+      duration: 70,
       ease: 'Quad.easeOut',
       onUpdate: paint,
       onComplete: () => g.destroy(),

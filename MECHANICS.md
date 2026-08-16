@@ -163,9 +163,9 @@ Update this file when behavior changes. Prefer small, testable layers.
 - **DE** — 7-round tap cannon; 2-tap torso, head deletes  
 - **MP5 / AK / minigun** — spray vs mid vs hose  
 - **Barrett** — bolt, body chunky (88, still sub-lethal), head OHK; cave pad is the pilgrimage  
-- **SPAS-12** — 7-pellet pump  
+- **SPAS-12** — 10-pellet pump, wide cone; close range is easy to tag  
 - **M79 / LAW** — arcing shell / flat rocket, explode on hit  
-- **Flamer** — short-life particles  
+- **Flamer** — rising particle hose (~220px), not a puff  
 - **Knife / chainsaw** — melee (dry-gun finisher)  
 
 Shared `planFire` keeps client prediction identical to the server. Head multiplier is 2.0.  
@@ -218,7 +218,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** B8  
 **Tags:** `@mechanic special-ballistics`  
-**Description:** Per-shot gravity/drag/life from the weapon def. LAW is a flat rocket; M79 a heavy shell; both explode on hit. Flamer particles die in ~200ms with heavy drag.  
+**Description:** Per-shot gravity/drag/life from the weapon def. LAW is a flat rocket; M79 a heavy shell; both explode on hit. Flamer particles live ~560ms with moderate drag and a slight lift so the stream reaches across a room.  
 **Files:** `shared/fire.ts` (`planFire`), `shared/ballistics.ts`, simulation `stepBullet`
 
 ## Mechanic: bot-dm-ai

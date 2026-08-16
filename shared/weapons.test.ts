@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { bodyDamageMult } from './accuracy.js';
+import { ACCURACY, bodyDamageMult } from './accuracy.js';
 import { ballisticDamage } from './ballistics.js';
 import { PLAYER, SPAWNS, type PlayerInput } from './constants.js';
 import { applyVestDamage, spawnAmmoFor } from './fire.js';
@@ -55,11 +55,15 @@ describe('weapon-arsenal', () => {
   });
 
   it('spas-is-multi-pellet-wide-cone', () => {
-    assert.ok(WEAPONS.spas.pellets > 1);
+    assert.ok(WEAPONS.spas.pellets >= 10);
     assert.ok(
       WEAPONS.spas.spreadMult + WEAPONS.spas.pelletSpread > WEAPONS.ak.spreadMult,
     );
     assert.ok(WEAPONS.spas.fireCooldownMs > WEAPONS.ak.fireCooldownMs);
+    const stillSpread = ACCURACY.baseSpread;
+    const halfCone = stillSpread * WEAPONS.spas.spreadMult * 0.55 + WEAPONS.spas.pelletSpread;
+    const widthAt70 = 2 * 70 * Math.tan(halfCone);
+    assert.ok(widthAt70 > PLAYER.width * 1.8, `close cone too skinny: ${widthAt70.toFixed(1)}px`);
   });
 
   it('mp5-and-minigun-outpace-ak-rof', () => {
@@ -94,7 +98,11 @@ describe('weapon-arsenal', () => {
     assert.equal(WEAPONS.m79.kind, 'shell');
     assert.ok(WEAPONS.m79.explodeOnHit);
     assert.equal(WEAPONS.flamer.kind, 'flame');
-    assert.ok((WEAPONS.flamer.lifeMs ?? 0) < 400);
+    assert.ok(WEAPONS.flamer.pellets >= 4, 'flame should be a spray');
+    const life = (WEAPONS.flamer.lifeMs ?? 0) / 1000;
+    const drag = WEAPONS.flamer.dragPerSec ?? 0.22;
+    const reach = WEAPONS.flamer.muzzleSpeed / drag * (1 - Math.exp(-drag * life));
+    assert.ok(reach > 180 && reach < 420, `flamer reach ${reach.toFixed(0)}px`);
   });
 
   it('melee-is-close-and-dry-safe', () => {
