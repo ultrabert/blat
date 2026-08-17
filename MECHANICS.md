@@ -35,7 +35,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Standing on a ramp slides downhill once (`PLAYER.slopeSlide`, weaker `slopeDrag`) — not applied in both terrain seat and ramp collide. Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Buried bodies eject to the hill top unless they are rising into a cave roof. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50.  
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Standing on a ramp slides downhill once (`PLAYER.slopeSlide`, weaker `slopeDrag`) — not applied in both terrain seat and ramp collide. Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Buried bodies eject to the hill top unless they are rising into a cave roof. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50. Server and client both step that fixed dt (Colyseus wall-clock is accumulated, not passed into physics).  
 **Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; idle bowl slides downhill; slow falls land; dirt ejects to the surface; jet near a ramp does not snap on.  
 **Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/terrain.ts`, `shared/simulation.ts`
 
@@ -87,9 +87,10 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** netcode  
 **Tags:** `@mechanic client-prediction`  
-**Description:** Local movement + projectiles predict; server reconciles via sequenced inputs. Held fire is true on every sim tick while the button is down (autos don’t skip a cooldown window on a hitch). Reconcile runs once per sim step (not every render frame). Errors under 8px keep predicted pose. Grounded replay never overwrites Y (lagged slope Y at a different X hops you off the surface). Else blend 0.2; snap beyond `RECONCILE_SNAP_DIST`.  
-**Trade-offs:** Any sim divergence → rubber-banding / ghost shots. Shared math is mandatory. Small deadzone can hide a few pixels of authority error in exchange for no slope chatter.  
-**Files:** `src/game/net/PredictionController.ts`, `ProjectilePredictor.ts`, `shared/simulation.ts`
+**Description:** Local movement + projectiles predict; server reconciles via sequenced inputs. Held fire is true on every sim tick while the button is down (autos don’t skip a cooldown window on a hitch). Reconcile runs once per sim step (not every render frame). Server lockstep is always `TICK_MS` and consumes **one** input per tick (no wall-clock dt, no burst drain). Replay error under 8px keeps predicted pose. Grounded replay never overwrites Y (lagged slope Y at a different X hops you off the surface). Else blend 0.2; snap beyond `RECONCILE_SNAP_DIST` of the **replayed** pose (not raw RTT lag).  
+**Trade-offs:** Any sim divergence → rubber-banding / ghost shots. Shared math is mandatory. Small deadzone can hide a few pixels of authority error in exchange for no slope chatter. A hitch can leave a short input backlog (one seq per tick) instead of teleporting.  
+**Tests:** `shared/simulation.net.test.ts`  
+**Files:** `src/game/net/PredictionController.ts`, `ProjectilePredictor.ts`, `shared/simulation.ts`, `server/rooms/DmRoom.ts`
 
 ## Mechanic: crouch-cover
 

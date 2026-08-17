@@ -7,6 +7,7 @@ import {
   PLAYER,
   PLATFORMS,
   RAMPS,
+  TICK_MS,
   WAYPOINTS,
   playerHalfExtents,
   type PlayerInput,
@@ -88,8 +89,6 @@ import {
 } from './match.js';
 
 const MAX_INPUT_QUEUE = 48;
-/** When buffered, drain extra steps so seqs aren't dropped. */
-const MAX_INPUT_CATCHUP = 8;
 
 type InternalSoldier = {
   state: PlayerState;
@@ -126,6 +125,7 @@ type InternalSoldier = {
   botCookUntil: number;
   lastHitWeapon: string;
   dashCdMs: number;
+  dashMs: number;
   lastKillAt: number;
   multiCount: number;
 };
@@ -197,6 +197,7 @@ function toMoveBody(soldier: InternalSoldier): MoveBody {
     proneHoldMs: soldier.proneHoldMs,
     berserk: p.bonus === 'berserk',
     dashCdMs: soldier.dashCdMs,
+    dashMs: soldier.dashMs,
   };
 }
 
@@ -230,6 +231,7 @@ function fromMoveBody(soldier: InternalSoldier, body: MoveBody): void {
   soldier.backflipMs = body.backflipMs;
   soldier.proneHoldMs = body.proneHoldMs;
   soldier.dashCdMs = body.dashCdMs ?? 0;
+  soldier.dashMs = body.dashMs ?? 0;
 }
 
 function normalizeInput(input: PlayerInput, seq: number): PlayerInput {
@@ -431,6 +433,7 @@ export class Simulation {
       botCookUntil: 0,
       lastHitWeapon: '',
       dashCdMs: 0,
+      dashMs: 0,
       lastKillAt: 0,
       multiCount: 0,
     });
@@ -549,9 +552,15 @@ export class Simulation {
     }
   }
 
-  step(dtMs: number): void {
-    this.now += dtMs;
-    const dt = dtMs / 1000;
+  /**
+   * One lockstep tick. Wall-clock `dtMs` is ignored — client prediction always
+   * steps at `TICK_MS`, so a hitch or Colyseus jitter must not fast-forward
+   * (that is the teleport).
+   */
+  step(dtMs: number = TICK_MS): void {
+    void dtMs;
+    const dt = TICK_MS / 1000;
+    this.now += TICK_MS;
     if (!this.state.roundEndsAt) this.state.roundEndsAt = this.now + MATCH.roundMs;
     this.state.now = this.now;
 
@@ -562,15 +571,10 @@ export class Simulation {
         continue;
       }
 
-      // Drain backlog so each seq is simulated once (prediction-safe).
-      const queued = soldier.inputQueue.length;
-      const steps =
-        queued === 0 ? 1 : Math.min(Math.max(1, queued), MAX_INPUT_CATCHUP);
-      for (let i = 0; i < steps; i++) {
-        this.consumeNextInput(soldier);
-        this.stepSoldier(soldier, dt);
-        if (!soldier.state.alive) break;
-      }
+      // One input per tick. Burst-draining N seqs in one frame jumps the
+      // body N×dt ahead of the predicted pose, then the client snaps.
+      this.consumeNextInput(soldier);
+      this.stepSoldier(soldier, dt);
     }
 
     this.separateSoldiers();

@@ -28,6 +28,7 @@ export class DmRoom extends Room<GameState> {
   roomCode = '';
   private demo = false;
   private lastChatAt = new Map<string, number>();
+  private simAcc = 0;
 
   onCreate(options: JoinOptions = {}): void {
     assertPassword(options);
@@ -88,7 +89,12 @@ export class DmRoom extends Room<GameState> {
 
     this.setPatchRate(TICK_MS);
     this.setSimulationInterval((deltaTime) => {
-      this.sim.step(deltaTime || TICK_MS);
+      this.simAcc += Number(deltaTime) > 0 ? Number(deltaTime) : TICK_MS;
+      if (this.simAcc > TICK_MS * 5) this.simAcc = TICK_MS * 5;
+      while (this.simAcc >= TICK_MS) {
+        this.sim.step(TICK_MS);
+        this.simAcc -= TICK_MS;
+      }
       if (this.demo) {
         this.sim.ensureBots(DEMO_BOTS);
         return;

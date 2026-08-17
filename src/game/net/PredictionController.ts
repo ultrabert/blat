@@ -60,6 +60,7 @@ function bodyFromServer(p: PlayerState): MoveBody {
     prone: !!p.prone,
     proneHoldMs: p.prone ? PLAYER.proneHoldMs : 0,
     dashCdMs: p.dashCd || 0,
+    dashMs: 0,
   };
 }
 
@@ -242,15 +243,13 @@ export class PredictionController {
     serverBody.landGraceMs = this.predicted.landGraceMs;
     serverBody.cannonballMs = this.predicted.cannonballMs;
     serverBody.backflipMs = this.predicted.backflipMs;
+    serverBody.dashMs = this.predicted.dashMs;
+    serverBody.dashCdMs = this.predicted.dashCdMs;
     // Recoil kicks happen in ProjectilePredictor (not replayed here) — keep local.
     serverBody.recoil = this.predicted.recoil;
     serverBody.realistic = this.realistic;
     serverBody.windVx = this.windVx;
     serverBody.berserk = serverMe.bonus === 'berserk';
-
-    const dx = this.predicted.x - serverBody.x;
-    const dy = this.predicted.y - serverBody.y;
-    const err = Math.hypot(dx, dy);
 
     const savedRecoil = this.predicted.recoil;
     let corrected = copyMoveBody(serverBody);
@@ -264,6 +263,12 @@ export class PredictionController {
       this.predicted = corrected;
       return;
     }
+
+    // Compare against the replayed pose. Pre-replay error is just RTT×speed
+    // and was snapping every jet tick.
+    const dx = this.predicted.x - corrected.x;
+    const dy = this.predicted.y - corrected.y;
+    const err = Math.hypot(dx, dy);
 
     if (err > RECONCILE_SNAP_DIST) {
       corrected.recoil = savedRecoil;
