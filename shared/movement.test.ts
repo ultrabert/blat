@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { GRAVITY, PLAYER, RAMPS, TICK_MS, playerHalfExtents } from './constants.js';
+import { GRAVITY, PLAYER, RAMPS, SPAWNS, TICK_MS, playerHalfExtents } from './constants.js';
 import { rampSlopeAt, separateFromSolids, stepMovement, type MoveBody, type MoveInput } from './physics.js';
 
 function body(partial: Partial<MoveBody> = {}): MoveBody {
@@ -398,9 +398,10 @@ describe('limited-jetpack', () => {
     assert.ok(jetting.vx > gliding.vx + 8, `jet strafe ${jetting.vx} vs glide ${gliding.vx}`);
   });
 
-  it('ceiling-slide-stops-upward-into-platform', () => {
+  it('jet-passes-through-pad-from-below', () => {
     // High mid platform: x=1280 y=160 h=22 → underside at 171
     const platBottom = 160 + 11;
+    const platTop = 160 - 11;
     const halfH = (PLAYER.height - 2) / 2;
     const b = body({
       onGround: false,
@@ -409,9 +410,46 @@ describe('limited-jetpack', () => {
       vy: -480,
       fuel: 100,
     });
+    for (let i = 0; i < 10; i++) stepMovement(b, input({ jet: true }), DT);
+    assert.ok(b.y + halfH < platTop - 2, `should clear the pad, feet=${b.y + halfH} top=${platTop}`);
+    assert.equal(b.onGround, false);
+  });
+
+  it('sky-is-a-ceiling', () => {
+    const halfH = (PLAYER.height - 2) / 2;
+    const b = body({
+      onGround: false,
+      x: 1280,
+      y: halfH + 20,
+      vy: -500,
+      fuel: 100,
+    });
     stepMovement(b, input({ jet: true }), DT);
-    assert.ok(b.y >= platBottom + halfH - 1, `should not pass through ceiling, y=${b.y}`);
-    assert.ok(b.vy >= -20, `upward speed should dump, vy=${b.vy}`);
+    assert.ok(b.y >= halfH + 7, `should not leave the map, y=${b.y}`);
+    assert.ok(b.vy >= -20, `upward speed should dump at the sky, vy=${b.vy}`);
+  });
+
+  it('jet-from-right-spawn-clears-the-loft', () => {
+    const spawn = SPAWNS.find((s) => s.x === 2380 && s.y === 280)!;
+    const { halfH } = playerHalfExtents(false);
+    const b = body({ x: spawn.x, y: spawn.y, onGround: true, fuel: 100 });
+    for (let i = 0; i < 24; i++) stepMovement(b, input({ jet: true }), DT);
+    assert.ok(b.y + halfH < 201, `loft must not trap the jet, feet=${b.y + halfH}`);
+    assert.equal(b.onGround, false);
+  });
+
+  it('buried-jet-exits-the-near-face-not-the-ridge', () => {
+    const { halfH } = playerHalfExtents(false);
+    const b = body({
+      x: 2050,
+      y: 700,
+      onGround: false,
+      vy: -400,
+      fuel: 100,
+    });
+    stepMovement(b, input({ jet: true }), DT);
+    assert.ok(b.y > 500, `must not snap onto the bowl ridge, y=${b.y}`);
+    assert.ok(b.y + halfH < 1100, `must not dump through the cave floor, feet=${b.y + halfH}`);
     assert.equal(b.onGround, false);
   });
 });

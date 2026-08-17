@@ -443,23 +443,11 @@ function collideBody(body: MoveBody, dt: number): void {
     }
 
     const overlapTop = playerBottom - top;
-    const overlapBottom = bottom - playerTop;
     const travel = Math.abs(body.vy) / 28;
     const slop = snapDepth + travel + 4;
 
-    // Soldat ceiling slide: jetting up into a slab underside, then strafe along it.
-    if (
-      body.vy < 0 &&
-      (body.jetting || body.backflipMs > 0) &&
-      overlapBottom > 0 &&
-      overlapBottom <= slop &&
-      overlapBottom < overlapTop
-    ) {
-      body.y = bottom + halfH;
-      body.vy = 0;
-      continue;
-    }
-
+    // Pads are one-way: pass through from below (including while jetting).
+    // Sky and cave roofs are the actual ceilings.
     const canLand =
       body.rollMs > 0 || body.cannonballMs > 0 || wasGrounded || body.vy >= -40;
     if (canLand && overlapTop > 0 && overlapTop <= slop) {
@@ -547,7 +535,7 @@ function collideTerrain(body: MoveBody, wasGrounded: boolean, dt: number): void 
   const feetY = body.y + halfH;
   const headY = body.y - halfH;
   const rising = body.vy < -12;
-  const climbing = body.jetting && rising;
+  const climbing = !!body.jetting && rising;
   for (const band of terrainBandsAt(body.x)) {
     const overlap = feetY > band.top + 2 && headY < band.bottom - 2;
     if (!overlap) {
@@ -573,20 +561,24 @@ function collideTerrain(body: MoveBody, wasGrounded: boolean, dt: number): void 
     const distLeft = body.x - band.left;
     const distRight = band.right - body.x;
     const distX = Math.min(distLeft, distRight);
-    if (distX < distTop && distX < distBot && distX < 28) {
+    // Nearest face — not "top vs bottom of a 600px wedge" (that teleports
+    // a flyer from the cave to the ridge, or the reverse).
+    if (distX <= distTop && distX <= distBot) {
       if (distLeft < distRight) body.x = band.left - halfW;
       else body.x = band.right + halfW;
       body.vx = 0;
       continue;
     }
-    // Cave roof only when rising into it. Falling / walking ejects to the hill top
-    // so the pit edge cannot dump you through the wedge into the cave.
-    if (rising && distBot <= distTop) {
+    if (distBot < distTop && (rising || climbing)) {
       body.y = band.bottom + halfH;
       if (body.vy < 0) body.vy = 0;
       continue;
     }
-    if (climbing && distTop < 22) continue;
+    if (climbing) {
+      body.y = band.top - halfH;
+      if (body.vy > 0) body.vy = 0;
+      continue;
+    }
     seatOnY(body, band.top, halfH);
   }
 }

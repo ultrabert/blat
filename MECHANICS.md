@@ -8,7 +8,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 | Choice | Benefit | Cost |
 |---|---|---|
 | Custom fixed-step arcade sim (`shared/`) + Colyseus authority | Predictable ticks, easy client prediction, low bandwidth | Not full rigid-body Soldat; no Matter/Box2D |
-| Hover jet (thrust > gravity, long fuel, ceiling slide) | Soldat-style aerial gunplay | Ground fights are optional; can retune grounded later |
+| Hover jet (thrust > gravity, long fuel, sky/cave ceiling slide) | Soldat-style aerial gunplay | Ground fights are optional; can retune grounded later |
 | Client prediction (move + projectiles) | Responsive feel over internet | Must share exact step math with server |
 | Client-only ragdoll/gibs | Cheap, juicy | Bodies are not authoritative obstacles |
 | Single Fly machine | Correct in-memory rooms | No horizontal scale yet |
@@ -35,7 +35,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 **Tags:** `@mechanic arcade-physics-core`  
 **Description:** Shared fixed-timestep movement, gravity, platform collision.  
 **Dependencies:** none  
-**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Standing on a ramp slides downhill once (`PLAYER.slopeSlide`, weaker `slopeDrag`) — not applied in both terrain seat and ramp collide. Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Buried bodies eject to the hill top unless they are rising into a cave roof. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50. Server and client both step that fixed dt (Colyseus wall-clock is accumulated, not passed into physics).  
+**Trade-offs:** Changing `GRAVITY` / `PLAYER.*` retunes jet, jump, grenades, and ballistics together. Ground walk uses `groundAccel` / `groundBrake` (no snap). Hills are solid `TERRAIN_POLYS` fill (`terrainBandsAt`); `RAMPS` are the walkable tops (cave-drop segments are ceilings, not floors). Standing on a ramp slides downhill once (`PLAYER.slopeSlide`, weaker `slopeDrag`) — not applied in both terrain seat and ramp collide. Landing uses a swept cross or a near window when grounded / falling (`vy >= 0`) / rolling / cannonballing. Hover/climb jet does not glue. Overlap ejects along the **nearest** face (side / cave roof / hill top) — not across a 600px dirt wedge. Jetting never seats onto the ridge. Sim ticks at `TICK_MS` 16 (~62 Hz) with `INTERP_DELAY_MS` 50. Server and client both step that fixed dt (Colyseus wall-clock is accumulated, not passed into physics).  
 **Tests:** movement stays within arena; platforms support landing; ground accel does not snap; ramps set `onGround`; idle bowl slides downhill; slow falls land; dirt ejects to the surface; jet near a ramp does not snap on.  
 **Files:** `shared/physics.ts`, `shared/constants.ts`, `shared/terrain.ts`, `shared/simulation.ts`
 
@@ -56,9 +56,9 @@ Update this file when behavior changes. Prefer small, testable layers.
 
 **Phase:** 1/3 — **A1 retune**  
 **Tags:** `@mechanic limited-jetpack`  
-**Description:** Fuel-limited thrust that **beats gravity**. Hold W/Space to climb; feather to hover; strafe in air while jetting. Jetting into a platform underside (or the sky bound) dumps upward speed so you can slide along the ceiling. Fuel lasts ~5s continuous; ground regen is slower than the burn (a pad touch is not a full tank) and glide regen is a trickle so feathering still empties. Grounded W/Space is still a jump, then jets.  
+**Description:** Fuel-limited thrust that **beats gravity**. Hold W/Space to climb; feather to hover; strafe in air while jetting. Pads are one-way (jet through from below). The map sky and cave roofs dump upward speed so you can slide under them. Fuel lasts ~5s continuous; ground regen is slower than the burn (a pad touch is not a full tank) and glide regen is a trickle so feathering still empties. Grounded W/Space is still a jump, then jets.  
 **Trade-offs:** Aerial duels dominate if fuel is too generous; spread is still worse while jetting (`state-accuracy`). Can retune toward grounded later without a netcode change. Realistic mode disables air jet/backflip (ground jump stays).  
-**Tests:** `shared/movement.test.ts` (`limited-jetpack`, `ground-fuel-refill-is-not-instant`)  
+**Tests:** `shared/movement.test.ts` (`limited-jetpack`, `ground-fuel-refill-is-not-instant`, `jet-from-right-spawn-clears-the-loft`)  
 **Files:** `shared/physics.ts`, `shared/constants.ts` (`PLAYER.jet*`, fuel), HUD in `GameScene`
 
 ## Mechanic: throwable-grenades

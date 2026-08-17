@@ -88,10 +88,10 @@ describe('blat-pulse-sim', () => {
     const sim = new Simulation(new GameState(), { mode: 'dm' });
     const a = sim.addPlayer('a', 'A');
     const b = sim.addPlayer('b', 'B');
-    a.x = 400;
+    a.x = 1280;
     a.y = 400;
     a.aimX = 1;
-    b.x = 430;
+    b.x = 1310;
     b.y = 400;
     sim.setInput('a', tap({ blat: true }));
     sim.step(16);
@@ -105,9 +105,9 @@ describe('blat-pulse-sim', () => {
     for (const sim of [arcade, real]) {
       const a = sim.addPlayer('a', 'A');
       const b = sim.addPlayer('b', 'B');
-      a.x = 400;
+      a.x = 1280;
       a.y = 400;
-      b.x = 430;
+      b.x = 1310;
       b.y = 400;
       sim.setInput('a', tap({ blat: true }));
       sim.step(16);
