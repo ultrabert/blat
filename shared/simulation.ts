@@ -1483,7 +1483,10 @@ export class Simulation {
       }
       p.firearm = item;
       p.weapon = item;
-      p.ammo = Number.isFinite(ps.ammo) ? ps.ammo : spawnAmmoFor(item).ammo;
+      const spawned = spawnAmmoFor(item);
+      const dropped = Number.isFinite(ps.ammo) ? ps.ammo : spawned.ammo;
+      // Infinite reserve: an empty tube still chambers a mag on pickup.
+      p.ammo = dropped > 0 ? Math.min(dropped, WEAPONS[item].magSize) : spawned.ammo;
       p.reserve = 0;
       p.reloading = false;
       soldier.reloadEndsAt = 0;

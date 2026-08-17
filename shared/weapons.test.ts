@@ -105,6 +105,12 @@ describe('weapon-arsenal', () => {
     assert.ok(reach > 180 && reach < 420, `flamer reach ${reach.toFixed(0)}px`);
   });
 
+  it('law-holds-a-tube-of-rockets', () => {
+    assert.ok(WEAPONS.law.magSize >= 4, `LAW mag ${WEAPONS.law.magSize}`);
+    assert.ok(WEAPONS.law.fireCooldownMs < 1200);
+    assert.ok(WEAPONS.law.reloadMs <= 1800);
+  });
+
   it('melee-is-close-and-dry-safe', () => {
     assert.ok(isMelee('knife') && isMelee('chainsaw'));
     assert.ok((WEAPONS.knife.meleeRange ?? 0) > 20);
@@ -162,6 +168,43 @@ describe('magazines-reload', () => {
 
   it('dropped-guns-are-not-instantly-regrabbed', () => {
     assert.ok(PICKUP_ARM_MS > 200);
+  });
+
+  it('empty-law-drop-chambers-a-mag', () => {
+    const sim = new Simulation(new GameState(), { mode: 'dm' });
+    sim.ensureBots(0);
+    const a = sim.addPlayer('a', 'A');
+    const b = sim.addPlayer('b', 'B');
+    a.x = 1280;
+    a.y = 830;
+    a.facing = 1;
+    a.firearm = 'law';
+    a.weapon = 'law';
+    a.ammo = 0;
+    a.reloading = false;
+    b.x = 1100;
+    b.y = 830;
+    sim.setInput('a', tap({ drop: true, seq: 1 }));
+    sim.step(16);
+    let dropX = 0;
+    let dropY = 0;
+    let found = false;
+    sim.state.pickups.forEach((ps) => {
+      if (ps.item === 'law' && ps.id.startsWith('drop')) {
+        dropX = ps.x;
+        dropY = ps.y;
+        found = true;
+      }
+    });
+    assert.ok(found, 'LAW drop should exist');
+    const wait = Math.ceil(PICKUP_ARM_MS / 16) + 4;
+    for (let i = 0; i < wait; i++) sim.step(16);
+    b.x = dropX;
+    b.y = dropY;
+    for (let i = 0; i < 8; i++) sim.step(16);
+    assert.equal(b.firearm, 'law');
+    assert.equal(b.ammo, WEAPONS.law.magSize);
+    assert.equal(b.reloading, false);
   });
 });
 

@@ -165,7 +165,7 @@ Update this file when behavior changes. Prefer small, testable layers.
 - **MP5 / AK / minigun** — spray vs mid vs hose  
 - **Barrett** — bolt, body chunky (88, still sub-lethal), head OHK; cave pad is the pilgrimage  
 - **SPAS-12** — 10-pellet pump, wide cone; close range is easy to tag  
-- **M79 / LAW** — arcing shell / flat rocket, explode on hit  
+- **M79 / LAW** — arcing shell / flat rocket, explode on hit. LAW holds 4 in the tube; empty drops still chamber a mag (infinite reserve).  
 - **Flamer** — rising particle hose (~220px), not a puff  
 - **Knife / chainsaw** — melee (dry-gun finisher)  
 
@@ -178,7 +178,7 @@ Shared `planFire` keeps client prediction identical to the server. Head multipli
 
 **Phase:** B2  
 **Tags:** `@mechanic magazines-reload`  
-**Description:** Firearms have a finite mag. Empty mag or `R` reloads (`reloadMs`). Reload always refills the mag — guns do not run out of reserve. Mag size, fire rate, and reload time are the balance. Melee has no mag.  
+**Description:** Firearms have a finite mag. Empty mag or `R` reloads (`reloadMs`). Reload always refills the mag — guns do not run out of reserve. Picking up a gun with 0 in the mag also chambers a full mag. Mag size, fire rate, and reload time are the balance. Melee has no mag.  
 **Trade-offs:** No ammo drought or ammo-box camping. Spray guns pay in reload downtime instead.  
 **Tests:** `shared/weapons.test.ts` (`magazines-reload`)  
 **Files:** `shared/weapons.ts`, `shared/simulation.ts`, HUD
