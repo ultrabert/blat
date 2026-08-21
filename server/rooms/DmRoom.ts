@@ -61,7 +61,11 @@ export class DmRoom extends Room<GameState> {
       map: this.state.mapName,
     });
 
-    this.onMessage('input', (client, message: PlayerInput) => {
+    this.onMessage('input', (client, message: PlayerInput | PlayerInput[]) => {
+      if (Array.isArray(message)) {
+        for (const packet of message) this.sim.setInput(client.sessionId, packet);
+        return;
+      }
       this.sim.setInput(client.sessionId, message);
     });
     this.onMessage('weapon', (client, message: { weapon?: string }) => {
@@ -87,20 +91,25 @@ export class DmRoom extends Room<GameState> {
       this.sim.addChat(name, TAUNTS[i]!, 'taunt');
     });
 
-    this.setPatchRate(TICK_MS);
+    // Patch immediately after sim ticks so lastAck / poses aren't waiting on
+    // a second 16ms interval (up to a full tick of extra delay).
+    this.setPatchRate(null);
     this.setSimulationInterval((deltaTime) => {
       this.simAcc += Number(deltaTime) > 0 ? Number(deltaTime) : TICK_MS;
       if (this.simAcc > TICK_MS * 5) this.simAcc = TICK_MS * 5;
+      let stepped = false;
       while (this.simAcc >= TICK_MS) {
         this.sim.step(TICK_MS);
         this.simAcc -= TICK_MS;
+        stepped = true;
       }
       if (this.demo) {
         this.sim.ensureBots(DEMO_BOTS);
-        return;
+      } else {
+        const humans = [...this.sim.soldiers.values()].filter((s) => !s.state.isBot).length;
+        this.sim.ensureBots(humans >= 2 ? 0 : 2);
       }
-      const humans = [...this.sim.soldiers.values()].filter((s) => !s.state.isBot).length;
-      this.sim.ensureBots(humans >= 2 ? 0 : 2);
+      if (stepped) this.broadcastPatch();
     }, TICK_MS);
 
     console.log(`[dm] room created code=${code} id=${this.roomId}${this.demo ? ' demo' : ''}`);

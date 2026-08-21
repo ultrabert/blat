@@ -3,7 +3,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { TICK_MS, type PlayerInput } from './constants.js';
+import { MAX_INPUT_QUEUE, TICK_MS, type PlayerInput } from './constants.js';
 import { GameState } from './schema.js';
 import { Simulation } from './simulation.js';
 
@@ -36,6 +36,17 @@ describe('client-prediction-lockstep', () => {
     assert.equal(p.lastProcessedInput, 1, 'burst must not drain in one frame');
     sim.step(TICK_MS);
     assert.equal(p.lastProcessedInput, 2);
+  });
+
+  it('full-queue-keeps-the-newest-input', () => {
+    const sim = new Simulation(new GameState());
+    sim.ensureBots(0);
+    const p = sim.addPlayer('p1', 'P', false);
+    for (let seq = 1; seq <= MAX_INPUT_QUEUE + 4; seq++) sim.setInput('p1', walk(seq));
+    sim.step(TICK_MS);
+    assert.equal(p.lastProcessedInput, 5, 'oldest seqs dropped, newest kept');
+    for (let i = 0; i < MAX_INPUT_QUEUE - 1; i++) sim.step(TICK_MS);
+    assert.equal(p.lastProcessedInput, MAX_INPUT_QUEUE + 4);
   });
 
   it('wall-clock-dt-does-not-fast-forward', () => {

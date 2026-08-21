@@ -6,9 +6,14 @@ export const GAME_HEIGHT = 1200;
 /** Current DM layout — bunkers, ramps, sky pads, caves. */
 export const MAP_NAME = 'Arena';
 export const GRAVITY = 1600;
-export const TICK_MS = 16; // ~62 Hz sim + state patches
-export const INTERP_DELAY_MS = 50;
+export const TICK_MS = 16; // ~62 Hz sim
+/** Render remotes this far behind the server clock (~2 snapshots). */
+export const INTERP_DELAY_MS = 33;
+/** Dead-reckon remotes this far past the latest snapshot when a patch is late. */
+export const EXTRAPOLATE_MS = 48;
 export const RECONCILE_SNAP_DIST = 48;
+/** Drop oldest unacked input rather than reject the live one. */
+export const MAX_INPUT_QUEUE = 16;
 
 export const PLAYER = {
   speed: 210,

@@ -2,37 +2,23 @@
  * @mechanic client-prediction
  */
 import {
-  INTERP_DELAY_MS,
   PLAYER,
   RECONCILE_SNAP_DIST,
   TICK_MS,
   playerHalfExtents,
   type PlayerInput,
 } from '../../../shared/constants';
+import {
+  InterpClock,
+  pushPose,
+  samplePose,
+  type PoseSample,
+  type SampledPose,
+} from '../../../shared/netinterp';
 import { copyMoveBody, separateFromSolids, stepMovement, type MoveBody } from '../../../shared/physics';
 import type { PlayerState } from '../../../shared/schema';
 
 type PendingInput = PlayerInput;
-
-type RemoteSample = {
-  t: number;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  facing: number;
-  aimX: number;
-  aimY: number;
-  alive: boolean;
-  jetting: boolean;
-  onGround: boolean;
-  crouching: boolean;
-  rolling: boolean;
-  cannonball: boolean;
-  backflip: boolean;
-  prone: boolean;
-  alpha: number;
-};
 
 function bodyFromServer(p: PlayerState): MoveBody {
   return {
@@ -81,7 +67,8 @@ export class PredictionController {
   private tossFlagLatch = false;
   private realistic = false;
   private windVx = 0;
-  private remotes = new Map<string, RemoteSample[]>();
+  private remotes = new Map<string, PoseSample[]>();
+  private clock = new InterpClock();
 
   latchFire(): void {
     this.fireLatch = true;
@@ -317,14 +304,19 @@ export class PredictionController {
     this.predicted.recoil = savedRecoil;
   }
 
-  pushRemote(id: string, p: PlayerState, now: number): void {
+  /** Drive remote interpolation from server `state.now`. */
+  advanceClock(dtMs: number, serverNow: number): void {
+    this.clock.advance(dtMs, serverNow);
+  }
+
+  pushRemote(id: string, p: PlayerState, serverNow: number): void {
     let buf = this.remotes.get(id);
     if (!buf) {
       buf = [];
       this.remotes.set(id, buf);
     }
-    const sample = {
-      t: now,
+    pushPose(buf, {
+      t: serverNow,
       x: p.x,
       y: p.y,
       vx: p.vx,
@@ -341,68 +333,13 @@ export class PredictionController {
       backflip: !!p.backflip,
       prone: !!p.prone,
       alpha: p.alive ? 1 : 0.45,
-    };
-    const last = buf[buf.length - 1];
-    if (last && last.t === now) {
-      Object.assign(last, sample);
-      return;
-    }
-    buf.push(sample);
-    while (buf.length > 30) buf.shift();
+    });
   }
 
-  sampleRemote(id: string, now: number): Omit<RemoteSample, 't'> | null {
+  sampleRemote(id: string): SampledPose | null {
     const buf = this.remotes.get(id);
     if (!buf || buf.length === 0) return null;
-
-    const renderAt = now - INTERP_DELAY_MS;
-    const pack = (s: RemoteSample): Omit<RemoteSample, 't'> => ({
-      x: s.x,
-      y: s.y,
-      vx: s.vx,
-      vy: s.vy,
-      facing: s.facing,
-      aimX: s.aimX,
-      aimY: s.aimY,
-      alive: s.alive,
-      jetting: s.jetting,
-      onGround: s.onGround,
-      crouching: s.crouching,
-      rolling: s.rolling,
-      cannonball: s.cannonball,
-      backflip: s.backflip,
-      prone: s.prone,
-      alpha: s.alpha,
-    });
-
-    if (buf.length === 1 || renderAt <= buf[0]!.t) return pack(buf[0]!);
-
-    let i = 0;
-    while (i < buf.length - 1 && buf[i + 1]!.t < renderAt) i += 1;
-    const a = buf[i]!;
-    const b = buf[i + 1];
-    if (!b) return pack(a);
-
-    const span = b.t - a.t || 1;
-    const t = Math.min(1, Math.max(0, (renderAt - a.t) / span));
-    return {
-      x: a.x + (b.x - a.x) * t,
-      y: a.y + (b.y - a.y) * t,
-      vx: a.vx + (b.vx - a.vx) * t,
-      vy: a.vy + (b.vy - a.vy) * t,
-      facing: t < 0.5 ? a.facing : b.facing,
-      aimX: a.aimX + (b.aimX - a.aimX) * t,
-      aimY: a.aimY + (b.aimY - a.aimY) * t,
-      alive: b.alive,
-      jetting: b.jetting,
-      onGround: t < 0.5 ? a.onGround : b.onGround,
-      crouching: t < 0.5 ? a.crouching : b.crouching,
-      rolling: t < 0.5 ? a.rolling : b.rolling,
-      cannonball: t < 0.5 ? a.cannonball : b.cannonball,
-      backflip: t < 0.5 ? a.backflip : b.backflip,
-      prone: t < 0.5 ? a.prone : b.prone,
-      alpha: a.alpha + (b.alpha - a.alpha) * t,
-    };
+    return samplePose(buf, this.clock.renderAt());
   }
 
   pruneRemotes(aliveIds: Set<string>): void {

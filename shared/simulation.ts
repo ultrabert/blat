@@ -4,6 +4,7 @@ import {
   GAME_HEIGHT,
   GAME_WIDTH,
   MAP_NAME,
+  MAX_INPUT_QUEUE,
   PLAYER,
   PLATFORMS,
   RAMPS,
@@ -87,8 +88,6 @@ import {
   TEAM,
   type MatchMode,
 } from './match.js';
-
-const MAX_INPUT_QUEUE = 48;
 
 type InternalSoldier = {
   state: PlayerState;
@@ -457,7 +456,8 @@ export class Simulation {
     const seq = Number(input.seq) || 0;
     // Ignore duplicates / already-acked / already-queued
     if (seq <= s.state.lastProcessedInput || seq <= s.lastQueuedSeq) return;
-    if (s.inputQueue.length >= MAX_INPUT_QUEUE) return;
+    // Stay realtime: drop the oldest unprocessed seq rather than ignore the live one.
+    if (s.inputQueue.length >= MAX_INPUT_QUEUE) s.inputQueue.shift();
 
     s.lastQueuedSeq = seq;
     s.inputQueue.push(normalizeInput(input, seq));

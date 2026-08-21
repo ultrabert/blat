@@ -224,6 +224,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.room?.state?.players) return;
     this.nowMs += delta;
     this.lastDelta = delta;
+    this.syncRemoteClock(delta);
 
     if (this.spectating) {
       this.syncEntities();
@@ -304,7 +305,6 @@ export class GameScene extends Phaser.Scene {
       serverMe,
     );
     for (const packet of packets) {
-      this.room.send('input', packet);
       const body = this.prediction.predicted;
       if (body && packet.fire) {
         const w = isWeaponId(serverMe?.weapon ?? this.localWeapon)
@@ -321,6 +321,7 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
+    if (packets.length) this.room.send('input', packets);
 
     const localJet = !!(this.prediction.predicted?.jetting && this.prediction.predicted?.alive);
     sound.setJetting(localJet);
@@ -328,8 +329,7 @@ export class GameScene extends Phaser.Scene {
     const bulletTargets: TraceTarget[] = [];
     this.room.state.players?.forEach((p, id) => {
       if (id === this.sessionId) return;
-      this.prediction.pushRemote(id, p, this.nowMs);
-      const s = this.prediction.sampleRemote(id, this.nowMs);
+      const s = this.prediction.sampleRemote(id);
       bulletTargets.push({
         id,
         x: s?.x ?? p.x,
@@ -360,6 +360,15 @@ export class GameScene extends Phaser.Scene {
     this.syncChat();
     this.drawWeather();
     this.watchPulse();
+  }
+
+  private syncRemoteClock(delta: number): void {
+    const serverNow = this.room.state.now || 0;
+    this.prediction.advanceClock(delta, serverNow);
+    this.room.state.players?.forEach((p, id) => {
+      if (id === this.sessionId) return;
+      this.prediction.pushRemote(id, p, serverNow);
+    });
   }
 
   private handleWeaponKeys(serverMe: PlayerState | undefined): void {
@@ -569,8 +578,7 @@ export class GameScene extends Phaser.Scene {
         );
         if (local.jetting && local.alive) this.emitJet(local.x, local.y);
       } else {
-        this.prediction.pushRemote(id, player, this.nowMs);
-        const sample = this.prediction.sampleRemote(id, this.nowMs);
+        const sample = this.prediction.sampleRemote(id);
         const view = sample ?? {
           x: player.x,
           y: player.y,
