@@ -5,15 +5,13 @@ alwaysApply: true
 
 # Agent playtest loop
 
-Do not wait for the user to look at the game. After **feel, art, audio, weapons, HUD, netcode, or other playable** work:
+Do not wait for the user to look at the game. After **feel, art, audio, weapons, HUD, netcode, or other playable** work, follow [`.cursor/skills/verify-blat/SKILL.md`](../skills/verify-blat/SKILL.md) (default feature: `demo-spectator`).
 
-1. Run `npm test` and fix failures.
-2. Ensure the local game is up (`npm run dev` — Vite `:5173`, Colyseus `:2567`). Cloud Agent environments start this in the `game` terminal.
-3. **Open the game yourself** with the `computerUse` subagent (desktop + browser). Do not only describe controls.
-   - Local / uncommitted: **http://localhost:5173/demo**
-   - After a Fly deploy: **https://blat.fly.dev/demo**
-4. `/demo` is spectator (bots fight). It does **not** need the lobby password. Watch several seconds of combat. Report what you actually see (HUD, guns firing, obvious bugs). Read the **LAG** line (patch / behind / extra / jerk / snaps) and `curl http://localhost:2567/api/lag`. Capture screenshots or a short recording when computer use is available.
-5. Create/join (not demo) uses `BLAT_PASSWORD` when that secret is set. Never print it. If it is unset, local rooms are open.
-6. Say so when the claim cannot be judged in a VM: internet RTT feel, iPhone Safari audio, two-human lag. Local LAG `patch ~16ms` is snapshot smoothness, not Fly geography. Prediction-at-delay is `npm test` (`lag-observatory`).
+Short version:
+
+1. `npm test` and `bash scripts/verify-blat-doctor.sh`.
+2. Open **http://localhost:5173/demo** with computerUse (no password). After a Fly deploy also **https://blat.fly.dev/demo**.
+3. Watch several seconds of combat. Read the LAG line and `curl http://localhost:2567/api/lag`.
+4. Never print `BLAT_PASSWORD`. Say so when a VM cannot judge internet RTT, iPhone Safari audio, or two-human lag.
 
 `npm test` does not replace a look at `/demo`. Looking at `/demo` does not replace `npm test`.
