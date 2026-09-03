@@ -12,8 +12,8 @@ Do not wait for the user to look at the game. After **feel, art, audio, weapons,
 3. **Open the game yourself** with the `computerUse` subagent (desktop + browser). Do not only describe controls.
    - Local / uncommitted: **http://localhost:5173/demo**
    - After a Fly deploy: **https://blat.fly.dev/demo**
-4. `/demo` is spectator (bots fight). It does **not** need the lobby password. Watch several seconds of combat. Report what you actually see (HUD, guns firing, obvious bugs). Capture screenshots or a short recording when computer use is available.
+4. `/demo` is spectator (bots fight). It does **not** need the lobby password. Watch several seconds of combat. Report what you actually see (HUD, guns firing, obvious bugs). Read the **LAG** line (patch / behind / extra / jerk / snaps) and `curl http://localhost:2567/api/lag`. Capture screenshots or a short recording when computer use is available.
 5. Create/join (not demo) uses `BLAT_PASSWORD` when that secret is set. Never print it. If it is unset, local rooms are open.
-6. Say so when the claim cannot be judged in a VM: internet RTT feel, iPhone Safari audio, two-human lag.
+6. Say so when the claim cannot be judged in a VM: internet RTT feel, iPhone Safari audio, two-human lag. Local LAG `patch ~16ms` is snapshot smoothness, not Fly geography. Prediction-at-delay is `npm test` (`lag-observatory`).
 
 `npm test` does not replace a look at `/demo`. Looking at `/demo` does not replace `npm test`.
