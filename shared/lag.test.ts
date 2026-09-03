@@ -17,7 +17,7 @@ import {
   TICK_MS,
   playerHalfExtents,
 } from './constants.js';
-import { LAG_JERK_OK_PX, LAG_SNAP_PX } from './lagMeter.js';
+import { LAG_JERK_OK_PX, LAG_SNAP_PX, lagLooksHealthy } from './lagMeter.js';
 import { InterpClock, pushPose, samplePose, type PoseSample } from './netinterp.js';
 import { copyMoveBody, stepMovement, type MoveBody, type MoveInput } from './physics.js';
 
@@ -228,5 +228,18 @@ describe('lag-observatory', () => {
       assert.ok(clock.time <= clock.lastServerNow + EXTRAPOLATE_MS + 1);
       assert.equal(clock.renderAt(), clock.time - INTERP_DELAY_MS);
     }
+  });
+
+  it('slow-client-frames-are-not-net-lag', () => {
+    assert.equal(
+      lagLooksHealthy({ patchMs: 64, frameMs: 62, behindMs: 20, extraMs: 2 }),
+      true,
+      'patch matching a slow frame is OK',
+    );
+    assert.equal(
+      lagLooksHealthy({ patchMs: 64, frameMs: 16, behindMs: 33, extraMs: 2 }),
+      false,
+      '64ms patches on a 16ms client is WARM',
+    );
   });
 });

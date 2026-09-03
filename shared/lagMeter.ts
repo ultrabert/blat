@@ -15,6 +15,7 @@ export const LAG_JERK_OK_PX = 8;
 
 export type LagReport = {
   patchMs: number;
+  frameMs: number;
   behindMs: number;
   extraMs: number;
   jerkPx: number;
@@ -26,17 +27,24 @@ export type LagReport = {
 
 export function formatLagLine(r: Omit<LagReport, 'line' | 'ok'> & { ok: boolean }): string {
   const flag = r.ok ? 'OK' : 'WARM';
-  return `LAG  patch ${Math.round(r.patchMs)}ms  behind ${Math.round(r.behindMs)}  extra ${Math.round(r.extraMs)}  jerk ${Math.round(r.jerkPx)}px  snaps ${r.snaps}  ${flag}`;
+  return `LAG  patch ${Math.round(r.patchMs)}ms  frame ${Math.round(r.frameMs)}ms  behind ${Math.round(r.behindMs)}  extra ${Math.round(r.extraMs)}  jerk ${Math.round(r.jerkPx)}px  snaps ${r.snaps}  ${flag}`;
 }
 
-export function lagLooksHealthy(r: Pick<LagReport, 'patchMs' | 'behindMs' | 'extraMs'>): boolean {
-  const behindOk = Math.abs(r.behindMs - INTERP_DELAY_MS) <= INTERP_DELAY_MS + 8;
-  return r.patchMs <= LAG_PATCH_OK_MS && r.extraMs <= EXTRAPOLATE_MS + 8 && behindOk;
+export function lagLooksHealthy(
+  r: Pick<LagReport, 'patchMs' | 'frameMs' | 'behindMs' | 'extraMs'>,
+): boolean {
+  const extraOk = r.extraMs <= EXTRAPOLATE_MS + 8;
+  // Slow VMs hitch (~60ms frames). That is not net lag if snapshots keep up with the frame.
+  const patchOk =
+    r.patchMs <= LAG_PATCH_OK_MS || Math.abs(r.patchMs - r.frameMs) <= TICK_MS + 8;
+  const behindOk = r.behindMs >= -EXTRAPOLATE_MS && r.behindMs <= INTERP_DELAY_MS + EXTRAPOLATE_MS + 16;
+  return extraOk && patchOk && behindOk;
 }
 
 export class LagMeter {
   private lastNow = 0;
   private patchEma = TICK_MS;
+  private frameEma = TICK_MS;
   private jerkEma = 0;
   private extraEma = 0;
   private snaps = 0;
@@ -47,6 +55,7 @@ export class LagMeter {
   reset(): void {
     this.lastNow = 0;
     this.patchEma = TICK_MS;
+    this.frameEma = TICK_MS;
     this.jerkEma = 0;
     this.extraEma = 0;
     this.snaps = 0;
@@ -62,6 +71,11 @@ export class LagMeter {
       this.patchEma += (gap - this.patchEma) * 0.2;
     }
     this.lastNow = serverNow;
+  }
+
+  noteFrame(dtMs: number): void {
+    const dt = Math.max(0, Math.min(dtMs, 250));
+    this.frameEma += (dt - this.frameEma) * 0.2;
   }
 
   /**
@@ -98,6 +112,7 @@ export class LagMeter {
   report(behindMs: number): LagReport {
     const body = {
       patchMs: this.patchEma,
+      frameMs: this.frameEma,
       behindMs,
       extraMs: this.extraEma,
       jerkPx: this.jerkEma,
@@ -105,6 +120,7 @@ export class LagMeter {
       samples: this.samples,
       ok: lagLooksHealthy({
         patchMs: this.patchEma,
+        frameMs: this.frameEma,
         behindMs,
         extraMs: this.extraEma,
       }),

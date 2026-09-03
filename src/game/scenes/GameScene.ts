@@ -1006,6 +1006,7 @@ export class GameScene extends Phaser.Scene {
   private tickLag(delta: number): void {
     const stats = this.prediction.lagStats();
     this.lag.noteServerNow(this.room.state.now || 0, this.nowMs);
+    this.lag.noteFrame(delta);
     this.room.state.players?.forEach((_p, id) => {
       if (id === this.sessionId) return;
       const s = this.prediction.sampleRemote(id);
