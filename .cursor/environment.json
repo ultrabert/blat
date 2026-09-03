@@ -1,0 +1,16 @@
+{
+  "name": "blat",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "game",
+      "command": "npm run dev",
+      "description": "Vite client on :5173 and Colyseus on :2567. Agent playtest URL: http://localhost:5173/demo (spectator, no password)."
+    }
+  ],
+  "ports": [
+    { "name": "client", "port": 5173 },
+    { "name": "server", "port": 2567 }
+  ],
+  "enable_testing": true
+}

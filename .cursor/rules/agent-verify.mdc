@@ -1,0 +1,19 @@
+---
+description: Agents must visually verify playable changes themselves, not wait for the user
+alwaysApply: true
+---
+
+# Agent playtest loop
+
+Do not wait for the user to look at the game. After **feel, art, audio, weapons, HUD, netcode, or other playable** work:
+
+1. Run `npm test` and fix failures.
+2. Ensure the local game is up (`npm run dev` — Vite `:5173`, Colyseus `:2567`). Cloud Agent environments start this in the `game` terminal.
+3. **Open the game yourself** with the `computerUse` subagent (desktop + browser). Do not only describe controls.
+   - Local / uncommitted: **http://localhost:5173/demo**
+   - After a Fly deploy: **https://blat.fly.dev/demo**
+4. `/demo` is spectator (bots fight). It does **not** need the lobby password. Watch several seconds of combat. Report what you actually see (HUD, guns firing, obvious bugs). Capture screenshots or a short recording when computer use is available.
+5. Create/join (not demo) uses `BLAT_PASSWORD` when that secret is set. Never print it. If it is unset, local rooms are open.
+6. Say so when the claim cannot be judged in a VM: internet RTT feel, iPhone Safari audio, two-human lag.
+
+`npm test` does not replace a look at `/demo`. Looking at `/demo` does not replace `npm test`.
