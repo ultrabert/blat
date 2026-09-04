@@ -201,6 +201,16 @@ body {
   background: #243556;
 }
 
+#lag-hud {
+  color: #86efac;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+#lag-hud[data-ok='0'] {
+  color: #fca5a5;
+}
+
 #game {
   flex: 1;
   min-height: 0;

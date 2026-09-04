@@ -347,4 +347,20 @@ export class PredictionController {
       if (!aliveIds.has(id)) this.remotes.delete(id);
     }
   }
+
+  /** Snapshot cadence vs interp budget — feed LagMeter / HUD. */
+  lagStats(): { behindMs: number; extraMs: number; renderAt: number; serverNow: number } {
+    const renderAt = this.clock.renderAt();
+    let extraMs = 0;
+    for (const buf of this.remotes.values()) {
+      const last = buf[buf.length - 1];
+      if (last) extraMs = Math.max(extraMs, renderAt - last.t);
+    }
+    return {
+      behindMs: this.clock.lastServerNow - renderAt,
+      extraMs: Math.max(0, extraMs),
+      renderAt,
+      serverNow: this.clock.lastServerNow,
+    };
+  }
 }

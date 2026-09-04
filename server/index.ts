@@ -18,6 +18,22 @@ const serveClient = existsSync(path.join(distDir, 'index.html'));
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: '8kb' }));
+
+type LagSample = {
+  patchMs: number;
+  frameMs: number;
+  behindMs: number;
+  extraMs: number;
+  jerkPx: number;
+  snaps: number;
+  samples: number;
+  ok: boolean;
+  line: string;
+  at: number;
+};
+
+let lastLag: LagSample | null = null;
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -47,6 +63,31 @@ app.get('/api/rooms', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ rooms: [], error: String(err) });
   }
+});
+
+app.get('/api/lag', (_req, res) => {
+  if (!lastLag) {
+    res.json({ ok: false, hint: 'No client report yet. Open /demo.' });
+    return;
+  }
+  res.json({ ...lastLag, ageMs: Date.now() - lastLag.at });
+});
+
+app.post('/api/lag', (req, res) => {
+  const b = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+  lastLag = {
+    patchMs: Number(b.patchMs) || 0,
+    frameMs: Number(b.frameMs) || 0,
+    behindMs: Number(b.behindMs) || 0,
+    extraMs: Number(b.extraMs) || 0,
+    jerkPx: Number(b.jerkPx) || 0,
+    snaps: Number(b.snaps) || 0,
+    samples: Number(b.samples) || 0,
+    ok: !!b.ok,
+    line: String(b.line || '').slice(0, 200),
+    at: Date.now(),
+  };
+  res.json({ ok: true });
 });
 
 if (serveClient) {

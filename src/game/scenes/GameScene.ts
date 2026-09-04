@@ -39,8 +39,13 @@ import { MiniMap } from '../minimap';
 import { MATCH, OBJECTIVES, parseMode, sameTeam } from '../../../shared/match';
 import { BONUS } from '../../../shared/bonuses';
 import { displayLabel } from '../../../shared/labels';
+import { LagMeter, type LagReport } from '../../../shared/lagMeter';
 import { PredictionController } from '../net/PredictionController';
 import { ProjectilePredictor } from '../net/ProjectilePredictor';
+
+const COLYSEUS_URL =
+  import.meta.env.VITE_COLYSEUS_URL ??
+  (import.meta.env.DEV ? 'http://localhost:2567' : window.location.origin);
 
 export class GameScene extends Phaser.Scene {
   private room!: Room<GameState>;
@@ -88,6 +93,9 @@ export class GameScene extends Phaser.Scene {
   private localCooking = false;
   private prediction = new PredictionController();
   private projectiles = new ProjectilePredictor();
+  private lag = new LagMeter();
+  private lastLagPostAt = 0;
+  private lastLagReport: LagReport | null = null;
   private fx!: VisceraFx;
   private nowMs = 0;
   private lastDelta = 16;
@@ -230,6 +238,7 @@ export class GameScene extends Phaser.Scene {
       this.syncEntities();
       this.syncPickups();
       this.watchWounds();
+      this.tickLag(delta);
       this.tickPing();
       this.updateHud(undefined);
       this.updateCamera(undefined);
@@ -350,6 +359,7 @@ export class GameScene extends Phaser.Scene {
 
     this.syncEntities();
     this.syncPickups();
+    this.tickLag(delta);
     this.tickPing();
     this.updateHud(serverMe);
     this.updateCamera(serverMe);
@@ -988,6 +998,37 @@ export class GameScene extends Phaser.Scene {
       scoreboard: this.keyTab?.isDown ?? false,
       roomCode: this.roomCode,
       nowMs: this.nowMs,
+      lagLine: this.lastLagReport?.line,
+      lagOk: this.lastLagReport?.ok,
+    });
+  }
+
+  private tickLag(delta: number): void {
+    const stats = this.prediction.lagStats();
+    this.lag.noteServerNow(this.room.state.now || 0, this.nowMs);
+    this.lag.noteFrame(delta);
+    this.room.state.players?.forEach((_p, id) => {
+      if (id === this.sessionId) return;
+      const s = this.prediction.sampleRemote(id);
+      if (!s) return;
+      this.lag.noteRemote(id, s.x, s.y, s.vx, s.vy, delta, stats.extraMs, this.nowMs);
+    });
+    const report = this.lag.report(stats.behindMs);
+    this.lastLagReport = report;
+    (window as unknown as { __blatLag?: LagReport }).__blatLag = report;
+    const el = document.getElementById('lag-hud');
+    if (el) {
+      el.textContent = report.line;
+      el.dataset.ok = report.ok ? '1' : '0';
+    }
+    if (this.nowMs - this.lastLagPostAt < 1000) return;
+    this.lastLagPostAt = this.nowMs;
+    void fetch(`${COLYSEUS_URL}/api/lag`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+    }).catch(() => {
+      /* demo observatory — ignore if the API is down */
     });
   }
 
