@@ -91,6 +91,8 @@ Proof standards:
 - Do not treat `patch ~60ms` on a Cloud Agent VM as Fly lag when `patch ≈ frame`. See feature `lag-observatory`.
 - Never print `BLAT_PASSWORD`.
 
+If `/show-me` is active this run, append one checkpoint row with that skill's `log.sh`. Evidence is the artifact path / doctor log / LAG JSON — do not invent a second log format. See `.cursor/skills/show-me/SKILL.md`.
+
 ## Cleanup
 
 - If you **reused** the environment `game` terminal: leave it running. Do not kill it.
