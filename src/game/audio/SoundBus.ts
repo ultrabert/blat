@@ -398,9 +398,9 @@ export class SoundBus {
             : kind === 'de' || kind === 'socom'
               ? 0.82
               : kind === 'minigun'
-                ? 0.7
+                ? 0.78
                 : kind === 'mp5'
-                  ? 0.56
+                  ? 0.68
                   : kind === 'ak'
                     ? 0.8
                     : kind === 'flamer'

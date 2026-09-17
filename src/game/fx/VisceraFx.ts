@@ -226,6 +226,62 @@ export class VisceraFx {
     });
   }
 
+  /**
+   * Tight automatic muzzle bloom. Minigun is a fat strobe; MP5/AK are smaller.
+   * Duration stays short so hoses stack instead of smearing.
+   */
+  autoMuzzle(x: number, y: number, aimX: number, aimY: number, weapon = 'ak'): void {
+    const len = Math.hypot(aimX, aimY) || 1;
+    const ax = aimX / len;
+    const ay = aimY / len;
+    const hose = weapon === 'minigun';
+    const spray = weapon === 'mp5';
+    const reach = hose ? 18 : spray ? 12 : 14;
+    const core = hose ? 5.2 : spray ? 3.2 : 3.8;
+    const g = this.scene.add.graphics().setDepth(10);
+    const state = { a: 1 };
+    const paint = () => {
+      g.clear();
+      g.fillStyle(0xf59e0b, state.a * (hose ? 0.4 : 0.28));
+      g.fillCircle(x + ax * reach * 0.45, y + ay * reach * 0.45, core * 1.6);
+      g.fillStyle(0xfde68a, state.a * 0.7);
+      g.fillCircle(x + ax * 4, y + ay * 4, core);
+      g.fillStyle(0xfff7ed, state.a * 0.95);
+      g.fillCircle(x, y, core * 0.45);
+      g.lineStyle(hose ? 2.4 : 1.6, 0xfbbf24, state.a * 0.55);
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + ax * reach, y + ay * reach);
+      g.strokePath();
+    };
+    paint();
+    this.scene.tweens.add({
+      targets: state,
+      a: 0,
+      duration: hose ? 55 : 70,
+      ease: 'Quad.easeOut',
+      onUpdate: paint,
+      onComplete: () => g.destroy(),
+    });
+    this.brass(x - ax * 6, y - ay * 4, ax, ay, hose ? 2 : 1);
+  }
+
+  /** Ejected casing (cosmetic). */
+  brass(x: number, y: number, aimX: number, aimY: number, count = 1): void {
+    const side = aimX >= 0 ? -1 : 1;
+    for (let i = 0; i < count; i++) {
+      const spd = 90 + Math.random() * 80;
+      this.blob(x, y, 'particle', [0xc9a227, 0xb45309, 0xeab308], {
+        vx: side * spd + (Math.random() - 0.5) * 40,
+        vy: -80 - Math.random() * 70,
+        life: 280 + Math.random() * 160,
+        scale: 0.22 + Math.random() * 0.18,
+        gravity: 980,
+        spin: true,
+      });
+    }
+  }
+
   /** Soft fire bloom at the flamer nozzle. */
   flameMuzzle(x: number, y: number, aimX: number, aimY: number): void {
     const len = Math.hypot(aimX, aimY) || 1;

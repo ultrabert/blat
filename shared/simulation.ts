@@ -61,6 +61,7 @@ import {
   PICKUP_RADIUS,
   PICKUP_RESPAWN_MS,
   VEST_PICKUP,
+  SPRAY_RESPAWN_MS,
   WEAPON_RESPAWN_MS,
   WEAPONS,
   type PickupKind,
@@ -1457,7 +1458,9 @@ export class Simulation {
             (ps.kind === 'bonus'
               ? BONUS.respawnMs
               : ps.kind === 'weapon'
-                ? WEAPON_RESPAWN_MS
+                ? ps.item === 'mp5'
+                  ? SPRAY_RESPAWN_MS
+                  : WEAPON_RESPAWN_MS
                 : PICKUP_RESPAWN_MS);
         }
         break;

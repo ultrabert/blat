@@ -120,6 +120,8 @@ export class GameScene extends Phaser.Scene {
   private heardShots = new Set<string>();
   private shotsPrimed = false;
   private lastRemoteShotAt = new Map<string, number>();
+  /** Smooth server-bullet draw so 62 Hz patches don't stair-step under hitch. */
+  private bulletDraw = new Map<string, { x: number; y: number }>();
 
   constructor() {
     super('Game');
@@ -327,6 +329,9 @@ export class GameScene extends Phaser.Scene {
         if (canShoot && this.projectiles.tryFire(body, this.nowMs, packet.seq, w)) {
           sound.shoot(w);
           this.aimReadyUntil = this.nowMs + 220;
+          if (w === 'minigun') this.kickCam(32, 0.0016);
+          else if (w === 'mp5') this.kickCam(28, 0.0012);
+          else if (w === 'ak' || w === 'm4') this.kickCam(34, 0.0014);
         }
       }
     }
@@ -659,17 +664,31 @@ export class GameScene extends Phaser.Scene {
       else if (!this.heardShots.has(id) && bullet.ownerId !== this.sessionId) {
         this.heardShots.add(id);
         const last = this.lastRemoteShotAt.get(bullet.ownerId) ?? 0;
-        if (this.nowMs - last > 26) {
+        const gap = bullet.weapon === 'minigun' ? 18 : bullet.weapon === 'mp5' ? 22 : 26;
+        if (this.nowMs - last > gap) {
           this.lastRemoteShotAt.set(bullet.ownerId, this.nowMs);
           sound.shootAt(bullet.weapon || 'de', bullet.x, bullet.y, this.camX, this.camY);
+          if (bullet.weapon !== 'spas' && bullet.weapon !== 'flamer') {
+            this.fx.autoMuzzle(bullet.x, bullet.y, bullet.vx, bullet.vy, bullet.weapon || 'ak');
+          }
         }
       } else {
         this.heardShots.add(id);
       }
+      const dt = Math.max(0.001, Math.min(0.05, (this.lastDelta || 16) / 1000));
+      let drawn = this.bulletDraw.get(id);
+      if (!drawn) {
+        drawn = { x: bullet.x, y: bullet.y };
+        this.bulletDraw.set(id, drawn);
+      } else {
+        const follow = 1 - Math.exp(-28 * dt);
+        drawn.x += (bullet.x - drawn.x) * follow;
+        drawn.y += (bullet.y - drawn.y) * follow;
+      }
       tracers.push({
         id,
-        x: bullet.x,
-        y: bullet.y,
+        x: drawn.x,
+        y: drawn.y,
         vx: bullet.vx,
         vy: bullet.vy,
         weapon: bullet.weapon || 'rifle',
@@ -693,6 +712,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.drawTracers(tracers, seenBullets);
+    for (const id of [...this.bulletDraw.keys()]) {
+      if (!seenBullets.has(id)) this.bulletDraw.delete(id);
+    }
 
     this.room.state.grenades?.forEach((grenade, id) => {
       if (this.projectiles.shouldHideServerGrenade(id)) {
@@ -733,6 +755,8 @@ export class GameScene extends Phaser.Scene {
         this.fx.shotgunMuzzle(flash.x, flash.y, flash.aimX, flash.aimY);
       } else if (flash.weapon === 'flamer') {
         this.fx.flameMuzzle(flash.x, flash.y, flash.aimX, flash.aimY);
+      } else if (flash.weapon !== 'knife' && flash.weapon !== 'punch' && flash.weapon !== 'bow') {
+        this.fx.autoMuzzle(flash.x, flash.y, flash.aimX, flash.aimY, flash.weapon);
       }
     }
     for (const hit of this.projectiles.takeImpacts()) {
@@ -884,7 +908,9 @@ export class GameScene extends Phaser.Scene {
       const isSniper = t.weapon === 'barrett';
       const isFlame = t.weapon === 'flamer';
       const isRocket = t.weapon === 'law' || t.weapon === 'm79';
-      const trailLen = isShot ? 4 : isSniper ? 8 : isFlame ? 7 : 5;
+      const isHose = t.weapon === 'minigun';
+      const isSpray = t.weapon === 'mp5';
+      const trailLen = isShot ? 4 : isSniper ? 8 : isFlame ? 7 : isHose ? 8 : isSpray ? 6 : 5;
 
       let trail = this.bulletTrails.get(t.id);
       if (!trail) {
@@ -922,8 +948,11 @@ export class GameScene extends Phaser.Scene {
       const ux = t.vx / speed;
       const uy = t.vy / speed;
       const streak = Math.min(
-        isSniper ? 72 : isShot ? 12 : 40,
-        Math.max(isSniper ? 36 : isShot ? 6 : 18, speed * (isSniper ? 0.055 : isShot ? 0.012 : 0.036)),
+        isSniper ? 72 : isShot ? 12 : isHose ? 22 : isSpray ? 28 : 40,
+        Math.max(
+          isSniper ? 36 : isShot ? 6 : isHose ? 10 : isSpray ? 12 : 18,
+          speed * (isSniper ? 0.055 : isShot ? 0.012 : isHose ? 0.022 : isSpray ? 0.028 : 0.036),
+        ),
       );
       const x1 = t.x;
       const y1 = t.y;
@@ -936,9 +965,17 @@ export class GameScene extends Phaser.Scene {
           ? 0xa5f3fc
           : isShot
             ? 0xfb923c
-            : 0xfbbf24;
-      const core = isSniper ? 0xecfeff : isShot ? 0xffedd5 : 0xfff7c2;
-      g.lineStyle(isShot ? 2.1 : isSniper ? 2.4 : 3.4, glow, isShot ? 0.5 : isSniper ? 0.22 : 0.28);
+            : isHose
+              ? 0xf97316
+              : isSpray
+                ? 0xfde68a
+                : 0xfbbf24;
+      const core = isSniper ? 0xecfeff : isShot ? 0xffedd5 : isHose ? 0xffedd5 : 0xfff7c2;
+      g.lineStyle(
+        isShot ? 2.1 : isSniper ? 2.4 : isHose ? 2.6 : isSpray ? 2.8 : 3.4,
+        glow,
+        isShot ? 0.5 : isSniper ? 0.22 : isHose ? 0.42 : isSpray ? 0.34 : 0.28,
+      );
       g.beginPath();
       g.moveTo(x0, y0);
       g.lineTo(x1, y1);
@@ -952,7 +989,7 @@ export class GameScene extends Phaser.Scene {
       g.lineTo(x1, y1);
       g.strokePath();
       g.fillStyle(0xfffbeb, isSniper ? 0.75 : 1);
-      g.fillCircle(x1, y1, isShot ? 2.35 : isSniper ? 1.1 : 1.35);
+      g.fillCircle(x1, y1, isShot ? 2.35 : isSniper ? 1.1 : isHose ? 1.7 : isSpray ? 1.5 : 1.35);
 
       // Persistence-of-vision ghost (stronger / longer for sniper)
       if (!isShot && trail.length > 1) {
@@ -1235,6 +1272,14 @@ export class GameScene extends Phaser.Scene {
     g.lineStyle(3, 0x2a2118, 0.55);
     for (const r of RAMPS) {
       if (Math.max(r.ay, r.by) <= 860) continue;
+      const dx = r.bx - r.ax;
+      const dy = r.by - r.ay;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (dy / len) * 4;
+      const ny = (-dx / len) * 4;
+      g.lineStyle(10, 0x3d2a18, 0.55);
+      g.lineBetween(r.ax + nx, r.ay + ny, r.bx + nx, r.by + ny);
+      g.lineStyle(4, 0x6b5340, 0.7);
       g.lineBetween(r.ax, r.ay, r.bx, r.by);
     }
   }
@@ -1376,16 +1421,16 @@ export class GameScene extends Phaser.Scene {
   private paintGrassCaps(): void {
     const g = this.add.graphics().setDepth(-4.4);
     for (const r of RAMPS) {
-      if (Math.max(r.ay, r.by) > 860) continue;
+      const low = Math.max(r.ay, r.by) > 860;
       const dx = r.bx - r.ax;
       const dy = r.by - r.ay;
       const len = Math.hypot(dx, dy) || 1;
-      const nx = (dy / len) * 5;
-      const ny = (-dx / len) * 5;
-      g.lineStyle(11, 0x2f541c, 1);
+      const nx = (dy / len) * (low ? 4 : 5);
+      const ny = (-dx / len) * (low ? 4 : 5);
+      g.lineStyle(low ? 8 : 11, low ? 0x3f4f28 : 0x2f541c, 1);
       g.lineBetween(r.ax + nx, r.ay + ny, r.bx + nx, r.by + ny);
-      g.lineStyle(6, 0x5a8f38, 1);
-      g.lineBetween(r.ax + nx * 1.4, r.ay + ny * 1.4, r.bx + nx * 1.4, r.by + ny * 1.4);
+      g.lineStyle(low ? 4 : 6, low ? 0x6b7f3a : 0x5a8f38, 1);
+      g.lineBetween(r.ax + nx * 1.3, r.ay + ny * 1.3, r.bx + nx * 1.3, r.by + ny * 1.3);
     }
   }
 
@@ -1418,6 +1463,14 @@ export class GameScene extends Phaser.Scene {
     ridges.fillStyle(0x122036, 0.85);
     ridges.fillTriangle(100, 520, 360, 280, 620, 520);
     ridges.fillTriangle(1700, 540, 2040, 250, 2380, 540);
+
+    if (this.textures.exists('bg_scrub')) {
+      const scrub = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT * 0.4, 'bg_scrub');
+      scrub.setDisplaySize(GAME_WIDTH * 1.2, GAME_HEIGHT * 0.58);
+      scrub.setAlpha(0.42);
+      scrub.setScrollFactor(0.1);
+      scrub.setDepth(-11.4);
+    }
 
     if (this.textures.exists('bg_cloud')) {
       for (const c of [
