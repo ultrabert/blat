@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { EXTRAPOLATE_MS, INTERP_DELAY_MS, TICK_MS } from './constants.js';
+import { EXTRAPOLATE_MS, GRAVITY, INTERP_DELAY_MS, TICK_MS } from './constants.js';
 import { InterpClock, pushPose, samplePose, type PoseSample } from './netinterp.js';
 
 function pose(partial: Partial<PoseSample> & { t: number; x: number; y: number }): PoseSample {
@@ -57,6 +57,25 @@ describe('net-interp', () => {
     const ahead = samplePose(buf, 1000 + 40);
     assert.ok(ahead);
     assert.equal(ahead.x, 200 * 0.04);
+  });
+
+  it('falling-bodies-pick-up-gravity-while-extrapolating', () => {
+    const buf: PoseSample[] = [];
+    pushPose(buf, pose({ t: 1000, x: 0, y: 0, vx: 0, vy: 100, onGround: false, jetting: false }));
+    const ahead = samplePose(buf, 1000 + 40);
+    assert.ok(ahead);
+    const dt = 0.04;
+    assert.ok(Math.abs(ahead.y - (100 * dt + 0.5 * GRAVITY * dt * dt)) < 0.001);
+    assert.ok(Math.abs(ahead.vy - (100 + GRAVITY * dt)) < 0.001);
+  });
+
+  it('jetting-bodies-do-not-fall-during-extrapolation', () => {
+    const buf: PoseSample[] = [];
+    pushPose(buf, pose({ t: 1000, x: 0, y: 0, vx: 0, vy: -200, onGround: false, jetting: true }));
+    const ahead = samplePose(buf, 1000 + 40);
+    assert.ok(ahead);
+    assert.equal(ahead.y, -200 * 0.04);
+    assert.equal(ahead.vy, -200);
   });
 
   it('does-not-extrapolate-dead-bodies', () => {

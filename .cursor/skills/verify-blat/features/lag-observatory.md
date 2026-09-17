@@ -32,5 +32,5 @@ Preconditions:
 
 - `/api/lag` is empty until a client POSTs; join `/demo` first.
 - `jerk` / `snaps` rise when bots explode or turn. Constant-velocity smoothness is the unit test, not a quiet demo.
-- `behind` can swing on a hitchy VM. Do not chase Fly interp from Cloud Agent frame time.
+- `behind` can swing on a hitchy VM. Do not chase Fly interp from Cloud Agent frame time. Healthy `behind` is about one snapshot (`INTERP_DELAY_MS`).
 - Never claim internet RTT feel from this HUD.

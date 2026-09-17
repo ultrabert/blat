@@ -174,10 +174,11 @@ export class PredictionController {
         this.predicted.berserk = serverMe.bonus === 'berserk';
         stepMovement(this.predicted, input, TICK_MS / 1000);
         const blockers = [];
+        const renderAt = this.clock.renderAt();
         for (const buf of this.remotes.values()) {
-          const s = buf[buf.length - 1];
+          const s = samplePose(buf, renderAt) ?? buf[buf.length - 1];
           if (!s?.alive) continue;
-          const h = playerHalfExtents(s.crouching, s.prone);
+          const h = playerHalfExtents(!!s.crouching, !!s.prone);
           blockers.push({ x: s.x, y: s.y, halfW: h.halfW, halfH: h.halfH, vx: s.vx });
         }
         separateFromSolids(this.predicted, blockers);

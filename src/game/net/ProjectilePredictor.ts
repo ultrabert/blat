@@ -4,6 +4,7 @@ import {
   GAME_WIDTH,
   PLAYER,
   PLATFORMS,
+  TICK_MS,
 } from '../../../shared/constants';
 import { planFire, stanceFromBody } from '../../../shared/fire';
 import { stepBallistic } from '../../../shared/ballistics';
@@ -49,6 +50,7 @@ type PredGrenade = {
 
 /** Drop ghost shots if the server never confirms. */
 const MATCH_TIMEOUT_MS = 700;
+const MATCH_RADIUS = 96;
 
 export class ProjectilePredictor {
   private bullets: PredBullet[] = [];
@@ -59,6 +61,7 @@ export class ProjectilePredictor {
   private lastGrenadeAt = -Infinity;
   private nextId = 1;
   private explosions: { x: number; y: number }[] = [];
+  private accumMs = 0;
 
   private impacts: {
     x: number;
@@ -84,6 +87,7 @@ export class ProjectilePredictor {
     this.explosions = [];
     this.impacts = [];
     this.muzzleFlashes = [];
+    this.accumMs = 0;
   }
 
   /** Pending local throws not yet reflected in server grenade count. */
@@ -198,6 +202,15 @@ export class ProjectilePredictor {
   }
 
   step(dt: number, now: number, targets: TraceTarget[] = [], ownerId = '', windVx = 0): void {
+    this.accumMs += dt * 1000;
+    if (this.accumMs > TICK_MS * 5) this.accumMs = TICK_MS * 5;
+    while (this.accumMs >= TICK_MS) {
+      this.stepOnce(TICK_MS / 1000, now, targets, ownerId, windVx);
+      this.accumMs -= TICK_MS;
+    }
+  }
+
+  private stepOnce(dt: number, now: number, targets: TraceTarget[], ownerId: string, windVx: number): void {
     const kept: PredBullet[] = [];
     for (const b of this.bullets) {
       const { x0, y0, x1, y1 } = stepBallistic(b, dt, b.gravityScale, b.dragPerSec);
@@ -214,12 +227,10 @@ export class ProjectilePredictor {
         if (b.explodeOnHit) this.explosions.push({ x: hit.x, y: hit.y });
         continue;
       }
-      // stepBallistic already wrote x/y
       kept.push(b);
     }
     this.bullets = kept;
 
-    // Unmatched grenades simulate locally; matched ones follow server in match().
     for (const g of this.grenades) {
       if (g.serverId) continue;
       const flight = stepGrenadeFlight(g.vx, g.vy, dt, windVx);
@@ -250,6 +261,21 @@ export class ProjectilePredictor {
     });
   }
 
+  private bestBulletMatch(b: BulletState): PredBullet | undefined {
+    let best: PredBullet | undefined;
+    let bestD = MATCH_RADIUS;
+    for (const p of this.bullets) {
+      if (p.serverId) continue;
+      if (p.weapon && b.weapon && p.weapon !== b.weapon && b.weapon !== 'rifle') continue;
+      const d = Math.hypot(p.x - b.x, p.y - b.y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best ?? this.bullets.find((p) => !p.serverId);
+  }
+
   match(
     bullets: { forEach: (cb: (b: BulletState, id: string) => void) => void } | undefined,
     grenades: { forEach: (cb: (g: GrenadeState, id: string) => void) => void } | undefined,
@@ -260,7 +286,7 @@ export class ProjectilePredictor {
       seenBullets.add(id);
       if (b.ownerId !== localId) return;
       if (this.hiddenBullets.has(id)) return;
-      const pred = this.bullets.find((p) => !p.serverId);
+      const pred = this.bestBulletMatch(b);
       if (!pred) return;
       pred.serverId = id;
       this.hiddenBullets.add(id);
