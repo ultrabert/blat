@@ -267,7 +267,7 @@ export class VisceraFx {
   }
 
   /** Ejected casing (cosmetic). */
-  brass(x: number, y: number, aimX: number, aimY: number, count = 1): void {
+  brass(x: number, y: number, aimX: number, _aimY: number, count = 1): void {
     const side = aimX >= 0 ? -1 : 1;
     for (let i = 0; i < count; i++) {
       const spd = 90 + Math.random() * 80;
