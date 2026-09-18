@@ -117,9 +117,9 @@ gameServer.define('dm', DmRoom).filterBy(['code']);
 httpServer.listen(PORT, () => {
   console.log(`[blat] listening on http://localhost:${PORT}`);
   if (process.env.BLAT_PASSWORD) {
-    console.log('[blat] access password is enabled');
+    console.log('[blat] create requires access password; join by code is open');
   } else {
-    console.log('[blat] BLAT_PASSWORD unset — rooms are open');
+    console.log('[blat] BLAT_PASSWORD unset — anyone can create rooms');
   }
   if (serveClient) {
     console.log(`[blat] serving client from ${distDir}`);

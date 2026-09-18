@@ -1,7 +1,8 @@
 import { Room, Client } from 'colyseus';
 import { DEMO_BOTS, TICK_MS, type PlayerInput } from '../../shared/constants.js';
 import { MATCH, TAUNTS } from '../../shared/match.js';
-import { isDemoRoomCode, normalizeRoomCode } from '../../shared/roomCode.js';
+import { assertRoomAccess } from '../../shared/roomAccess.js';
+import { isDemoRoomCode, isValidRoomCode, normalizeRoomCode } from '../../shared/roomCode.js';
 import { GameState } from '../../shared/schema.js';
 import { Simulation } from '../../shared/simulation.js';
 
@@ -13,13 +14,8 @@ type JoinOptions = {
   realistic?: boolean | string;
 };
 
-function assertPassword(options: JoinOptions): void {
-  if (isDemoRoomCode(options.code || '')) return;
-  const expected = process.env.BLAT_PASSWORD;
-  if (!expected) return;
-  if (options.password !== expected) {
-    throw new Error('Wrong password');
-  }
+function expectedPassword(): string | undefined {
+  return process.env.BLAT_PASSWORD;
 }
 
 export class DmRoom extends Room<GameState> {
@@ -31,11 +27,14 @@ export class DmRoom extends Room<GameState> {
   private simAcc = 0;
 
   onCreate(options: JoinOptions = {}): void {
-    assertPassword(options);
+    assertRoomAccess('create', options, expectedPassword());
 
     const code = normalizeRoomCode(options.code || '');
     if (!code) {
       throw new Error('Room code required');
+    }
+    if (!isDemoRoomCode(code) && !isValidRoomCode(code)) {
+      throw new Error('Invalid room code');
     }
 
     this.roomCode = code;
@@ -116,7 +115,8 @@ export class DmRoom extends Room<GameState> {
   }
 
   onAuth(_client: Client, options: JoinOptions = {}): boolean {
-    assertPassword(options);
+    // Join is open (invite code / room list). Password is create-only.
+    assertRoomAccess('join', options, expectedPassword());
     return true;
   }
 

@@ -59,6 +59,13 @@ body {
   color: #9aa8c7;
 }
 
+.lobby-hint {
+  margin-top: -4px;
+  color: #7d8bab;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .lobby-input {
   width: 100%;
   padding: 12px 14px;
@@ -149,6 +156,7 @@ body {
 
 #lobby.lobby-splash .lobby-tag,
 #lobby.lobby-splash .lobby-label,
+#lobby.lobby-splash .lobby-hint,
 #lobby.lobby-splash .lobby-input,
 #lobby.lobby-splash .lobby-btn,
 #lobby.lobby-splash .lobby-row,

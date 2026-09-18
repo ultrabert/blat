@@ -60,7 +60,7 @@ Harnesses: **computerUse** (desktop Chrome) for the canvas; **curl** for health/
 Stable handles (prefer these over coordinates):
 
 - Lobby: `#btn-demo` (Watch demo), `#btn-create`, `#btn-join`, `#player-name`, `#access-password`, `#room-code`, `#match-mode`, `#match-realistic`, `#room-list`.
-- In-game chrome: `#room-bar-code` (`DEMO` or `ROOM ABCD`), `#btn-copy`, `#lag-hud` (text starts with `LAG`).
+- In-game chrome: `#room-bar-code` (`DEMO` or `ROOM ABCDEF`), `#btn-copy`, `#lag-hud` (text starts with `LAG`).
 - Canvas (Phaser, not DOM): bottom `watching`, top `DEMO`, team scores `Alpha` / `Bravo`, nametags `Bot 1`–`Bot 5`.
 
 Default drive (feature `demo-spectator`):

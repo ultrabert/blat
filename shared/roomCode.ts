@@ -1,7 +1,12 @@
-/** Unambiguous alphabet (no 0/O, 1/I/L). */
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+/** Unambiguous alphabet (no 0/O, 1/I/L). URL-safe and readable. */
+export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-export function generateRoomCode(length = 4): string {
+/** Public match codes are this long so random guessing of open rooms is harder. */
+export const ROOM_CODE_LENGTH = 6;
+
+const ALPHABET = ROOM_CODE_ALPHABET;
+
+export function generateRoomCode(length = ROOM_CODE_LENGTH): string {
   let code = '';
   const bytes = cryptoGetRandom(length);
   for (let i = 0; i < length; i++) {
@@ -16,7 +21,11 @@ export function normalizeRoomCode(raw: string): string {
 }
 
 export function isValidRoomCode(code: string): boolean {
-  return /^[A-Z0-9]{4,6}$/.test(code);
+  if (code.length !== ROOM_CODE_LENGTH) return false;
+  for (const ch of code) {
+    if (!ALPHABET.includes(ch)) return false;
+  }
+  return true;
 }
 
 /** Reserved spectator room — skip password, bots fight each other. */
