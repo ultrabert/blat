@@ -6,7 +6,7 @@
  * adjacent samples 1 frame apart with identical poses, so the 50ms delay
  * collapsed into a snap — opponents looked lagged and stuttery.
  */
-import { EXTRAPOLATE_MS, INTERP_DELAY_MS, TICK_MS } from './constants.js';
+import { EXTRAPOLATE_MS, GRAVITY, INTERP_DELAY_MS, TICK_MS } from './constants.js';
 
 export type PoseSample = {
   t: number;
@@ -85,8 +85,25 @@ export function pushPose(buf: PoseSample[], sample: PoseSample, max = 40): void 
 }
 
 /**
+ * Dead-reckon a snapshot `aheadMs` into the future (capped at EXTRAPOLATE_MS).
+ * Grounded / jetting stay linear (thrust cancels gravity). Falling bodies
+ * pick up GRAVITY so remotes don't float during a late patch.
+ */
+export function extrapolateSample(last: PoseSample, aheadMs: number): SampledPose {
+  const dt = Math.min(Math.max(0, aheadMs), EXTRAPOLATE_MS) / 1000;
+  if (dt <= 0 || !last.alive) return pack(last);
+  const g = !last.onGround && !last.jetting ? GRAVITY : 0;
+  return {
+    ...pack(last),
+    x: last.x + last.vx * dt,
+    y: last.y + last.vy * dt + 0.5 * g * dt * dt,
+    vy: last.vy + g * dt,
+  };
+}
+
+/**
  * Pose at `renderAt` on the server timeline.
- * Past the latest snapshot: dead-reckon with vx/vy for up to EXTRAPOLATE_MS.
+ * Past the latest snapshot: dead-reckon for up to EXTRAPOLATE_MS.
  */
 export function samplePose(buf: PoseSample[], renderAt: number): SampledPose | null {
   if (!buf.length) return null;
@@ -97,12 +114,7 @@ export function samplePose(buf: PoseSample[], renderAt: number): SampledPose | n
   if (renderAt >= last.t) {
     const ahead = renderAt - last.t;
     if (ahead <= 0.001 || !last.alive) return pack(last);
-    const dt = Math.min(ahead, EXTRAPOLATE_MS) / 1000;
-    return {
-      ...pack(last),
-      x: last.x + last.vx * dt,
-      y: last.y + last.vy * dt,
-    };
+    return extrapolateSample(last, ahead);
   }
 
   let i = 0;
@@ -116,8 +128,9 @@ export function samplePose(buf: PoseSample[], renderAt: number): SampledPose | n
 }
 
 /**
- * Client estimate of server `state.now`. Advances with local dt, clamped
- * so we neither freeze waiting for a patch nor run past extrapolation.
+ * Client estimate of server `state.now`. Advances with local dt, nudged
+ * toward the latest patch so jitter doesn't accumulate, then clamped
+ * so we neither freeze waiting nor run past extrapolation.
  */
 export class InterpClock {
   time = 0;
@@ -132,6 +145,8 @@ export class InterpClock {
     }
     this.time += dt;
     if (serverNow > this.lastServerNow) this.lastServerNow = serverNow;
+    const err = this.lastServerNow - this.time;
+    this.time += err * 0.18;
     const minT = this.lastServerNow - INTERP_DELAY_MS * 2;
     const maxT = this.lastServerNow + EXTRAPOLATE_MS;
     if (this.time < minT) this.time = minT;

@@ -1,6 +1,6 @@
 {
   "name": "blat",
-  "install": "npm ci",
+  "install": "npm ci || npm install",
   "terminals": [
     {
       "name": "game",

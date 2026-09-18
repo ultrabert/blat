@@ -39,6 +39,13 @@ export const SCENERY: ScenerySpec[] = [
   // Pit floor / cave floors
   { x: 1088, y: 850, key: 'prop_barrel', scale: 0.55, depth: 0.15 },
   { x: 1472, y: 850, key: 'prop_barrel', scale: 0.5, depth: 0.15 },
+  { x: 1188, y: 709, key: 'prop_crate', scale: 0.22, depth: 0.12 },
+  { x: 1052, y: 709, key: 'prop_sandbags', scale: 0.28, depth: 0.12, flipX: true },
+  { x: 2140, y: 309, key: 'prop_crate', scale: 0.2, depth: 0.12 },
+  { x: 2288, y: 309, key: 'prop_barrel', scale: 0.42, depth: 0.12 },
+  { x: 2360, y: 309, key: 'prop_sandbags', scale: 0.3, depth: 0.12 },
+  { x: 1280, y: 509, key: 'prop_antenna', scale: 0.22, depth: 0.15 },
+  { x: 1210, y: 509, key: 'prop_barrel', scale: 0.4, depth: 0.12 },
   { x: 70, y: 1142, key: 'prop_barrel', scale: 0.45, depth: 0.1 },
   { x: 2490, y: 1142, key: 'prop_barrel', scale: 0.45, depth: 0.1 },
 ];

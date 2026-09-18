@@ -87,16 +87,18 @@ const HOLD_SNIPER = { len: 38, grip: 5, fore: 16 };
 const HOLD_SHOT = { len: 26, grip: 4, fore: 12 };
 const HOLD_PISTOL = { len: 18, grip: 3, fore: 8 };
 const HOLD_LAUNCH = { len: 30, grip: 5, fore: 14 };
+const HOLD_GATLING = { len: 28, grip: 5, fore: 13 };
 const HOLD_MELEE = { len: 20, grip: 2, fore: 11 };
 
-type GunKind = 'rifle' | 'sniper' | 'shot' | 'pistol' | 'launch' | 'melee' | 'bow';
+type GunKind = 'rifle' | 'sniper' | 'shot' | 'pistol' | 'launch' | 'melee' | 'bow' | 'gatling';
 
 function weaponHold(id: WeaponId): typeof HOLD_RIFLE {
   if (id === 'de' || id === 'socom') return HOLD_PISTOL;
   if (id === 'barrett' || id === 'ruger') return HOLD_SNIPER;
   if (id === 'bow') return HOLD_SNIPER;
   if (id === 'spas') return HOLD_SHOT;
-  if (id === 'm79' || id === 'law' || id === 'flamer' || id === 'minigun') return HOLD_LAUNCH;
+  if (id === 'minigun') return HOLD_GATLING;
+  if (id === 'm79' || id === 'law' || id === 'flamer') return HOLD_LAUNCH;
   if (id === 'knife' || id === 'chainsaw' || id === 'punch') return HOLD_MELEE;
   return HOLD_RIFLE;
 }
@@ -106,7 +108,8 @@ function gunKind(id: WeaponId): GunKind {
   if (id === 'barrett' || id === 'ruger') return 'sniper';
   if (id === 'bow') return 'bow';
   if (id === 'spas') return 'shot';
-  if (id === 'm79' || id === 'law' || id === 'flamer' || id === 'minigun') return 'launch';
+  if (id === 'minigun') return 'gatling';
+  if (id === 'm79' || id === 'law' || id === 'flamer') return 'launch';
   if (id === 'knife' || id === 'chainsaw' || id === 'punch') return 'melee';
   return 'rifle';
 }
@@ -672,7 +675,15 @@ export class StickSoldier {
     const muzzleAlong = hold.len - hold.grip + 3;
     const stockAlong = -hold.grip - 3;
     const barrelW =
-      kind === 'shot' || kind === 'launch' ? 4.4 : kind === 'sniper' || kind === 'bow' ? 2.5 : kind === 'pistol' ? 2.9 : 3.2;
+      kind === 'gatling'
+        ? 5.2
+        : kind === 'shot' || kind === 'launch'
+          ? 4.4
+          : kind === 'sniper' || kind === 'bow'
+            ? 2.5
+            : kind === 'pistol'
+              ? 2.9
+              : 3.2;
     const outlineW = barrelW + 1.15;
     const stock = at(stockAlong);
     const muzzle = at(muzzleAlong);
@@ -713,9 +724,22 @@ export class StickSoldier {
     if (kind === 'pistol') {
       strokeSeg(g, at(0, 0), at(-1.5, 6.5), 3.2, GUN_EDGE, alpha);
       strokeSeg(g, at(0, 0), at(-1.5, 6.5), 2.0, GUN_GRIP, alpha);
-    } else if (kind !== 'launch') {
+    } else if (kind !== 'launch' && kind !== 'gatling') {
       strokeSeg(g, at(3, 0.5), at(3, 4.5), 2.8, GUN_EDGE, alpha);
       strokeSeg(g, at(3, 0.5), at(3, 4.5), 1.8, GUN_GRIP, alpha);
+    }
+
+    if (kind === 'gatling') {
+      strokeSeg(g, at(4, 3.2), at(4, 7.2), 3.4, GUN_EDGE, alpha);
+      strokeSeg(g, at(4, 3.2), at(4, 7.2), 2.2, GUN_GRIP, alpha);
+      for (const down of [-2.2, 0, 2.2]) {
+        strokeSeg(g, at(hold.fore - 2, down), at(muzzleAlong + 1, down), 1.7, GUN_EDGE, alpha);
+        strokeSeg(g, at(hold.fore - 2, down), at(muzzleAlong + 1, down), 1.05, GUN_BARREL, alpha);
+      }
+      g.fillStyle(GUN_RECEIVER, alpha);
+      g.fillCircle(at(hold.fore + 2, 0).x, at(hold.fore + 2, 0).y, 3.4);
+      g.fillStyle(GUN_HIGHLIGHT, alpha * 0.45);
+      g.fillCircle(at(hold.fore + 2, 0).x, at(hold.fore + 2, 0).y, 1.6);
     }
 
     if (kind === 'sniper') {

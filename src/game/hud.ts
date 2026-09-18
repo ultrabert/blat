@@ -65,6 +65,8 @@ export type HudFrame = {
   scoreboard: boolean;
   roomCode: string;
   nowMs: number;
+  lagLine?: string;
+  lagOk?: boolean;
 };
 
 type FeedSlot = {
@@ -97,6 +99,7 @@ export class CombatHud {
   private readonly medalTitle: Phaser.GameObjects.Text;
   private readonly medalSub: Phaser.GameObjects.Text;
   private readonly medalBy: Phaser.GameObjects.Text;
+  private readonly lagText: Phaser.GameObjects.Text;
   private lastIcon = '';
   private seenChat = new Set<string>();
   private seenFeed = new Set<string>();
@@ -179,6 +182,16 @@ export class CombatHud {
       })
       .setScrollFactor(0)
       .setDepth(121);
+    this.lagText = scene.add
+      .text(16, 32, '', {
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: '13px',
+        color: COLORS.muted,
+        stroke: '#0b1020',
+        strokeThickness: 4,
+      })
+      .setScrollFactor(0)
+      .setDepth(124);
     this.feedGfx = scene.add.graphics().setScrollFactor(0).setDepth(120);
     for (let i = 0; i < 7; i++) {
       this.feedSlots.push({
@@ -255,9 +268,17 @@ export class CombatHud {
     this.drawBars(frame);
     this.drawGun(frame);
     this.drawMatch(state, frame);
+    this.drawLag(frame);
     this.drawFeed(state);
     this.tickMedals(state, frame);
     this.drawScoreboard(state, frame);
+  }
+
+  private drawLag(frame: HudFrame): void {
+    const line = frame.lagLine || '';
+    this.lagText.setText(line);
+    this.lagText.setColor(frame.lagOk === false ? '#fca5a5' : '#86efac');
+    this.lagText.setAlpha(line ? 0.95 : 0);
   }
 
   private drawMatch(state: GameState, frame: HudFrame): void {

@@ -68,7 +68,8 @@ describe('weapon-arsenal', () => {
 
   it('mp5-and-minigun-outpace-ak-rof', () => {
     assert.ok(WEAPONS.mp5.fireCooldownMs < WEAPONS.ak.fireCooldownMs);
-    assert.ok(WEAPONS.minigun.fireCooldownMs < WEAPONS.ak.fireCooldownMs);
+    assert.ok(WEAPONS.minigun.fireCooldownMs < WEAPONS.mp5.fireCooldownMs);
+    assert.ok(WEAPONS.minigun.magSize > WEAPONS.mp5.magSize);
   });
 
   it('ak-needs-multiple-body-hits', () => {
@@ -211,11 +212,11 @@ describe('magazines-reload', () => {
 describe('weapon-pickups', () => {
   it('weapon-pads-are-sparse-unique-and-off-spawn', () => {
     const guns = MAP_PICKUPS.filter((p) => p.kind === 'weapon');
-    assert.ok(guns.length <= 6, `too many gun pads: ${guns.length}`);
+    assert.ok(guns.length <= 8, `too many gun pads: ${guns.length}`);
     const items = guns.map((g) => g.item);
     assert.equal(new Set(items).size, items.length, 'one pad per gun');
     assert.ok(!MAP_PICKUPS.some((p) => p.kind === 'ammo'));
-    for (const id of ['ak', 'minigun', 'law', 'barrett', 'm79', 'flamer'] as const) {
+    for (const id of ['ak', 'minigun', 'law', 'barrett', 'm79', 'flamer', 'mp5'] as const) {
       assert.ok(items.includes(id), `${id} should stay a map destination`);
     }
     assert.ok(WEAPON_RESPAWN_MS >= 80000);

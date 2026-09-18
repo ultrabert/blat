@@ -1,3 +1,7 @@
+# Agent decision trails (/show-me). Commit with git add -f only when a reviewer needs the trail.
+/decisions.tsv
+/.audit/
+
 # Logs
 logs
 *.log

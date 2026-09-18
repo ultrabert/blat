@@ -174,10 +174,11 @@ export class PredictionController {
         this.predicted.berserk = serverMe.bonus === 'berserk';
         stepMovement(this.predicted, input, TICK_MS / 1000);
         const blockers = [];
+        const renderAt = this.clock.renderAt();
         for (const buf of this.remotes.values()) {
-          const s = buf[buf.length - 1];
+          const s = samplePose(buf, renderAt) ?? buf[buf.length - 1];
           if (!s?.alive) continue;
-          const h = playerHalfExtents(s.crouching, s.prone);
+          const h = playerHalfExtents(!!s.crouching, !!s.prone);
           blockers.push({ x: s.x, y: s.y, halfW: h.halfW, halfH: h.halfH, vx: s.vx });
         }
         separateFromSolids(this.predicted, blockers);
@@ -346,5 +347,21 @@ export class PredictionController {
     for (const id of this.remotes.keys()) {
       if (!aliveIds.has(id)) this.remotes.delete(id);
     }
+  }
+
+  /** Snapshot cadence vs interp budget — feed LagMeter / HUD. */
+  lagStats(): { behindMs: number; extraMs: number; renderAt: number; serverNow: number } {
+    const renderAt = this.clock.renderAt();
+    let extraMs = 0;
+    for (const buf of this.remotes.values()) {
+      const last = buf[buf.length - 1];
+      if (last) extraMs = Math.max(extraMs, renderAt - last.t);
+    }
+    return {
+      behindMs: this.clock.lastServerNow - renderAt,
+      extraMs: Math.max(0, extraMs),
+      renderAt,
+      serverNow: this.clock.lastServerNow,
+    };
   }
 }

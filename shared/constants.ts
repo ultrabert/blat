@@ -7,8 +7,8 @@ export const GAME_HEIGHT = 1200;
 export const MAP_NAME = 'Arena';
 export const GRAVITY = 1600;
 export const TICK_MS = 16; // ~62 Hz sim
-/** Render remotes this far behind the server clock (~2 snapshots). */
-export const INTERP_DELAY_MS = 33;
+/** Render remotes this far behind the server clock (~1 snapshot). */
+export const INTERP_DELAY_MS = 16;
 /** Dead-reckon remotes this far past the latest snapshot when a patch is late. */
 export const EXTRAPOLATE_MS = 48;
 export const RECONCILE_SNAP_DIST = 48;
@@ -31,7 +31,7 @@ export const PLAYER = {
   /** Soft cap on climb speed while jetting (px/s). Fuel is the real limit. */
   jetMaxAscent: 520,
   /** Extra air steer while jetting (on top of airAccel). */
-  jetStrafeAccel: 640,
+  jetStrafeAccel: 720,
   maxFuel: 100,
   /** ~5s continuous burn — long enough to cross the arena. */
   fuelBurnRate: 20,
@@ -61,13 +61,13 @@ export const PLAYER = {
   maxVelocityY: 780,
   dragX: 900,
   /** Accelerate toward walk speed instead of snapping (Soldat inertia). */
-  groundAccel: 2600,
+  groundAccel: 2900,
   groundBrake: 3800,
   rollSpeed: 400,
   rollDurationMs: 320,
   rollCooldownMs: 480,
   /** Phase 5 — advanced movement */
-  airAccel: 420,
+  airAccel: 480,
   overspeedDecayGround: 420,
   overspeedDecayAir: 150,
   bunnyWindowMs: 150,

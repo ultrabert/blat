@@ -94,17 +94,17 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     name: 'MP5',
     short: 'MP5',
     kind: 'bullet',
-    fireCooldownMs: 78,
+    fireCooldownMs: 58,
     damage: 14,
     muzzleSpeed: 760,
     pellets: 1,
-    spreadMult: 1.15,
+    spreadMult: 1.2,
     pelletSpread: 0,
-    recoilKick: 0.032,
-    recoilMax: 0.2,
-    magSize: 30,
-    reserveMax: 90,
-    reloadMs: 1600,
+    recoilKick: 0.028,
+    recoilMax: 0.22,
+    magSize: 32,
+    reserveMax: 96,
+    reloadMs: 1500,
   },
   ak: {
     id: 'ak',
@@ -272,9 +272,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     pelletSpread: 0.02,
     recoilKick: 0.028,
     recoilMax: 0.26,
-    magSize: 100,
-    reserveMax: 200,
-    reloadMs: 3200,
+    magSize: 120,
+    reserveMax: 240,
+    reloadMs: 3000,
   },
   bow: {
     id: 'bow',
@@ -409,6 +409,7 @@ export type MapPickupSpec = {
 export const MAP_PICKUPS: MapPickupSpec[] = [
   { id: 'w_ak_l', kind: 'weapon', item: 'ak', x: 340, y: 297 },
   { id: 'w_minigun_r', kind: 'weapon', item: 'minigun', x: 2220, y: 297 },
+  { id: 'w_mp5_bowl', kind: 'weapon', item: 'mp5', x: 1120, y: 697 },
   { id: 'w_flamer_m', kind: 'weapon', item: 'flamer', x: 240, y: 1128 },
   { id: 'w_barrett_r', kind: 'weapon', item: 'barrett', x: 2320, y: 1128 },
   { id: 'w_m79_m', kind: 'weapon', item: 'm79', x: 1380, y: 497 },
@@ -435,6 +436,8 @@ export const PICKUP_RADIUS = 28;
 export const PICKUP_RESPAWN_MS = 16000;
 /** Guns stay gone long enough that holding one is map control. */
 export const WEAPON_RESPAWN_MS = 90000;
+/** MP5 is the common spray — comes back faster than pilgrimage guns. */
+export const SPRAY_RESPAWN_MS = 24000;
 /** Dropped guns are not collected until this elapses (avoids instant re-grab). */
 export const PICKUP_ARM_MS = 480;
 export const MEDKIT_HEAL = 50;
