@@ -50,14 +50,21 @@ function accessPassword(): string {
   return password;
 }
 
-function joinOptions(extra: Record<string, string> = {}): Record<string, string> {
+function sessionOptions(extra: Record<string, string> = {}): Record<string, string> {
   return {
     name: playerName(),
-    password: accessPassword(),
     mode: parseMode(modeSelect.value),
     realistic: realisticBox.checked ? 'true' : 'false',
     ...extra,
   };
+}
+
+function createOptions(code: string): Record<string, string> {
+  return sessionOptions({ code, password: accessPassword() });
+}
+
+function joinRoomOptions(code: string): Record<string, string> {
+  return sessionOptions({ code });
 }
 
 function setBusy(busy: boolean): void {
@@ -126,11 +133,11 @@ async function createRoom(): Promise<void> {
     let code = '';
 
     for (let attempt = 0; attempt < 5; attempt++) {
-      code = generateRoomCode(4);
+      code = generateRoomCode();
       showStatus(attempt === 0 ? 'Creating room…' : `Creating room… (retry ${attempt + 1})`);
       try {
         room = await withTimeout(
-          client.create<GameState>('dm', joinOptions({ code })),
+          client.create<GameState>('dm', createOptions(code)),
           5000,
           'Create',
         );
@@ -160,8 +167,13 @@ async function joinRoom(rawCode: string): Promise<void> {
   const code = normalizeRoomCode(rawCode);
   showError('');
 
+  if (isDemoRoomCode(code)) {
+    void joinDemo();
+    return;
+  }
+
   if (!isValidRoomCode(code)) {
-    showError('Enter a 4–6 character room code');
+    showError('Enter a 6-letter room code');
     return;
   }
 
@@ -171,7 +183,7 @@ async function joinRoom(rawCode: string): Promise<void> {
   try {
     const client = new Client(COLYSEUS_URL);
     const room = await withTimeout(
-      client.join<GameState>('dm', joinOptions({ code })),
+      client.join<GameState>('dm', joinRoomOptions(code)),
       5000,
       'Join',
     );
@@ -289,7 +301,7 @@ async function joinDemo(): Promise<void> {
   }
 }
 
-// Deep link: /demo or /?demo=1 or /?room=ABCD
+// Deep link: /demo or /?demo=1 or /?room=ABCDEF
 const path = window.location.pathname.replace(/\/+$/, '') || '/';
 const params = new URLSearchParams(window.location.search);
 if (path === '/demo' || params.has('demo')) {

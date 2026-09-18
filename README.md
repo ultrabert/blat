@@ -13,15 +13,15 @@ npm run dev
 - Client: http://localhost:5173
 - Server: http://localhost:2567
 
-If `BLAT_PASSWORD` is set, enter it in the lobby before create/join. Leave it empty for open local play.
+If `BLAT_PASSWORD` is set, enter it in the lobby to **create** a room. Joining by code or invite link does not need the password. Leave the password empty for open local play (anyone can create).
 
 ### Invite friends
 
-1. **Create game**
-2. Share the link (`?room=ABCD`) or the 4-letter code (**Copy link**)
-3. Friends open the link or enter the code + the shared password
+1. **Create game** (shared password required when `BLAT_PASSWORD` is set)
+2. Share the link (`?room=ABCDEF`) or the 6-letter code (**Copy link**)
+3. Friends open the link or enter the code — no password
 
-Lobby **Mode** + **Realistic** apply when you create. Open rooms list public matches (code, mode, players).
+Lobby **Mode** + **Realistic** apply when you create. Open rooms list public matches (code, mode, players); join from the list is also passwordless.
 
 One human → bots fill slots. Second human → bots leave.
 
@@ -48,7 +48,7 @@ One human → bots fill slots. Second human → bots leave.
 
 ## Play live
 
-**https://blat.fly.dev/** — hard-refresh after a deploy. Lobby password is the Fly secret `BLAT_PASSWORD`.
+**https://blat.fly.dev/** — hard-refresh after a deploy. Creating a room uses the Fly secret `BLAT_PASSWORD`; joining an existing room does not.
 
 Prompt in Cursor (desktop or iPhone) → agent ships → open **https://blat.fly.dev/demo** to watch bots fight, or create a game at **https://blat.fly.dev/**.
 

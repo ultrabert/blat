@@ -82,6 +82,14 @@ The clone is playable. This wave adds the missing Soldat toys and one blat-only 
 
 **E1–E8:** Wave E is in. Hard-refresh **https://blat.fly.dev/**.
 
+## Wave F — share without strangers spinning rooms
+
+Create is gated so random visitors cannot burn Fly spend. Join stays Soldat-easy.
+
+| # | Aspect | Soldat | Blat now | Why it matters |
+|---|---|---|---|---|
+| F1 | Room access | Public servers; friends drop in | **Shipped** — create needs `BLAT_PASSWORD`; join by 6-letter code / `?room=` / open-room list is passwordless; `/demo` stays open | Low-friction invites without public room-create spend |
+
 ## Locked / not on this list
 
 - Matter / Box2D (needs a netcode redesign)

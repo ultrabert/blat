@@ -15,15 +15,16 @@
         <label class="lobby-label" for="player-name">Name</label>
         <input id="player-name" class="lobby-input" maxlength="16" placeholder="Soldier" autocomplete="off" />
 
-        <label class="lobby-label" for="access-password">Password</label>
+        <label class="lobby-label" for="access-password">Password to create</label>
         <input
           id="access-password"
           class="lobby-input"
           type="password"
           maxlength="64"
-          placeholder="Shared access password"
+          placeholder="Required to create a room"
           autocomplete="current-password"
         />
+        <p class="lobby-hint">Friends joining by code or invite link do not need this.</p>
 
         <label class="lobby-label" for="match-mode">Mode</label>
         <select id="match-mode" class="lobby-input">
@@ -49,7 +50,7 @@
             id="room-code"
             class="lobby-input lobby-input-code"
             maxlength="6"
-            placeholder="ABCD"
+            placeholder="ABCDEF"
             autocomplete="off"
             spellcheck="false"
           />
